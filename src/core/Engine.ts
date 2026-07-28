@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RenderPipeline } from '../graphics/RenderPipeline';
+import { RenderPipeline, type BiomeType } from '../graphics/RenderPipeline';
 import { InputManager } from '../core/InputManager';
 import { AudioManager } from '../core/AudioManager';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
@@ -9,7 +9,7 @@ import { InstancedPickups } from '../graphics/InstancedPickups';
 import { ParticleSystem } from '../graphics/ParticleSystem';
 import { CameraJuice } from '../graphics/CameraJuice';
 import { ObjectPool } from '../pooling/ObjectPool';
-import { Player } from '../entities/Player';
+import { Player, type ShipClass } from '../entities/Player';
 import { Enemy, EnemyType } from '../entities/Enemy';
 import { BossEnemy } from '../entities/BossEnemy';
 import { Projectile, ProjectileType } from '../entities/Projectile';
@@ -22,6 +22,9 @@ import { MenuSystem, type PerkOption } from '../ui/MenuSystem';
 
 const tempSpawnPos = new THREE.Vector3();
 const tempFireDir = new THREE.Vector3();
+const tempUpAxis = new THREE.Vector3(0, 1, 0);
+
+export type RiftType = 'OVERCLOCK' | 'GRAVITY_SURGE' | 'BLOODLUST';
 
 interface WaveConfig {
   runners: number;
@@ -60,6 +63,10 @@ export class Engine {
   private lastTime: number = 0;
   private frameCount: number = 0;
 
+  // Anomaly Rift Event System
+  private activeRift: RiftType | null = null;
+  private riftTimer: number = 0;
+
   // Dynamic Combo System
   private comboCount: number = 0;
   private comboTimer: number = 0;
@@ -89,6 +96,13 @@ export class Engine {
 
     this.input = new InputManager();
     this.input.setCamera(this.renderPipeline.camera);
+
+    this.input.onPointerLockExited = () => {
+      if (this.isPlaying && !this.isPausedForUpgrade) {
+        this.isPausedForUpgrade = true;
+        this.menuSystem.showStartMenu();
+      }
+    };
 
     this.cameraJuice = new CameraJuice(this.renderPipeline.camera);
     this.terrain = new TerrainGenerator(this.renderPipeline.scene);
@@ -120,18 +134,18 @@ export class Engine {
         this.audio,
         this.terrain
       );
-    }, 220);
+    }, 220, 300);
 
     this.projectilePool = new ObjectPool<Projectile>(() => {
       return new Projectile(
         this.particles,
         this.audio
       );
-    }, 150);
+    }, 150, 400);
 
     this.pickupPool = new ObjectPool<Pickup>(() => {
       return new Pickup();
-    }, 100);
+    }, 100, 200);
 
     this.gravityCrystalPool = new ObjectPool<GravityCrystal>(() => {
       return new GravityCrystal(
@@ -139,11 +153,11 @@ export class Engine {
         this.particles,
         this.audio
       );
-    }, 10);
+    }, 10, 20);
 
     this.hud = new HUD();
     this.menuSystem = new MenuSystem(
-      () => this.startGame(),
+      (shipClass) => this.startGame(shipClass),
       () => this.audio.toggleMute(),
       (enabled) => {
         this.renderPipeline.bloomPass.enabled = enabled;
@@ -154,14 +168,14 @@ export class Engine {
   }
 
   private getWaveConfig(wave: number): WaveConfig {
-    if (wave === 1) return { runners: 20, spitters: 0, brutes: 0 };
-    if (wave === 2) return { runners: 30, spitters: 8, brutes: 0 };
-    if (wave === 3) return { runners: 35, spitters: 12, brutes: 4 };
-    if (wave === 4) return { runners: 45, spitters: 18, brutes: 8 };
-    return { runners: 10, spitters: 5, brutes: 2, isBossWave: true };
+    if (wave === 1) return { runners: 30, spitters: 0, brutes: 0 };
+    if (wave === 2) return { runners: 35, spitters: 10, brutes: 0 };
+    if (wave === 3) return { runners: 40, spitters: 15, brutes: 5 };
+    if (wave === 4) return { runners: 50, spitters: 20, brutes: 10 };
+    return { runners: 15, spitters: 8, brutes: 4, isBossWave: true };
   }
 
-  private startGame(): void {
+  private startGame(shipClass: ShipClass = 'VANGUARD'): void {
     this.score = 0;
     this.wave = 1;
     this.kills = 0;
@@ -170,6 +184,8 @@ export class Engine {
     this.comboCount = 0;
     this.comboTimer = 0;
     this.comboMult = 1;
+    this.activeRift = null;
+    this.riftTimer = 0;
     this.isPausedForUpgrade = false;
     this.isIntermission = false;
 
@@ -181,9 +197,10 @@ export class Engine {
     this.boss.deactivate();
     this.instancedProjectiles.hideAll();
     this.instancedPickups.hideAll();
+
+    this.player.setShipClass(shipClass);
     this.player.resetStats();
 
-    // Apply Meta-Progression Permanent Upgrades
     const meta = this.menuSystem.metaUpgrades;
     if (meta.speedLevel > 0) {
       this.player.moveSpeed += this.player.moveSpeed * (meta.speedLevel * 0.05);
@@ -195,12 +212,29 @@ export class Engine {
 
     this.renderPipeline.setBossTheme(false);
     this.hud.showBossHealthBar(false);
+    this.hud.resetOnboarding();
 
     this.setupWave(1);
     this.audio.playWaveStart();
     this.audio.startBackgroundMusic();
     this.lastTime = performance.now();
     this.isPlaying = true;
+  }
+
+  private triggerRiftEvent(): void {
+    const rifts: RiftType[] = ['OVERCLOCK', 'GRAVITY_SURGE', 'BLOODLUST'];
+    this.activeRift = rifts[Math.floor(Math.random() * rifts.length)];
+    this.riftTimer = 30.0;
+    this.audio.playExplosion();
+    this.cameraJuice.addTrauma(0.5);
+
+    if (this.activeRift === 'OVERCLOCK') {
+      this.hud.showToast('⚡ ANOMALY: OVERCLOCK RIFT! (2X FIRE RATE / +25% TAKEN DMG)');
+    } else if (this.activeRift === 'GRAVITY_SURGE') {
+      this.hud.showToast('🌀 ANOMALY: GRAVITY SURGE! (-20% SPEED / 2X XP DROPS)');
+    } else if (this.activeRift === 'BLOODLUST') {
+      this.hud.showToast('🔥 ANOMALY: NEON BLOODLUST! (-60% DASH CD / +15 HP REGEN KILLS)');
+    }
   }
 
   private setupWave(wave: number): void {
@@ -211,6 +245,19 @@ export class Engine {
     this.isBossWave = !!config.isBossWave;
     this.isIntermission = false;
     this.hud.showIntermission(false);
+
+    this.audio.setWaveIntensity(wave);
+
+    let biome: BiomeType = 'NEON_GRID';
+    if (wave === 3 || wave === 4) biome = 'VOLCANO_RED';
+    else if (wave >= 5 && !this.isBossWave) biome = 'TOXIC_WASTELAND';
+    this.renderPipeline.setBiome(biome);
+
+    if (wave % 2 === 0 && !this.isBossWave) {
+      this.triggerRiftEvent();
+    } else {
+      this.activeRift = null;
+    }
 
     this.gravityCrystalPool.releaseAll();
     for (let i = 0; i < 3; i++) {
@@ -260,7 +307,7 @@ export class Engine {
   }
 
   private handleEnemyDeath(enemy: Enemy): void {
-    // Dynamic Combo Counter & Multipliers
+    this.hitStopTimer = 0.030;
     this.comboTimer = 2.5;
     this.comboCount++;
     this.audio.playComboKill(this.comboCount);
@@ -270,20 +317,24 @@ export class Engine {
     this.kills++;
     this.player.addUltCharge(6);
 
-    // Multi-Kill Popups
+    if (this.activeRift === 'BLOODLUST') {
+      this.player.heal(15);
+    }
+
     if (this.comboCount === 2) this.hud.showMultiKillPopup('DOUBLE KILL!');
     else if (this.comboCount === 3) this.hud.showMultiKillPopup('TRIPLE KILL!');
     else if (this.comboCount === 5) this.hud.showMultiKillPopup('OVERKILL!');
-    else if (this.comboCount === 10) this.hud.showMultiKillPopup('SWARM EXTINCTION!');
+    else if (this.comboCount === 10) this.hud.showMultiKillPopup('ZOMBIE EXTINCTION!');
 
-    this.particles.emitDebris(enemy.group.position, 14, (enemy.type === EnemyType.BRUTE ? 0x9900ff : 0xff0055));
+    this.particles.emitDebris(enemy.group.position, 14, 0x800020);
     this.cameraJuice.addTrauma(enemy.type === EnemyType.BRUTE ? 0.4 : 0.2);
 
     const rand = Math.random();
     if (rand < 0.15) {
       this.pickupPool.get(enemy.group.position, PickupType.HEALTH_PACK, 30);
     } else {
-      const xpVal = (enemy.type === EnemyType.BRUTE) ? 45 : (enemy.type === EnemyType.SPITTER) ? 25 : 15;
+      let xpVal = (enemy.type === EnemyType.BRUTE) ? 45 : (enemy.type === EnemyType.SPITTER) ? 25 : 15;
+      if (this.activeRift === 'GRAVITY_SURGE') xpVal *= 2;
       this.pickupPool.get(enemy.group.position, PickupType.XP_ORB, xpVal);
     }
   }
@@ -302,7 +353,7 @@ export class Engine {
 
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
-      if (!e.active) continue;
+      if (!e || !e.active) continue;
 
       const ePos = e.position;
       const dx = ePos.x - playerPos.x;
@@ -355,7 +406,9 @@ export class Engine {
 
   private firePlayerPrimary(): void {
     if (this.player.primaryCooldown > 0) return;
-    this.player.primaryCooldown = 0.10 * this.player.fireRateMultiplier;
+
+    let rateMult = this.player.fireRateMultiplier;
+    if (this.activeRift === 'OVERCLOCK') rateMult *= 0.5;
 
     const muzzle = this.player.getWeaponMuzzlePos();
     const aim = this.input.aimPoint;
@@ -363,26 +416,48 @@ export class Engine {
     tempFireDir.y = 0;
     if (tempFireDir.lengthSq() > 0) tempFireDir.normalize();
 
-    // Critical Hit calculation from meta upgrades
-    let damage = this.player.laserDamage;
-    if (this.menuSystem.metaUpgrades.critLevel > 0 && Math.random() < (this.menuSystem.metaUpgrades.critLevel * 0.05)) {
-      damage *= 2;
-    }
+    this.player.triggerRecoil();
 
-    this.projectilePool.get(muzzle, tempFireDir, 58, ProjectileType.PLAYER_LASER, damage);
+    try {
+      if (this.player.currentWeaponSlot === 1) {
+        // Slot 1: Assault Rifle - fast cadence, light vibration
+        this.player.primaryCooldown = 0.10 * rateMult;
+        this.cameraJuice.addTrauma(0.08);
+        this.projectilePool.get(muzzle, tempFireDir, 62, ProjectileType.PLAYER_LASER, 30);
+      } else if (this.player.currentWeaponSlot === 2) {
+        // Slot 2: Shotgun (5-Pellet Cone Spread) - heavy blast
+        this.player.primaryCooldown = 0.70 * rateMult;
+        this.cameraJuice.addTrauma(0.35);
+        this.audio.playShotgunBlast();
+        const angles = [-0.22, -0.11, 0, 0.11, 0.22];
+        for (let i = 0; i < angles.length; i++) {
+          const spreadDir = tempFireDir.clone().applyAxisAngle(tempUpAxis, angles[i]);
+          this.projectilePool.get(muzzle, spreadDir, 48, ProjectileType.PLAYER_LASER, 18);
+        }
+      } else if (this.player.currentWeaponSlot === 3) {
+        // Slot 3: Grenade Launcher (AOE Blast)
+        this.player.primaryCooldown = 1.20 * rateMult;
+        this.cameraJuice.addTrauma(0.45);
+        this.projectilePool.get(muzzle, tempFireDir, 32, ProjectileType.PLAYER_MISSILE, 180);
+      }
+    } catch (err) {
+      console.error('Error firing primary weapon:', err);
+    }
   }
 
   private firePlayerSecondary(): void {
     if (this.player.secondaryCooldown > 0) return;
     this.player.secondaryCooldown = 3.5;
 
+    this.player.triggerRecoil();
+
     const muzzle = this.player.getWeaponMuzzlePos();
     const aim = this.input.aimPoint;
     tempFireDir.copy(aim).sub(muzzle);
     tempFireDir.y = 0;
     if (tempFireDir.lengthSq() > 0) tempFireDir.normalize();
 
-    this.cameraJuice.addTrauma(0.25);
+    this.cameraJuice.addTrauma(0.35);
     this.projectilePool.get(muzzle, tempFireDir, 35, ProjectileType.PLAYER_MISSILE, this.player.missileDamage);
   }
 
@@ -394,14 +469,14 @@ export class Engine {
 
     for (let i = 0; i < activeBullets.length; i++) {
       const b = activeBullets[i];
-      if (!b.active) continue;
+      if (!b || !b.active) continue;
 
       const bPos = b.position;
 
       if (b.type === ProjectileType.PLAYER_LASER || b.type === ProjectileType.PLAYER_MISSILE) {
         for (let c = 0; c < activeCrystals.length; c++) {
           const crystal = activeCrystals[c];
-          if (!crystal.active || crystal.isTriggered) continue;
+          if (!crystal || !crystal.active || crystal.isTriggered) continue;
 
           const cPos = crystal.position;
           const cdx = bPos.x - cPos.x;
@@ -442,7 +517,7 @@ export class Engine {
 
         for (let j = 0; j < nearbyEnemies.length; j++) {
           const e = nearbyEnemies[j];
-          if (!e.active) continue;
+          if (!e || !e.active) continue;
 
           const ePos = e.position;
           const dx = bPos.x - ePos.x;
@@ -453,16 +528,22 @@ export class Engine {
 
           if (distSq < hitRadiusSq) {
             this.particles.emitDamageText(ePos, b.isAOE);
+            this.audio.playBulletImpact();
+
+            if (this.player.currentWeaponSlot === 2) {
+              const dist = Math.sqrt(distSq) || 0.1;
+              e.velocity.x += (-dx / dist) * 9.6;
+              e.velocity.z += (-dz / dist) * 9.6;
+            }
 
             if (b.isAOE) {
               b.explode(bPos);
-              this.hitStopTimer = 0.025;
               this.cameraJuice.addTrauma(0.5);
               const aoeRadiusSq = this.player.missileAOERadius * this.player.missileAOERadius;
 
               for (let k = 0; k < nearbyEnemies.length; k++) {
                 const nearE = nearbyEnemies[k];
-                if (nearE.active) {
+                if (nearE && nearE.active) {
                   const nPos = nearE.position;
                   const ndx = bPos.x - nPos.x;
                   const ndz = bPos.z - nPos.z;
@@ -489,7 +570,10 @@ export class Engine {
         const dz = bPos.z - playerPos.z;
         if ((dx * dx + dz * dz) < 1.69) {
           b.explode(bPos);
-          this.player.takeDamage(20);
+
+          let dmg = 20;
+          if (this.activeRift === 'OVERCLOCK') dmg *= 1.25;
+          this.player.takeDamage(dmg);
           this.cameraJuice.addTrauma(0.4);
         }
       }
@@ -500,14 +584,16 @@ export class Engine {
       const bdx = bossPos.x - playerPos.x;
       const bdz = bossPos.z - playerPos.z;
       if ((bdx * bdx + bdz * bdz) < (this.boss.radius + 1.0) * (this.boss.radius + 1.0)) {
-        this.player.takeDamage(25);
+        let dmg = 25;
+        if (this.activeRift === 'OVERCLOCK') dmg *= 1.25;
+        this.player.takeDamage(dmg);
         this.cameraJuice.addTrauma(0.6);
       }
     }
 
     for (let i = 0; i < activeEnemies.length; i++) {
       const e = activeEnemies[i];
-      if (!e.active) continue;
+      if (!e || !e.active) continue;
 
       const ePos = e.position;
       const dx = ePos.x - playerPos.x;
@@ -516,7 +602,9 @@ export class Engine {
       const minRadiusSq = (e.radius + 0.7) * (e.radius + 0.7);
 
       if (distSq < minRadiusSq) {
-        this.player.takeDamage(12 * (e.type === EnemyType.BRUTE ? 2 : 1));
+        let dmg = 12 * (e.type === EnemyType.BRUTE ? 2 : 1);
+        if (this.activeRift === 'OVERCLOCK') dmg *= 1.25;
+        this.player.takeDamage(dmg);
         this.cameraJuice.addTrauma(0.35);
         ArcadePhysics.resolveSoftOverlap(e.position, e.velocity, playerPos, e.radius, this.player.radius, 16.0);
       }
@@ -530,7 +618,7 @@ export class Engine {
 
     for (let i = 0; i < activePickups.length; i++) {
       const p = activePickups[i];
-      if (!p.active) continue;
+      if (!p || !p.active) continue;
 
       p.update(delta);
 
@@ -569,12 +657,37 @@ export class Engine {
       return;
     }
 
-    // Combo Timer Decay
+    if (this.input.justMuted) {
+      const isEnabled = this.audio.toggleMute();
+      this.hud.showToast(isEnabled ? '🔊 AUDIO: UNMUTED' : '🔇 AUDIO: MUTED');
+    }
+
+    if (this.input.justRestarted && !this.isPlaying) {
+      this.menuSystem.showStartMenu();
+    }
+
+    if (this.input.justToggledPause && this.isPlaying) {
+      this.isPausedForUpgrade = !this.isPausedForUpgrade;
+      if (this.isPausedForUpgrade) {
+        this.menuSystem.showStartMenu();
+      } else {
+        this.lastTime = performance.now();
+      }
+    }
+
     if (this.comboTimer > 0) {
       this.comboTimer -= delta;
       if (this.comboTimer <= 0) {
         this.comboCount = 0;
         this.comboMult = 1;
+      }
+    }
+
+    if (this.riftTimer > 0) {
+      this.riftTimer -= delta;
+      if (this.riftTimer <= 0) {
+        this.activeRift = null;
+        this.hud.showToast('✨ ANOMALY RIFT CLOSED');
       }
     }
 
@@ -586,13 +699,13 @@ export class Engine {
 
       this.spatialGrid.clear();
       for (let i = 0; i < activeEnemies.length; i++) {
-        this.spatialGrid.insert(activeEnemies[i]);
+        if (activeEnemies[i]) this.spatialGrid.insert(activeEnemies[i]);
       }
 
       const hasRemainingToSpawn = (this.runnersToSpawn > 0 || this.spittersToSpawn > 0 || this.brutesToSpawn > 0);
       if (hasRemainingToSpawn && activeEnemies.length < 180) {
         this.spawnTimer += delta;
-        if (this.spawnTimer >= 0.05) {
+        if (this.spawnTimer >= 0.035) {
           this.spawnTimer = 0;
           this.spawnWaveEnemy();
         }
@@ -629,7 +742,9 @@ export class Engine {
 
       const activeCrystals = this.gravityCrystalPool.getActiveItems();
       for (let i = 0; i < activeCrystals.length; i++) {
-        activeCrystals[i].update(delta, activeEnemies, (deadE) => this.handleEnemyDeath(deadE));
+        if (activeCrystals[i]) {
+          activeCrystals[i].update(delta, activeEnemies, (deadE) => this.handleEnemyDeath(deadE));
+        }
       }
 
       if (this.boss.active) {
@@ -649,14 +764,16 @@ export class Engine {
       }
 
       for (let i = 0; i < activeEnemies.length; i++) {
-        activeEnemies[i].updateAI(delta, this.frameCount, playerPos, this.spatialGrid, (origin, dir) => {
-          this.projectilePool.get(origin, dir, 22, ProjectileType.ENEMY_PLASMA, 15);
-        });
+        if (activeEnemies[i]) {
+          activeEnemies[i].updateAI(delta, this.frameCount, playerPos, this.spatialGrid, (origin, dir) => {
+            this.projectilePool.get(origin, dir, 22, ProjectileType.ENEMY_PLASMA, 15);
+          });
+        }
       }
 
       const activeBullets = this.projectilePool.getActiveItems();
       for (let i = 0; i < activeBullets.length; i++) {
-        activeBullets[i].update(delta);
+        if (activeBullets[i]) activeBullets[i].update(delta);
       }
 
       this.instancedProjectiles.renderProjectiles(activeBullets);
@@ -691,6 +808,7 @@ export class Engine {
       );
 
       this.hud.drawMinimap(delta, { x: playerPos.x, z: playerPos.z }, activeEnemies);
+      this.hud.updateWeaponSlot(this.player.currentWeaponSlot);
     }
 
     this.cameraJuice.update(delta, playerPos);

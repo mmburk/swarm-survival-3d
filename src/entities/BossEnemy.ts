@@ -3,23 +3,30 @@ import { ParticleSystem } from '../graphics/ParticleSystem';
 import { AudioManager } from '../core/AudioManager';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
 
+export type BossArchetype = 'ANNIHILATOR' | 'HIVEMIND' | 'PHANTOM';
+
+const tempPlayerDir = new THREE.Vector3();
+const tempRingDir = new THREE.Vector3();
+
 export class BossEnemy {
   public active: boolean = false;
   public group: THREE.Group;
   public position: THREE.Vector3 = new THREE.Vector3();
-  public velocity: THREE.Vector3 = new THREE.Vector3();
+  public radius: number = 2.8;
+
+  public archetype: BossArchetype = 'ANNIHILATOR';
   public health: number = 1200;
   public maxHealth: number = 1200;
-  public radius: number = 3.2;
-  public phase: number = 1;
 
-  private meshCore!: THREE.Mesh;
-  private meshRing!: THREE.Mesh;
-  private coreMat!: THREE.MeshStandardMaterial;
+  private phase: number = 1;
   private attackTimer: number = 0;
-  private chargeTimer: number = 0;
-  private isCharging: boolean = false;
-  private chargeDir: THREE.Vector3 = new THREE.Vector3();
+  private laserAngle: number = 0;
+  private teleportTimer: number = 0;
+
+  private bodyMesh!: THREE.Mesh;
+  private eyeMesh!: THREE.Mesh;
+  private mat!: THREE.MeshStandardMaterial;
+  private eyeMat!: THREE.MeshStandardMaterial;
 
   private scene: THREE.Scene;
   private particles: ParticleSystem;
@@ -38,166 +45,164 @@ export class BossEnemy {
     this.terrain = terrain;
 
     this.group = new THREE.Group();
-    this.group.visible = false;
-
     this.createModel();
     this.scene.add(this.group);
   }
 
   private createModel(): void {
-    const coreGeo = new THREE.IcosahedronGeometry(2.8, 1);
-    this.coreMat = new THREE.MeshStandardMaterial({
-      color: 0xff0033,
-      emissive: 0xff0022,
+    const geo = new THREE.DodecahedronGeometry(2.8, 0);
+    this.mat = new THREE.MeshStandardMaterial({
+      color: 0xaa0033,
+      emissive: 0xff0044,
       emissiveIntensity: 0.8,
-      flatShading: true,
-      roughness: 0.3,
-      metalness: 0.8
+      metalness: 0.9,
+      roughness: 0.2,
+      flatShading: true
     });
-    this.meshCore = new THREE.Mesh(coreGeo, this.coreMat);
-    this.meshCore.castShadow = true;
-    this.group.add(this.meshCore);
+    this.bodyMesh = new THREE.Mesh(geo, this.mat);
+    this.bodyMesh.castShadow = true;
+    this.group.add(this.bodyMesh);
 
-    const ringGeo = new THREE.TorusGeometry(4.2, 0.4, 8, 16);
-    const ringMat = new THREE.MeshStandardMaterial({
-      color: 0xffaa00,
-      emissive: 0xff4400,
-      emissiveIntensity: 0.6,
-      flatShading: true,
-      metalness: 0.9
+    const eyeGeo = new THREE.SphereGeometry(1.2, 16, 16);
+    this.eyeMat = new THREE.MeshStandardMaterial({
+      color: 0xffff00,
+      emissive: 0xffff00,
+      emissiveIntensity: 2.0,
+      toneMapped: false
     });
-    this.meshRing = new THREE.Mesh(ringGeo, ringMat);
-    this.meshRing.rotation.x = Math.PI / 3;
-    this.meshRing.castShadow = true;
-    this.group.add(this.meshRing);
+    this.eyeMesh = new THREE.Mesh(eyeGeo, this.eyeMat);
+    this.eyeMesh.position.set(0, 0, 2.0);
+    this.group.add(this.eyeMesh);
   }
 
   public spawn(spawnPos: THREE.Vector3): void {
-    this.health = 1200;
+    const archetypes: BossArchetype[] = ['ANNIHILATOR', 'HIVEMIND', 'PHANTOM'];
+    this.archetype = archetypes[Math.floor(Math.random() * archetypes.length)];
+
     this.maxHealth = 1200;
+    this.health = this.maxHealth;
     this.phase = 1;
     this.attackTimer = 0;
-    this.chargeTimer = 0;
-    this.isCharging = false;
+    this.teleportTimer = 0;
 
-    this.coreMat.color.setHex(0xff0033);
-    this.coreMat.emissive.setHex(0xff0022);
-    this.coreMat.emissiveIntensity = 0.8;
+    if (this.archetype === 'HIVEMIND') {
+      this.mat.color.setHex(0x9900ff);
+      this.eyeMat.color.setHex(0x00ffff);
+      this.eyeMat.emissive.setHex(0x00ffff);
+    } else if (this.archetype === 'PHANTOM') {
+      this.mat.color.setHex(0x00ffaa);
+      this.eyeMat.color.setHex(0xffaa00);
+      this.eyeMat.emissive.setHex(0xffaa00);
+    } else {
+      this.mat.color.setHex(0xaa0033);
+      this.eyeMat.color.setHex(0xffff00);
+      this.eyeMat.emissive.setHex(0xffff00);
+    }
 
     this.position.copy(spawnPos);
-    this.velocity.set(0, 0, 0);
     this.group.position.copy(spawnPos);
     this.group.visible = true;
     this.active = true;
 
     this.audio.playExplosion();
-    this.particles.emitBurst(spawnPos, 50, 0xff0033, 14, 1.2);
+    this.particles.emitBurst(this.position, 60, 0xff0044, 15, 1.2);
   }
 
-  public takeDamage(damage: number, impactPoint?: THREE.Vector3): boolean {
+  public takeDamage(damage: number, hitPoint: THREE.Vector3): boolean {
     if (!this.active) return false;
 
     this.health -= damage;
-
-    // GPU-friendly Hit Flash: boost emissive intensity scalar
-    this.coreMat.emissiveIntensity = 3.0;
-
-    if (impactPoint) {
-      this.particles.emitBurst(impactPoint, 10, 0xff0044, 8, 0.4);
-    }
+    this.audio.playPlayerHurt();
+    this.particles.emitBurst(hitPoint, 8, 0xff0044, 8, 0.4);
 
     if (this.health <= this.maxHealth * 0.5 && this.phase === 1) {
       this.phase = 2;
-      this.coreMat.color.setHex(0xffaa00);
-      this.coreMat.emissive.setHex(0xffaa00);
       this.audio.playExplosion();
-      this.particles.emitBurst(this.position, 60, 0xffaa00, 16, 1.0);
+      this.particles.emitBurst(this.position, 50, 0xffff00, 16, 1.0);
     }
 
     if (this.health <= 0) {
-      this.die();
-      return true;
+      this.deactivate();
+      return true; // Defeated
     }
     return false;
-  }
-
-  private die(): void {
-    this.audio.playExplosion();
-    this.particles.emitBurst(this.position, 120, 0xff0033, 18, 1.8);
-    this.particles.emitDebris(this.position, 40, 0xffaa00);
-    this.deactivate();
-  }
-
-  public deactivate(): void {
-    this.active = false;
-    this.group.visible = false;
   }
 
   public update(
     delta: number,
     playerPos: THREE.Vector3,
-    fireRadialCallback: (origin: THREE.Vector3, dir: THREE.Vector3) => void,
-    spawnMinionsCallback: (pos: THREE.Vector3) => void
+    onFirePlasma: (origin: THREE.Vector3, dir: THREE.Vector3) => void,
+    onSummonMinions: (pos: THREE.Vector3) => void
   ): void {
     if (!this.active) return;
 
-    // Smoothly decay hit flash emissive intensity back to base (0.8)
-    if (this.coreMat.emissiveIntensity > 0.8) {
-      this.coreMat.emissiveIntensity = THREE.MathUtils.lerp(this.coreMat.emissiveIntensity, 0.8, delta * 20);
-    }
-
-    this.meshRing.rotation.z += delta * 1.5;
-    this.meshCore.rotation.y += delta * 0.8;
-
-    const dirToPlayer = playerPos.clone().sub(this.position);
-    dirToPlayer.y = 0;
-    const distToPlayer = dirToPlayer.length();
-    if (distToPlayer > 0.001) dirToPlayer.normalize();
-
-    if (this.isCharging) {
-      this.chargeTimer -= delta;
-      this.position.x += this.chargeDir.x * delta * 24;
-      this.position.z += this.chargeDir.z * delta * 24;
-      this.particles.emitTrail(this.position, 0xffaa00);
-
-      if (this.chargeTimer <= 0) {
-        this.isCharging = false;
-      }
-    } else {
-      const speed = this.phase === 2 ? 6.5 : 4.5;
-      this.position.x += dirToPlayer.x * delta * speed;
-      this.position.z += dirToPlayer.z * delta * speed;
-    }
-
-    const terrainY = this.terrain.getHeightAt(this.position.x, this.position.z) + 3.0;
-    this.position.y = THREE.MathUtils.lerp(this.position.y, terrainY, delta * 4);
-    this.group.position.copy(this.position);
-
+    this.bodyMesh.rotation.y += delta * 1.5;
     this.attackTimer += delta;
 
-    if (this.phase === 1) {
-      if (this.attackTimer >= 3.2) {
+    if (this.archetype === 'HIVEMIND') {
+      // HIVEMIND: Stationary turret with rotating linear laser and minion spawns
+      this.laserAngle += delta * 2.0;
+      if (this.attackTimer >= 0.15) {
         this.attackTimer = 0;
-        const ringProjectiles = 12;
-        for (let i = 0; i < ringProjectiles; i++) {
-          const angle = (i / ringProjectiles) * Math.PI * 2;
-          const radialDir = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
-          fireRadialCallback(this.position.clone(), radialDir);
-        }
+        tempRingDir.set(Math.cos(this.laserAngle), 0, Math.sin(this.laserAngle));
+        onFirePlasma(this.position, tempRingDir);
+      }
+      if (Math.random() < 0.005) {
+        onSummonMinions(this.position);
+      }
+    } else if (this.archetype === 'PHANTOM') {
+      // PHANTOM: Teleports across XZ plane leaving phantom pulses
+      this.teleportTimer += delta;
+      if (this.teleportTimer >= 3.5) {
+        this.teleportTimer = 0;
+        this.audio.playDash();
+        this.particles.emitBurst(this.position, 30, 0x00ffaa, 10, 0.6);
+
+        // Teleport near player
+        const angle = Math.random() * Math.PI * 2;
+        this.position.x = playerPos.x + Math.cos(angle) * 14;
+        this.position.z = playerPos.z + Math.sin(angle) * 14;
+        this.position.y = this.terrain.getHeightAt(this.position.x, this.position.z) + 2.5;
+        this.group.position.copy(this.position);
+
+        this.particles.emitBurst(this.position, 30, 0x00ffaa, 10, 0.6);
+      }
+
+      if (this.attackTimer >= 0.4) {
+        this.attackTimer = 0;
+        tempPlayerDir.copy(playerPos).sub(this.position);
+        tempPlayerDir.y = 0;
+        if (tempPlayerDir.lengthSq() > 0) tempPlayerDir.normalize();
+        onFirePlasma(this.position, tempPlayerDir);
       }
     } else {
-      if (this.attackTimer >= 4.0) {
-        this.attackTimer = 0;
+      // ANNIHILATOR: Radial ring blasts and direct charges
+      const speed = (this.phase === 2) ? 11 : 7;
+      tempPlayerDir.copy(playerPos).sub(this.position);
+      tempPlayerDir.y = 0;
+      if (tempPlayerDir.lengthSq() > 0) tempPlayerDir.normalize();
 
-        if (Math.random() < 0.5) {
-          this.isCharging = true;
-          this.chargeTimer = 1.0;
-          this.chargeDir.copy(dirToPlayer);
-        } else {
-          spawnMinionsCallback(this.position);
-          this.particles.emitBurst(this.position, 30, 0xffaa00, 10, 0.6);
+      this.position.x += tempPlayerDir.x * speed * delta;
+      this.position.z += tempPlayerDir.z * speed * delta;
+      this.position.y = this.terrain.getHeightAt(this.position.x, this.position.z) + 2.5;
+      this.group.position.copy(this.position);
+      this.group.lookAt(playerPos.x, this.position.y, playerPos.z);
+
+      const fireInterval = (this.phase === 2) ? 1.4 : 2.2;
+      if (this.attackTimer >= fireInterval) {
+        this.attackTimer = 0;
+        const count = 12;
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2;
+          tempRingDir.set(Math.cos(angle), 0, Math.sin(angle));
+          onFirePlasma(this.position, tempRingDir);
         }
       }
     }
+  }
+
+  public deactivate(): void {
+    this.active = false;
+    this.group.visible = false;
   }
 }

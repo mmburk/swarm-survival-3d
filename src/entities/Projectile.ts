@@ -14,6 +14,7 @@ export type ProjectileType = typeof ProjectileType[keyof typeof ProjectileType];
 export class Projectile implements IPoolable {
   public active: boolean = false;
   public position: THREE.Vector3 = new THREE.Vector3();
+  public startPosition: THREE.Vector3 = new THREE.Vector3();
   public velocity: THREE.Vector3 = new THREE.Vector3();
   public quaternion: THREE.Quaternion = new THREE.Quaternion();
   public type: ProjectileType = ProjectileType.PLAYER_LASER;
@@ -21,7 +22,8 @@ export class Projectile implements IPoolable {
   public isAOE: boolean = false;
 
   private lifeTime: number = 0;
-  private maxLifeTime: number = 2.5;
+  private maxLifeTime: number = 0.7; // Strict 0.7s lifetime limit
+  private maxRange: number = 35.0; // Strict 35 units max range limit
 
   private particles: ParticleSystem;
   private audio: AudioManager;
@@ -43,24 +45,27 @@ export class Projectile implements IPoolable {
     this.lifeTime = 0;
     this.isAOE = (type === ProjectileType.PLAYER_MISSILE);
 
-    // Hades-Style: Flatten direction vector Y component to 0
     const flatDir = direction.clone();
     flatDir.y = 0;
     if (flatDir.lengthSq() > 0) flatDir.normalize();
 
     this.position.copy(origin);
+    this.startPosition.copy(origin);
     this.velocity.copy(flatDir).multiplyScalar(speed);
-    this.velocity.y = 0; // Strictly zero Y-velocity
+    this.velocity.y = 0;
     this.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), flatDir);
 
     if (type === ProjectileType.PLAYER_LASER) {
-      this.maxLifeTime = 1.8;
+      this.maxLifeTime = 0.65;
+      this.maxRange = 35.0;
       this.audio.playLaser();
     } else if (type === ProjectileType.PLAYER_MISSILE) {
-      this.maxLifeTime = 2.5;
+      this.maxLifeTime = 1.1;
+      this.maxRange = 40.0;
       this.audio.playPlasmaBlast();
     } else {
-      this.maxLifeTime = 3.0;
+      this.maxLifeTime = 1.8;
+      this.maxRange = 45.0;
     }
   }
 
@@ -68,18 +73,26 @@ export class Projectile implements IPoolable {
     if (!this.active) return;
 
     this.lifeTime += delta;
-    if (this.lifeTime >= this.maxLifeTime) {
-      this.deactivate();
+    const distTraveledSq = this.position.distanceToSquared(this.startPosition);
+
+    // Strict Max Range & Lifetime Check
+    if (this.lifeTime >= this.maxLifeTime || distTraveledSq >= this.maxRange * this.maxRange) {
+      this.dissipate();
       return;
     }
 
-    // Move purely in 2D XZ space (velocity.y = 0)
     this.position.x += this.velocity.x * delta;
     this.position.z += this.velocity.z * delta;
 
     const colorHex = (this.type === ProjectileType.PLAYER_LASER) ? 0x00ffff :
                      (this.type === ProjectileType.PLAYER_MISSILE) ? 0xffaa00 : 0xff0055;
     this.particles.emitTrail(this.position, colorHex);
+  }
+
+  public dissipate(): void {
+    const colorHex = (this.type === ProjectileType.PLAYER_LASER) ? 0x00ffff : 0xffaa00;
+    this.particles.emitBurst(this.position, 6, colorHex, 4, 0.2);
+    this.deactivate();
   }
 
   public explode(hitPoint: THREE.Vector3): void {

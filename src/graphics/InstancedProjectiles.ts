@@ -13,7 +13,6 @@ export class InstancedProjectiles {
   constructor(scene: THREE.Scene) {
     this.scene = scene;
 
-    // 1. High Visibility Player Pulse Laser Mesh
     const laserGeo = new THREE.CylinderGeometry(0.25, 0.25, 2.5, 8);
     laserGeo.rotateX(Math.PI / 2);
     const laserMat = new THREE.MeshBasicMaterial({
@@ -22,10 +21,9 @@ export class InstancedProjectiles {
     });
     this.laserMesh = new THREE.InstancedMesh(laserGeo, laserMat, this.maxCapacity);
     this.laserMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.laserMesh.frustumCulled = false; // CRITICAL: Prevent Three.js frustum culling when origin is offscreen!
+    this.laserMesh.frustumCulled = false;
     this.scene.add(this.laserMesh);
 
-    // 2. High Visibility Missile Mesh
     const missileGeo = new THREE.SphereGeometry(0.7, 12, 12);
     const missileMat = new THREE.MeshBasicMaterial({
       color: 0xffaa00,
@@ -36,7 +34,6 @@ export class InstancedProjectiles {
     this.missileMesh.frustumCulled = false;
     this.scene.add(this.missileMesh);
 
-    // 3. Enemy Plasma Blast Mesh
     const plasmaGeo = new THREE.SphereGeometry(0.5, 10, 10);
     const plasmaMat = new THREE.MeshBasicMaterial({
       color: 0xff0055,
@@ -51,20 +48,6 @@ export class InstancedProjectiles {
   }
 
   public hideAll(): void {
-    this.dummy.position.set(0, -9999, 0);
-    this.dummy.scale.set(0, 0, 0);
-    this.dummy.updateMatrix();
-
-    for (let i = 0; i < this.maxCapacity; i++) {
-      this.laserMesh.setMatrixAt(i, this.dummy.matrix);
-    }
-    for (let i = 0; i < 40; i++) {
-      this.missileMesh.setMatrixAt(i, this.dummy.matrix);
-    }
-    for (let i = 0; i < 100; i++) {
-      this.enemyPlasmaMesh.setMatrixAt(i, this.dummy.matrix);
-    }
-
     this.laserMesh.count = 0;
     this.missileMesh.count = 0;
     this.enemyPlasmaMesh.count = 0;
@@ -86,7 +69,7 @@ export class InstancedProjectiles {
 
     for (let i = 0; i < projectiles.length; i++) {
       const p = projectiles[i];
-      if (!p.active) continue;
+      if (!p || !p.active) continue;
 
       this.dummy.position.copy(p.position);
       this.dummy.quaternion.copy(p.quaternion);
@@ -102,23 +85,12 @@ export class InstancedProjectiles {
       }
     }
 
-    // Hide remaining instances beyond active count
-    this.dummy.position.set(0, -9999, 0);
-    this.dummy.scale.set(0, 0, 0);
-    this.dummy.updateMatrix();
+    this.laserMesh.count = laserIdx;
+    this.missileMesh.count = missileIdx;
+    this.enemyPlasmaMesh.count = plasmaIdx;
 
-    for (let i = laserIdx; i < this.maxCapacity; i++) {
-      this.laserMesh.setMatrixAt(i, this.dummy.matrix);
-    }
-    for (let i = missileIdx; i < 40; i++) {
-      this.missileMesh.setMatrixAt(i, this.dummy.matrix);
-    }
-    for (let i = plasmaIdx; i < 100; i++) {
-      this.enemyPlasmaMesh.setMatrixAt(i, this.dummy.matrix);
-    }
-
-    this.laserMesh.instanceMatrix.needsUpdate = true;
-    this.missileMesh.instanceMatrix.needsUpdate = true;
-    this.enemyPlasmaMesh.instanceMatrix.needsUpdate = true;
+    if (laserIdx > 0) this.laserMesh.instanceMatrix.needsUpdate = true;
+    if (missileIdx > 0) this.missileMesh.instanceMatrix.needsUpdate = true;
+    if (plasmaIdx > 0) this.enemyPlasmaMesh.instanceMatrix.needsUpdate = true;
   }
 }

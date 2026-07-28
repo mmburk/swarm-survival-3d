@@ -4,6 +4,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
+export type BiomeType = 'NEON_GRID' | 'VOLCANO_RED' | 'TOXIC_WASTELAND';
+
 export class RenderPipeline {
   public scene: THREE.Scene;
   public camera: THREE.PerspectiveCamera;
@@ -11,24 +13,20 @@ export class RenderPipeline {
   public composer: EffectComposer;
   public bloomPass: UnrealBloomPass;
   public dirLight: THREE.DirectionalLight;
-  private fog: THREE.FogExp2;
-
-  private targetBgColor: THREE.Color = new THREE.Color(0x050b14);
-  private targetLightColor: THREE.Color = new THREE.Color(0xffffff);
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x050b14);
-    this.fog = new THREE.FogExp2(0x050b14, 0.012);
-    this.scene.fog = this.fog;
+    // Soft Dark Slate Gray Ambient Background
+    this.scene.background = new THREE.Color(0x12151e);
+    this.scene.fog = new THREE.FogExp2(0x12151e, 0.008);
 
     this.camera = new THREE.PerspectiveCamera(
-      60,
+      55,
       window.innerWidth / window.innerHeight,
       0.1,
       300
     );
-    this.camera.position.set(0, 25, 25);
+    this.camera.position.set(0, 20, 20);
     this.camera.lookAt(0, 0, 0);
 
     this.renderer = new THREE.WebGLRenderer({
@@ -37,37 +35,26 @@ export class RenderPipeline {
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.0;
 
     container.appendChild(this.renderer.domElement);
 
-    const hemiLight = new THREE.HemisphereLight(0x00f0ff, 0x050515, 0.65);
+    // Soft Balanced Sci-Fi Ambient & Directional Lighting
+    const hemiLight = new THREE.HemisphereLight(0x223344, 0x111622, 1.2);
     this.scene.add(hemiLight);
 
-    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    this.dirLight.position.set(30, 50, 30);
-    this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = 1024;
-    this.dirLight.shadow.mapSize.height = 1024;
-    this.dirLight.shadow.camera.near = 0.5;
-    this.dirLight.shadow.camera.far = 150;
-    const d = 40;
-    this.dirLight.shadow.camera.left = -d;
-    this.dirLight.shadow.camera.right = d;
-    this.dirLight.shadow.camera.top = d;
-    this.dirLight.shadow.camera.bottom = -d;
-    this.dirLight.shadow.bias = -0.0005;
+    this.dirLight = new THREE.DirectionalLight(0x88ccff, 1.4);
+    this.dirLight.position.set(20, 40, 20);
     this.scene.add(this.dirLight);
 
     const renderPass = new RenderPass(this.scene, this.camera);
+    // Subtle Tasteful Bloom Capped at 0.35
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.5)),
-      0.65,
+      0.35, // Capped bloom strength
       0.4,
-      0.75
+      0.85 // Higher threshold to avoid pixel bleeding
     );
     const outputPass = new OutputPass();
 
@@ -79,13 +66,26 @@ export class RenderPipeline {
     window.addEventListener('resize', () => this.onWindowResize());
   }
 
+  public setBiome(biome: BiomeType): void {
+    if (biome === 'VOLCANO_RED') {
+      this.scene.background = new THREE.Color(0x1c1214);
+      this.scene.fog = new THREE.FogExp2(0x1c1214, 0.008);
+    } else if (biome === 'TOXIC_WASTELAND') {
+      this.scene.background = new THREE.Color(0x121c17);
+      this.scene.fog = new THREE.FogExp2(0x121c17, 0.008);
+    } else {
+      this.scene.background = new THREE.Color(0x12151e);
+      this.scene.fog = new THREE.FogExp2(0x12151e, 0.008);
+    }
+  }
+
   public setBossTheme(active: boolean): void {
     if (active) {
-      this.targetBgColor.setHex(0x1a0008);
-      this.targetLightColor.setHex(0xff0044);
+      this.scene.background = new THREE.Color(0x1f0a12);
+      this.scene.fog = new THREE.FogExp2(0x1f0a12, 0.01);
     } else {
-      this.targetBgColor.setHex(0x050b14);
-      this.targetLightColor.setHex(0xffffff);
+      this.scene.background = new THREE.Color(0x12151e);
+      this.scene.fog = new THREE.FogExp2(0x12151e, 0.008);
     }
   }
 
@@ -98,12 +98,6 @@ export class RenderPipeline {
   }
 
   public render(): void {
-    if (this.scene.background && this.scene.background instanceof THREE.Color) {
-      this.scene.background.lerp(this.targetBgColor, 0.05);
-    }
-    this.fog.color.lerp(this.targetBgColor, 0.05);
-    this.dirLight.color.lerp(this.targetLightColor, 0.05);
-
     this.composer.render();
   }
 }

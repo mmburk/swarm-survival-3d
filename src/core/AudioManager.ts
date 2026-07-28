@@ -5,6 +5,7 @@ export class AudioManager {
   private bgGain: GainNode | null = null;
   private bgOsc1: OscillatorNode | null = null;
   private bgOsc2: OscillatorNode | null = null;
+  private bgFilter: BiquadFilterNode | null = null;
 
   private beatTime: number = 0;
 
@@ -35,9 +36,17 @@ export class AudioManager {
   }
 
   public getBeatPulse(): number {
-    // Returns 0.0 - 1.0 rhythmic sine pulse for terrain/prop beat pulsing
     this.beatTime += 0.033;
     return (Math.sin(this.beatTime * 8.0) * 0.5 + 0.5);
+  }
+
+  public setWaveIntensity(wave: number): void {
+    if (this.bgFilter && this.bgOsc1 && this.ctx) {
+      const cutoff = Math.min(1200, 300 + wave * 150);
+      const freq = Math.min(220, 110 + wave * 12);
+      this.bgFilter.frequency.exponentialRampToValueAtTime(cutoff, this.ctx.currentTime + 1.0);
+      this.bgOsc1.frequency.exponentialRampToValueAtTime(freq, this.ctx.currentTime + 1.0);
+    }
   }
 
   public startBackgroundMusic(): void {
@@ -58,13 +67,13 @@ export class AudioManager {
       this.bgOsc1.frequency.setValueAtTime(110.0, this.ctx.currentTime);
       this.bgOsc2.frequency.setValueAtTime(55.0, this.ctx.currentTime);
 
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(350, this.ctx.currentTime);
+      this.bgFilter = this.ctx.createBiquadFilter();
+      this.bgFilter.type = 'lowpass';
+      this.bgFilter.frequency.setValueAtTime(350, this.ctx.currentTime);
 
-      this.bgOsc1.connect(filter);
-      this.bgOsc2.connect(filter);
-      filter.connect(this.bgGain);
+      this.bgOsc1.connect(this.bgFilter);
+      this.bgOsc2.connect(this.bgFilter);
+      this.bgFilter.connect(this.bgGain);
       this.bgGain.connect(this.masterGain);
 
       this.bgOsc1.start();
@@ -216,6 +225,52 @@ export class AudioManager {
 
     osc.start();
     osc.stop(this.ctx.currentTime + 0.22);
+  }
+
+  public playShotgunBlast(): void {
+    if (!this.enabled) return;
+    this.initCtx();
+    if (!this.ctx || !this.masterGain) return;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.18);
+
+    gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.18);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.18);
+  }
+
+  public playBulletImpact(): void {
+    if (!this.enabled) return;
+    this.initCtx();
+    if (!this.ctx || !this.masterGain) return;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    const startFreq = 600 + Math.random() * 300;
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(startFreq, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.06);
+
+    gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.06);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.06);
   }
 
   public playPickup(): void {

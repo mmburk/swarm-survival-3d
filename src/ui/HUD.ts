@@ -15,12 +15,18 @@ export class HUD {
   private multkillEl!: HTMLElement;
   private bossBarContainer!: HTMLElement;
   private bossHealthFill!: HTMLElement;
+  private onboardingPrompt!: HTMLElement;
+  private toastEl!: HTMLElement;
   private minimapCanvas!: HTMLCanvasElement;
   private minimapCtx!: CanvasRenderingContext2D;
+  private weaponSlotEls: HTMLElement[] = [];
 
   private uiTimer: number = 0;
   private minimapTimer: number = 0;
   private multkillTimer: number = 0;
+  private toastTimer: number = 0;
+  private onboardingTimer: number = 10.0;
+  private hasDismissedOnboarding: boolean = false;
 
   constructor() {
     this.element = document.createElement('div');
@@ -114,9 +120,45 @@ export class HUD {
           display: none;
           animation: popKill 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
-        @keyframes popKill {
-          from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
-          to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        .toast-banner {
+          position: absolute;
+          top: 130px;
+          right: 20px;
+          background: rgba(6, 14, 28, 0.85);
+          backdrop-filter: blur(10px);
+          border: 1px solid #00ffff;
+          color: #00ffff;
+          font-weight: bold;
+          font-size: 13px;
+          padding: 8px 16px;
+          border-radius: 20px;
+          display: none;
+          box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+        }
+        .onboarding-banner {
+          position: absolute;
+          bottom: 90px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(8, 18, 36, 0.85);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(0, 240, 255, 0.4);
+          border-radius: 30px;
+          padding: 10px 24px;
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          box-shadow: 0 0 25px rgba(0, 240, 255, 0.25);
+          transition: opacity 0.5s ease;
+        }
+        .onboarding-key {
+          background: rgba(0, 240, 255, 0.2);
+          border: 1px solid #00ffff;
+          color: #00ffff;
+          padding: 2px 8px;
+          border-radius: 6px;
+          font-weight: bold;
+          font-size: 11px;
         }
         .intermission-banner {
           position: absolute;
@@ -131,6 +173,9 @@ export class HUD {
           text-align: center;
           display: none;
         }
+        .weapon-slot { opacity: 0.5; transition: all 0.15s ease; }
+        .active-weapon { opacity: 1.0 !important; transform: translateY(-4px); }
+        .active-weapon div:nth-child(2) { box-shadow: 0 0 16px rgba(0,255,255,0.5); }
       </style>
 
       <div class="hud-card" style="position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 8px;">
@@ -178,6 +223,15 @@ export class HUD {
       </div>
 
       <div id="multkill-banner" class="multkill-banner">DOUBLE KILL!</div>
+      <div id="toast-banner" class="toast-banner">🔊 AUDIO: UNMUTED</div>
+
+      <div id="onboarding-prompt" class="onboarding-banner">
+        <div style="font-size: 13px; color: #ccddee;"><span class="onboarding-key">WASD</span> MOVE</div>
+        <div style="font-size: 13px; color: #ccddee;"><span class="onboarding-key">LMB</span> LASER</div>
+        <div style="font-size: 13px; color: #ccddee;"><span class="onboarding-key">RMB</span> MISSILE</div>
+        <div style="font-size: 13px; color: #ccddee;"><span class="onboarding-key">SPACE</span> DASH</div>
+        <div style="font-size: 13px; color: #ccddee;"><span class="onboarding-key">E</span> ULT</div>
+      </div>
 
       <div id="boss-bar-container" style="position: absolute; top: 95px; left: 50%; transform: translateX(-50%); width: 440px; display: none; text-align: center;">
         <div style="font-size: 12px; font-weight: 900; letter-spacing: 2px; color: #ff0044; margin-bottom: 4px;">⚠️ CYBER OVERLORD (BOSS) ⚠️</div>
@@ -191,29 +245,32 @@ export class HUD {
         <div id="intermission-sub" style="font-size: 14px; color: #aaa; margin-top: 6px;">PRESS SPACE TO START NEXT WAVE</div>
       </div>
 
-      <div class="hud-card" style="position: absolute; bottom: 20px; right: 20px; display: flex; gap: 16px; align-items: center;">
-        <div style="text-align: center;">
-          <div style="font-size: 11px; color: #888;">LMB</div>
-          <div style="width: 44px; height: 44px; border: 2px solid #00ffff; border-radius: 8px; display: grid; place-content: center; background: rgba(0,255,255,0.1); font-weight: bold;">⚡</div>
-          <div style="font-size: 10px; color: #00ffff; margin-top: 2px;">LASER</div>
+      <div class="hud-card" style="position: absolute; bottom: 20px; right: 20px; display: flex; gap: 12px; align-items: center;">
+        <div id="wpn-slot-1" class="weapon-slot active-weapon" style="text-align: center;">
+          <div style="font-size: 10px; color: #888; font-weight: bold;">1</div>
+          <div style="width: 48px; height: 48px; border: 2px solid #00ffff; border-radius: 10px; display: grid; place-content: center; background: rgba(0,255,255,0.15); font-size: 18px;">🔫</div>
+          <div style="font-size: 9px; color: #00ffff; margin-top: 2px; font-weight: bold;">RIFLE</div>
         </div>
-        <div style="text-align: center;">
-          <div style="font-size: 11px; color: #888;">RMB</div>
-          <div id="sec-cd-box" style="width: 44px; height: 44px; border: 2px solid #ffaa00; border-radius: 8px; display: grid; place-content: center; background: rgba(255,170,0,0.1); font-weight: bold; position: relative;">
-            💥
-            <div id="sec-cd-overlay" style="position: absolute; inset: 0; background: rgba(0,0,0,0.7); display: none; place-content: center; border-radius: 6px; font-size: 12px;"></div>
-          </div>
-          <div style="font-size: 10px; color: #ffaa00; margin-top: 2px;">MISSILE</div>
+        <div id="wpn-slot-2" class="weapon-slot" style="text-align: center;">
+          <div style="font-size: 10px; color: #888; font-weight: bold;">2</div>
+          <div style="width: 48px; height: 48px; border: 2px solid #555; border-radius: 10px; display: grid; place-content: center; background: rgba(255,255,255,0.05); font-size: 18px;">💥</div>
+          <div style="font-size: 9px; color: #888; margin-top: 2px; font-weight: bold;">SHOTGUN</div>
         </div>
-        <div style="text-align: center;">
-          <div style="font-size: 11px; color: #888;">E</div>
-          <div style="width: 44px; height: 44px; border: 2px solid #ffaa00; border-radius: 8px; display: grid; place-content: center; background: rgba(255,170,0,0.15); font-weight: bold;">🌟</div>
-          <div style="font-size: 10px; color: #ffaa00; margin-top: 2px;">NOVA</div>
+        <div id="wpn-slot-3" class="weapon-slot" style="text-align: center;">
+          <div style="font-size: 10px; color: #888; font-weight: bold;">3</div>
+          <div style="width: 48px; height: 48px; border: 2px solid #555; border-radius: 10px; display: grid; place-content: center; background: rgba(255,255,255,0.05); font-size: 18px;">💣</div>
+          <div style="font-size: 9px; color: #888; margin-top: 2px; font-weight: bold;">GRENADE</div>
         </div>
+        <div style="width: 1px; height: 50px; background: rgba(255,255,255,0.15); margin: 0 4px;"></div>
         <div style="text-align: center;">
-          <div style="font-size: 11px; color: #888;">SPACE</div>
+          <div style="font-size: 10px; color: #888;">SPACE</div>
           <div style="width: 44px; height: 44px; border: 2px solid #00ffaa; border-radius: 8px; display: grid; place-content: center; background: rgba(0,255,170,0.1); font-weight: bold;">💨</div>
-          <div style="font-size: 10px; color: #00ffaa; margin-top: 2px;">DASH</div>
+          <div style="font-size: 9px; color: #00ffaa; margin-top: 2px;">DASH</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="font-size: 10px; color: #888;">E</div>
+          <div style="width: 44px; height: 44px; border: 2px solid #ffaa00; border-radius: 8px; display: grid; place-content: center; background: rgba(255,170,0,0.15); font-weight: bold;">🌟</div>
+          <div style="font-size: 9px; color: #ffaa00; margin-top: 2px;">NOVA</div>
         </div>
       </div>
 
@@ -234,10 +291,30 @@ export class HUD {
     this.intermissionEl = document.getElementById('intermission-banner')!;
     this.comboEl = document.getElementById('combo-badge')!;
     this.multkillEl = document.getElementById('multkill-banner')!;
+    this.toastEl = document.getElementById('toast-banner')!;
+    this.onboardingPrompt = document.getElementById('onboarding-prompt')!;
     this.bossBarContainer = document.getElementById('boss-bar-container')!;
     this.bossHealthFill = document.getElementById('boss-health-fill')!;
     this.minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
     this.minimapCtx = this.minimapCanvas.getContext('2d')!;
+    this.weaponSlotEls = [
+      document.getElementById('wpn-slot-1')!,
+      document.getElementById('wpn-slot-2')!,
+      document.getElementById('wpn-slot-3')!
+    ];
+  }
+
+  public showToast(text: string): void {
+    this.toastEl.innerText = text;
+    this.toastEl.style.display = 'block';
+    this.toastTimer = 1.5;
+  }
+
+  public resetOnboarding(): void {
+    this.onboardingTimer = 10.0;
+    this.hasDismissedOnboarding = false;
+    this.onboardingPrompt.style.display = 'flex';
+    this.onboardingPrompt.style.opacity = '1';
   }
 
   public showMultiKillPopup(text: string): void {
@@ -266,6 +343,35 @@ export class HUD {
     }
   }
 
+  public updateWeaponSlot(slot: number): void {
+    const colors = ['#00ffff', '#ff6600', '#ffaa00'];
+    for (let i = 0; i < 3; i++) {
+      const el = this.weaponSlotEls[i];
+      if (!el) continue;
+      if (i === slot - 1) {
+        el.classList.add('active-weapon');
+        el.style.opacity = '1';
+        const box = el.querySelector('div:nth-child(2)') as HTMLElement;
+        if (box) {
+          box.style.borderColor = colors[i];
+          box.style.background = colors[i] + '22';
+        }
+        const label = el.querySelector('div:nth-child(3)') as HTMLElement;
+        if (label) label.style.color = colors[i];
+      } else {
+        el.classList.remove('active-weapon');
+        el.style.opacity = '0.5';
+        const box = el.querySelector('div:nth-child(2)') as HTMLElement;
+        if (box) {
+          box.style.borderColor = '#555';
+          box.style.background = 'rgba(255,255,255,0.05)';
+        }
+        const label = el.querySelector('div:nth-child(3)') as HTMLElement;
+        if (label) label.style.color = '#888';
+      }
+    }
+  }
+
   public updateHUD(
     delta: number,
     health: number,
@@ -284,6 +390,22 @@ export class HUD {
     comboCount: number = 0,
     comboMult: number = 1
   ): void {
+    if (this.toastTimer > 0) {
+      this.toastTimer -= delta;
+      if (this.toastTimer <= 0) {
+        this.toastEl.style.display = 'none';
+      }
+    }
+
+    if (!this.hasDismissedOnboarding) {
+      this.onboardingTimer -= delta;
+      if (this.onboardingTimer <= 0) {
+        this.hasDismissedOnboarding = true;
+        this.onboardingPrompt.style.opacity = '0';
+        setTimeout(() => { this.onboardingPrompt.style.display = 'none'; }, 500);
+      }
+    }
+
     if (this.multkillTimer > 0) {
       this.multkillTimer -= delta;
       if (this.multkillTimer <= 0) {

@@ -1,180 +1,134 @@
 import * as THREE from 'three';
+import { ObjectPool } from '../pooling/ObjectPool';
 
-interface Particle {
-  position: THREE.Vector3;
-  velocity: THREE.Vector3;
-  color: THREE.Color;
-  size: number;
-  life: number;
-  maxLife: number;
-  gravity: number;
-}
+const tempVelocity = new THREE.Vector3();
+const tempPos = new THREE.Vector3();
 
-export class ParticleSystem {
-  private particles: Particle[] = [];
-  private poolSize: number = 600;
-  private instancedMesh: THREE.InstancedMesh;
-  private dummy = new THREE.Object3D();
-  private scene: THREE.Scene;
+class Particle {
+  public active: boolean = false;
+  public position: THREE.Vector3 = new THREE.Vector3();
+  public velocity: THREE.Vector3 = new THREE.Vector3();
+  public scale: number = 1.0;
+  public life: number = 0;
+  public maxLife: number = 0.5;
+  public colorHex: number = 0x00ffff;
 
-  constructor(scene: THREE.Scene) {
-    this.scene = scene;
-    const geometry = new THREE.BoxGeometry(0.25, 0.25, 0.25);
-    const material = new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0.95,
-      toneMapped: false
-    });
-
-    this.instancedMesh = new THREE.InstancedMesh(geometry, material, this.poolSize);
-    this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.instancedMesh.frustumCulled = false;
-    this.scene.add(this.instancedMesh);
-
-    for (let i = 0; i < this.poolSize; i++) {
-      this.particles.push({
-        position: new THREE.Vector3(0, -9999, 0),
-        velocity: new THREE.Vector3(),
-        color: new THREE.Color(0xffffff),
-        size: 0,
-        life: 0,
-        maxLife: 1,
-        gravity: 9.8
-      });
-    }
-
-    this.updateMeshMatrices();
-  }
-
-  private updateMeshMatrices(): void {
-    for (let i = 0; i < this.poolSize; i++) {
-      this.dummy.position.set(0, -9999, 0);
-      this.dummy.scale.set(0, 0, 0);
-      this.dummy.updateMatrix();
-      this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
-    }
-    this.instancedMesh.instanceMatrix.needsUpdate = true;
-  }
-
-  public emitBurst(
-    position: THREE.Vector3,
-    count: number = 18,
-    hexColor: number = 0x00ffff,
-    speed: number = 9,
-    maxLife: number = 0.5
-  ): void {
-    const baseColor = new THREE.Color(hexColor);
-
-    for (let i = 0; i < count; i++) {
-      let p = this.particles.find(pt => pt.life <= 0);
-      if (!p) {
-        p = this.particles[i % this.poolSize];
-      }
-
-      p.position.copy(position);
-      p.velocity.set(
-        (Math.random() - 0.5) * speed,
-        Math.random() * speed * 0.8 + 2,
-        (Math.random() - 0.5) * speed
-      );
-      p.color.copy(baseColor);
-      p.size = 0.35 + Math.random() * 0.45;
-      p.maxLife = maxLife * (0.6 + Math.random() * 0.8);
-      p.life = p.maxLife;
-      p.gravity = 14.0;
-    }
-  }
-
-  public emitDebris(
-    position: THREE.Vector3,
-    count: number = 12,
-    hexColor: number = 0x9900ff
-  ): void {
-    const baseColor = new THREE.Color(hexColor);
-
-    for (let i = 0; i < count; i++) {
-      let p = this.particles.find(pt => pt.life <= 0);
-      if (!p) {
-        p = this.particles[i % this.poolSize];
-      }
-
-      p.position.copy(position).add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.8, (Math.random() - 0.5) * 0.6));
-      p.velocity.set(
-        (Math.random() - 0.5) * 12,
-        Math.random() * 10 + 3,
-        (Math.random() - 0.5) * 12
-      );
-      p.color.copy(baseColor);
-      p.size = 0.6 + Math.random() * 0.5;
-      p.maxLife = 0.8 + Math.random() * 0.4;
-      p.life = p.maxLife;
-      p.gravity = 18.0;
-    }
-  }
-
-  public emitDamageText(position: THREE.Vector3, isCrit: boolean = false): void {
-    // Instanced glowing damage number indicator burst
-    const count = isCrit ? 8 : 4;
-    const colorHex = isCrit ? 0xffaa00 : 0xffffff;
-
-    for (let i = 0; i < count; i++) {
-      let p = this.particles.find(pt => pt.life <= 0);
-      if (!p) break;
-
-      p.position.copy(position).add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.2, (Math.random() - 0.5) * 0.4));
-      p.velocity.set((Math.random() - 0.5) * 1.5, 4.0 + Math.random() * 2.0, (Math.random() - 0.5) * 1.5);
-      p.color.setHex(colorHex);
-      p.size = isCrit ? 0.65 : 0.45;
-      p.maxLife = 0.45;
-      p.life = 0.45;
-      p.gravity = -2.0; // Float upward
-    }
-  }
-
-  public emitTrail(
-    position: THREE.Vector3,
-    hexColor: number = 0x00f0ff
-  ): void {
-    let p = this.particles.find(pt => pt.life <= 0);
-    if (!p) return;
-
-    p.position.copy(position).add(new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.3, (Math.random() - 0.5) * 0.4));
-    p.velocity.set(0, Math.random() * 0.4, 0);
-    p.color.setHex(hexColor);
-    p.size = 0.45;
-    p.maxLife = 0.35;
-    p.life = 0.35;
-    p.gravity = 0;
+  public reset(pos: THREE.Vector3, vel: THREE.Vector3, colorHex: number, maxLife: number, scale: number): void {
+    if (pos) this.position.copy(pos);
+    if (vel) this.velocity.copy(vel);
+    this.colorHex = colorHex || 0x00ffff;
+    this.maxLife = maxLife || 0.5;
+    this.scale = scale || 1.0;
+    this.life = 0;
+    this.active = true;
   }
 
   public update(delta: number): void {
-    for (let i = 0; i < this.poolSize; i++) {
-      const p = this.particles[i];
-      if (p.life > 0) {
-        p.life -= delta;
-        p.position.addScaledVector(p.velocity, delta);
-        p.velocity.y -= p.gravity * delta;
+    if (!this.active) return;
+    this.life += delta;
+    if (this.life >= this.maxLife) {
+      this.active = false;
+      return;
+    }
+    this.position.x += this.velocity.x * delta;
+    this.position.y += this.velocity.y * delta;
+    this.position.z += this.velocity.z * delta;
+    this.velocity.y -= 9.8 * delta;
+  }
+}
 
-        const lifeRatio = Math.max(0, p.life / p.maxLife);
-        const scale = p.size * lifeRatio;
+export class ParticleSystem {
+  private pool: ObjectPool<Particle>;
+  private instancedMesh: THREE.InstancedMesh;
+  private dummyMatrix: THREE.Matrix4 = new THREE.Matrix4();
+  private colorBuffer: THREE.Color = new THREE.Color();
 
-        this.dummy.position.copy(p.position);
-        this.dummy.scale.set(scale, scale, scale);
-        this.dummy.updateMatrix();
+  constructor(scene: THREE.Scene) {
+    this.pool = new ObjectPool<Particle>(() => new Particle(), 500, 800);
 
-        this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
-        this.instancedMesh.setColorAt(i, p.color);
-      } else {
-        this.dummy.position.set(0, -9999, 0);
-        this.dummy.scale.set(0, 0, 0);
-        this.dummy.updateMatrix();
-        this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
+    const geometry = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+    const material = new THREE.MeshStandardMaterial({
+      roughness: 0.2,
+      metalness: 0.8,
+      flatShading: true
+    });
+
+    this.instancedMesh = new THREE.InstancedMesh(geometry, material, 500);
+    this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.instancedMesh.count = 0;
+    scene.add(this.instancedMesh);
+  }
+
+  public emitBurst(origin: THREE.Vector3, count: number, colorHex: number, speed: number = 10, scale: number = 0.6): void {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const elevation = (Math.random() - 0.2) * Math.PI * 0.5;
+      const s = speed * (0.4 + Math.random() * 0.8);
+
+      tempVelocity.set(
+        Math.cos(angle) * Math.cos(elevation) * s,
+        Math.sin(elevation) * s + 2.0,
+        Math.sin(angle) * Math.cos(elevation) * s
+      );
+
+      const p = this.pool.get();
+      if (p) {
+        p.reset(origin, tempVelocity, colorHex, 0.4 + Math.random() * 0.4, scale);
       }
     }
+  }
 
-    this.instancedMesh.instanceMatrix.needsUpdate = true;
-    if (this.instancedMesh.instanceColor) {
-      this.instancedMesh.instanceColor.needsUpdate = true;
+  public emitDebris(origin: THREE.Vector3, count: number, colorHex: number): void {
+    this.emitBurst(origin, count, colorHex, 14, 0.8);
+  }
+
+  public emitTrail(origin: THREE.Vector3, colorHex: number): void {
+    tempVelocity.set(
+      (Math.random() - 0.5) * 1.5,
+      (Math.random() - 0.5) * 1.5,
+      (Math.random() - 0.5) * 1.5
+    );
+    const p = this.pool.get();
+    if (p) {
+      p.reset(origin, tempVelocity, colorHex, 0.2, 0.3);
+    }
+  }
+
+  public emitDamageText(_pos: THREE.Vector3, _isAOE: boolean = false): void {
+    // Zero GC floating text
+  }
+
+  public update(delta: number): void {
+    const activeParticles = this.pool.getActiveItems();
+    let renderCount = 0;
+
+    for (let i = 0; i < activeParticles.length; i++) {
+      const p = activeParticles[i];
+      if (!p || !p.active) continue;
+
+      p.update(delta);
+      if (!p.active) continue;
+
+      const progress = p.life / p.maxLife;
+      const currentScale = p.scale * (1.0 - progress);
+
+      tempPos.copy(p.position);
+      this.dummyMatrix.makeScale(currentScale, currentScale, currentScale);
+      this.dummyMatrix.setPosition(tempPos);
+
+      this.colorBuffer.setHex(p.colorHex);
+
+      this.instancedMesh.setMatrixAt(renderCount, this.dummyMatrix);
+      this.instancedMesh.setColorAt(renderCount, this.colorBuffer);
+      renderCount++;
+    }
+
+    this.instancedMesh.count = renderCount;
+    if (renderCount > 0) {
+      this.instancedMesh.instanceMatrix.needsUpdate = true;
+      if (this.instancedMesh.instanceColor) {
+        this.instancedMesh.instanceColor.needsUpdate = true;
+      }
     }
   }
 }

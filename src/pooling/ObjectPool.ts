@@ -5,11 +5,12 @@ export interface IPoolable {
 
 export class ObjectPool<T extends IPoolable> {
   private pool: T[] = [];
-  public activeItems: T[] = [];
   private factory: () => T;
+  private maxCap: number;
 
-  constructor(factory: () => T, initialSize: number = 30) {
+  constructor(factory: () => T, initialSize: number = 50, maxCap: number = 400) {
     this.factory = factory;
+    this.maxCap = maxCap;
     for (let i = 0; i < initialSize; i++) {
       const item = this.factory();
       item.active = false;
@@ -17,49 +18,48 @@ export class ObjectPool<T extends IPoolable> {
     }
   }
 
-  public get(...args: any[]): T {
-    let item = this.pool.find(i => !i.active);
+  public get(...args: any[]): T | null {
+    let item: T | undefined = this.pool.find(i => !i.active);
+
     if (!item) {
-      item = this.factory();
-      this.pool.push(item);
+      if (this.pool.length < this.maxCap) {
+        item = this.factory();
+        this.pool.push(item);
+      } else {
+        // FIFO Recycling if max pool capacity is reached
+        item = this.pool[0];
+        item.active = false;
+      }
     }
-    item.reset(...args);
+
+    if (!item) return null;
+
     item.active = true;
-    if (!this.activeItems.includes(item)) {
-      this.activeItems.push(item);
+    try {
+      item.reset(...args);
+    } catch (err) {
+      console.error('Error in pool item reset:', err);
     }
     return item;
   }
 
   public release(item: T): void {
     item.active = false;
-    const idx = this.activeItems.indexOf(item);
-    if (idx !== -1) {
-      // Fast swap and pop to remove in O(1) without array re-allocation
-      const last = this.activeItems.pop()!;
-      if (idx < this.activeItems.length) {
-        this.activeItems[idx] = last;
-      }
-    }
   }
 
   public getActiveItems(): T[] {
-    // Synchronize active list in O(N) swap to ensure clean state
-    for (let i = this.activeItems.length - 1; i >= 0; i--) {
-      if (!this.activeItems[i].active) {
-        const last = this.activeItems.pop()!;
-        if (i < this.activeItems.length) {
-          this.activeItems[i] = last;
-        }
+    const activeList: T[] = [];
+    for (let i = 0; i < this.pool.length; i++) {
+      if (this.pool[i].active) {
+        activeList.push(this.pool[i]);
       }
     }
-    return this.activeItems;
+    return activeList;
   }
 
   public releaseAll(): void {
     for (let i = 0; i < this.pool.length; i++) {
       this.pool[i].active = false;
     }
-    this.activeItems.length = 0;
   }
 }
