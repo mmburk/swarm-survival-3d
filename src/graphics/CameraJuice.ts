@@ -10,35 +10,45 @@ export class CameraJuice {
   }
 
   public addTrauma(amount: number): void {
-    // Clamp max trauma and limit shake duration window to under 150ms
-    this.trauma = Math.min(0.5, this.trauma + amount * 0.5);
+    // Trauma accumulates up to 1.0 for heavy impact feedback
+    this.trauma = Math.min(1.0, this.trauma + amount);
   }
 
   public update(delta: number, targetPos: THREE.Vector3): void {
+    const camOffsetZ = 18;
+    const camOffsetY = 20;
+
     if (this.trauma > 0.001) {
-      // Rapid decay to ensure camera shake completes under 150ms
-      this.trauma = Math.max(0, this.trauma - delta * 4.5);
+      // Quadratic decay curve for natural weight feeling
+      this.trauma = Math.max(0, this.trauma - delta * 2.2);
 
       const shake = this.trauma * this.trauma;
+
+      // Positional shake impulse
       this.shakeOffset.set(
-        (Math.random() - 0.5) * shake * 1.2,
-        (Math.random() - 0.5) * shake * 0.8,
-        (Math.random() - 0.5) * shake * 1.2
+        (Math.random() - 0.5) * shake * 1.8,
+        (Math.random() - 0.5) * shake * 1.4,
+        (Math.random() - 0.5) * shake * 1.8
       );
 
-      this.camera.position.set(
-        targetPos.x + this.shakeOffset.x,
-        targetPos.y + 24 + this.shakeOffset.y,
-        targetPos.z + 20 + this.shakeOffset.z
-      );
+      // Smooth camera position follow with added shake
+      this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetPos.x, delta * 12) + this.shakeOffset.x;
+      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetPos.y + camOffsetY, delta * 12) + this.shakeOffset.y;
+      this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetPos.z + camOffsetZ, delta * 12) + this.shakeOffset.z;
+
+      this.camera.lookAt(targetPos.x, targetPos.y + 0.5, targetPos.z);
+
+      // Rotational pitch/roll/yaw jitter impulse
+      const rotShake = shake * 0.08;
+      this.camera.rotation.z += (Math.random() - 0.5) * rotShake;
+      this.camera.rotation.x += (Math.random() - 0.5) * rotShake * 0.5;
     } else {
       this.trauma = 0;
-      // Static smooth follow without matrix recalculation overhead
+      // Smooth follow when idle
       this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetPos.x, delta * 8);
-      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetPos.y + 24, delta * 8);
-      this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetPos.z + 20, delta * 8);
+      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetPos.y + camOffsetY, delta * 8);
+      this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetPos.z + camOffsetZ, delta * 8);
+      this.camera.lookAt(targetPos.x, targetPos.y + 0.5, targetPos.z);
     }
-
-    this.camera.lookAt(targetPos.x, targetPos.y + 0.5, targetPos.z);
   }
 }

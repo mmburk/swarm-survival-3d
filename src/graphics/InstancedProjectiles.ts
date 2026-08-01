@@ -1,71 +1,71 @@
 import * as THREE from 'three';
 import { ProjectileType } from '../entities/Projectile';
+import { HEX } from '../theme/Palette';
 
+/**
+ * Three instanced meshes, one per projectile family. Bullets are stretched
+ * tracers, heavies are dark canisters, bile is a wet green blob.
+ */
 export class InstancedProjectiles {
-  private laserMesh: THREE.InstancedMesh;
-  private missileMesh: THREE.InstancedMesh;
-  private enemyPlasmaMesh: THREE.InstancedMesh;
+  private bulletMesh: THREE.InstancedMesh;
+  private heavyMesh: THREE.InstancedMesh;
+  private bileMesh: THREE.InstancedMesh;
 
-  private maxCapacity: number = 200;
+  private maxBullets: number = 220;
+  private maxHeavy: number = 40;
+  private maxBile: number = 110;
+
   private dummy = new THREE.Object3D();
-  private scene: THREE.Scene;
 
   constructor(scene: THREE.Scene) {
-    this.scene = scene;
+    const bulletGeo = new THREE.CylinderGeometry(0.055, 0.03, 1.5, 5);
+    bulletGeo.rotateX(Math.PI / 2);
+    // Not toneMapped so the tracer keeps its hot core against dark asphalt.
+    const bulletMat = new THREE.MeshBasicMaterial({ color: HEX.muzzle, toneMapped: false });
+    this.bulletMesh = new THREE.InstancedMesh(bulletGeo, bulletMat, this.maxBullets);
+    this.bulletMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.bulletMesh.frustumCulled = false;
+    scene.add(this.bulletMesh);
 
-    const laserGeo = new THREE.CylinderGeometry(0.25, 0.25, 2.5, 8);
-    laserGeo.rotateX(Math.PI / 2);
-    const laserMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      toneMapped: false
-    });
-    this.laserMesh = new THREE.InstancedMesh(laserGeo, laserMat, this.maxCapacity);
-    this.laserMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.laserMesh.frustumCulled = false;
-    this.scene.add(this.laserMesh);
+    const heavyGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.6, 8);
+    heavyGeo.rotateX(Math.PI / 2);
+    const heavyMat = new THREE.MeshStandardMaterial({ color: 0x3d4034, roughness: 0.7, metalness: 0.5, flatShading: true });
+    this.heavyMesh = new THREE.InstancedMesh(heavyGeo, heavyMat, this.maxHeavy);
+    this.heavyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.heavyMesh.frustumCulled = false;
+    scene.add(this.heavyMesh);
 
-    const missileGeo = new THREE.SphereGeometry(0.7, 12, 12);
-    const missileMat = new THREE.MeshBasicMaterial({
-      color: 0xffaa00,
-      toneMapped: false
+    const bileGeo = new THREE.IcosahedronGeometry(0.34, 0);
+    const bileMat = new THREE.MeshStandardMaterial({
+      color: 0x7d8a3c,
+      emissive: 0x2b3312,
+      roughness: 0.35,
+      flatShading: true
     });
-    this.missileMesh = new THREE.InstancedMesh(missileGeo, missileMat, 40);
-    this.missileMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.missileMesh.frustumCulled = false;
-    this.scene.add(this.missileMesh);
-
-    const plasmaGeo = new THREE.SphereGeometry(0.5, 10, 10);
-    const plasmaMat = new THREE.MeshBasicMaterial({
-      color: 0xff0055,
-      toneMapped: false
-    });
-    this.enemyPlasmaMesh = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 100);
-    this.enemyPlasmaMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.enemyPlasmaMesh.frustumCulled = false;
-    this.scene.add(this.enemyPlasmaMesh);
+    this.bileMesh = new THREE.InstancedMesh(bileGeo, bileMat, this.maxBile);
+    this.bileMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.bileMesh.frustumCulled = false;
+    scene.add(this.bileMesh);
 
     this.hideAll();
   }
 
   public hideAll(): void {
-    this.laserMesh.count = 0;
-    this.missileMesh.count = 0;
-    this.enemyPlasmaMesh.count = 0;
-
-    this.laserMesh.instanceMatrix.needsUpdate = true;
-    this.missileMesh.instanceMatrix.needsUpdate = true;
-    this.enemyPlasmaMesh.instanceMatrix.needsUpdate = true;
+    this.bulletMesh.count = 0;
+    this.heavyMesh.count = 0;
+    this.bileMesh.count = 0;
+    this.bulletMesh.instanceMatrix.needsUpdate = true;
+    this.heavyMesh.instanceMatrix.needsUpdate = true;
+    this.bileMesh.instanceMatrix.needsUpdate = true;
   }
 
-  public renderProjectiles(projectiles: Array<{
-    active: boolean;
-    type: ProjectileType;
-    position: THREE.Vector3;
-    quaternion: THREE.Quaternion;
-  }>): void {
-    let laserIdx = 0;
-    let missileIdx = 0;
-    let plasmaIdx = 0;
+  public render(
+    projectiles: Array<{ active: boolean; type: ProjectileType; position: THREE.Vector3; quaternion: THREE.Quaternion }>,
+    time: number
+  ): void {
+    let b = 0;
+    let h = 0;
+    let g = 0;
 
     for (let i = 0; i < projectiles.length; i++) {
       const p = projectiles[i];
@@ -74,23 +74,27 @@ export class InstancedProjectiles {
       this.dummy.position.copy(p.position);
       this.dummy.quaternion.copy(p.quaternion);
       this.dummy.scale.set(1, 1, 1);
-      this.dummy.updateMatrix();
 
-      if (p.type === ProjectileType.PLAYER_LASER && laserIdx < this.maxCapacity) {
-        this.laserMesh.setMatrixAt(laserIdx++, this.dummy.matrix);
-      } else if (p.type === ProjectileType.PLAYER_MISSILE && missileIdx < 40) {
-        this.missileMesh.setMatrixAt(missileIdx++, this.dummy.matrix);
-      } else if (p.type === ProjectileType.ENEMY_PLASMA && plasmaIdx < 100) {
-        this.enemyPlasmaMesh.setMatrixAt(plasmaIdx++, this.dummy.matrix);
+      if (p.type === ProjectileType.PLAYER_BULLET && b < this.maxBullets) {
+        this.dummy.updateMatrix();
+        this.bulletMesh.setMatrixAt(b++, this.dummy.matrix);
+      } else if (p.type === ProjectileType.PLAYER_HEAVY && h < this.maxHeavy) {
+        this.dummy.rotation.z = time * 9;
+        this.dummy.updateMatrix();
+        this.heavyMesh.setMatrixAt(h++, this.dummy.matrix);
+      } else if (p.type === ProjectileType.ENEMY_BILE && g < this.maxBile) {
+        this.dummy.rotation.set(time * 3, time * 4, 0);
+        this.dummy.updateMatrix();
+        this.bileMesh.setMatrixAt(g++, this.dummy.matrix);
       }
     }
 
-    this.laserMesh.count = laserIdx;
-    this.missileMesh.count = missileIdx;
-    this.enemyPlasmaMesh.count = plasmaIdx;
+    this.bulletMesh.count = b;
+    this.heavyMesh.count = h;
+    this.bileMesh.count = g;
 
-    if (laserIdx > 0) this.laserMesh.instanceMatrix.needsUpdate = true;
-    if (missileIdx > 0) this.missileMesh.instanceMatrix.needsUpdate = true;
-    if (plasmaIdx > 0) this.enemyPlasmaMesh.instanceMatrix.needsUpdate = true;
+    this.bulletMesh.instanceMatrix.needsUpdate = true;
+    this.heavyMesh.instanceMatrix.needsUpdate = true;
+    this.bileMesh.instanceMatrix.needsUpdate = true;
   }
 }

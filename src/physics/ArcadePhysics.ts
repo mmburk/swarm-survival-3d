@@ -8,7 +8,7 @@ export interface IArcadeBody {
 }
 
 export class ArcadePhysics {
-  // Ultra-fast 2D/3D Sphere vs Sphere distance check (Zero Math.sqrt)
+  // Fast 2D XZ-Plane Circle vs Circle Overlap Check (Ignores Y height difference)
   public static checkSphereOverlap(
     posA: THREE.Vector3,
     radiusA: number,
@@ -16,11 +16,10 @@ export class ArcadePhysics {
     radiusB: number
   ): boolean {
     const dx = posA.x - posB.x;
-    const dy = posA.y - posB.y;
     const dz = posA.z - posB.z;
-    const distSq = dx * dx + dy * dy + dz * dz;
+    const distSq = dx * dx + dz * dz;
     const minRadiusSq = (radiusA + radiusB) * (radiusA + radiusB);
-    return distSq < minRadiusSq;
+    return distSq <= minRadiusSq;
   }
 
   // Soft Arcade Separation Force for overlapping entities
@@ -50,7 +49,30 @@ export class ArcadePhysics {
     }
   }
 
-  // Apply velocity integration, friction damping, and 140x140 terrain bounds clamping
+  // Solid Circle / Cylinder Obstacle Resolution (Pushes entity cleanly out of obstacle radius)
+  public static resolveSolidObstacle(
+    entityPos: THREE.Vector3,
+    entityRadius: number,
+    obstaclePos: { x: number; z: number; radius: number }
+  ): void {
+    const dx = entityPos.x - obstaclePos.x;
+    const dz = entityPos.z - obstaclePos.z;
+    const distSq = dx * dx + dz * dz;
+    const minDist = entityRadius + obstaclePos.radius;
+    const minDistSq = minDist * minDist;
+
+    if (distSq < minDistSq) {
+      const dist = Math.sqrt(distSq) || 0.001;
+      const overlap = minDist - dist;
+      const nx = dx / dist;
+      const nz = dz / dist;
+
+      entityPos.x += nx * overlap;
+      entityPos.z += nz * overlap;
+    }
+  }
+
+  // Apply velocity integration, friction damping, and a hard world-bounds clamp
   public static integratePosition(
     position: THREE.Vector3,
     velocity: THREE.Vector3,
@@ -66,8 +88,8 @@ export class ArcadePhysics {
     velocity.x *= friction;
     velocity.z *= friction;
 
-    // Clamp position within world terrain boundaries (-65 to 65)
-    position.x = Math.max(-65, Math.min(65, position.x));
-    position.z = Math.max(-65, Math.min(65, position.z));
+    // Backstop only — callers apply the real arena shape on top of this.
+    position.x = Math.max(-70, Math.min(70, position.x));
+    position.z = Math.max(-70, Math.min(70, position.z));
   }
 }

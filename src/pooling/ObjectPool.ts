@@ -18,7 +18,7 @@ export class ObjectPool<T extends IPoolable> {
     }
   }
 
-  public get(...args: any[]): T | null {
+  public get(...args: any[]): T {
     let item: T | undefined = this.pool.find(i => !i.active);
 
     if (!item) {
@@ -26,13 +26,14 @@ export class ObjectPool<T extends IPoolable> {
         item = this.factory();
         this.pool.push(item);
       } else {
-        // FIFO Recycling if max pool capacity is reached
-        item = this.pool[0];
+        // Reuse oldest active instance or dynamically instantiate fallback to prevent null returns
+        item = this.pool.find(i => i.active) || this.factory();
         item.active = false;
+        if (!this.pool.includes(item)) {
+          this.pool.push(item);
+        }
       }
     }
-
-    if (!item) return null;
 
     item.active = true;
     try {
@@ -44,22 +45,34 @@ export class ObjectPool<T extends IPoolable> {
   }
 
   public release(item: T): void {
-    item.active = false;
+    if (item) {
+      item.active = false;
+    }
   }
 
   public getActiveItems(): T[] {
     const activeList: T[] = [];
     for (let i = 0; i < this.pool.length; i++) {
-      if (this.pool[i].active) {
+      if (this.pool[i] && this.pool[i].active) {
         activeList.push(this.pool[i]);
       }
     }
     return activeList;
   }
 
-  public releaseAll(): void {
+  public recycleAllActive(onRecycle?: (item: T) => void): void {
     for (let i = 0; i < this.pool.length; i++) {
-      this.pool[i].active = false;
+      const item = this.pool[i];
+      if (item && item.active) {
+        if (onRecycle) {
+          try {
+            onRecycle(item);
+          } catch (err) {
+            console.error('Error during pool recycling callback:', err);
+          }
+        }
+        item.active = false;
+      }
     }
   }
 }

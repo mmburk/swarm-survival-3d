@@ -4,67 +4,99 @@ import { ParticleSystem } from '../graphics/ParticleSystem';
 import { AudioManager } from '../core/AudioManager';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
+import { InstancedProps } from '../graphics/InstancedProps';
+import { HEX } from '../theme/Palette';
+import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId, type WeaponStats } from '../config/Weapons';
+import type { Enemy } from './Enemy';
 
-export type ShipClass = 'VANGUARD' | 'STRIKER' | 'JUGGERNAUT';
-export type WeaponSlot = 1 | 2 | 3; // 1: Rifle, 2: Shotgun, 3: Grenade
-
-const tempPlayerLook = new THREE.Vector3();
+const tempLook = new THREE.Vector3();
 const tempCamTarget = new THREE.Vector3();
 const tempCamOffset = new THREE.Vector3(0, 20, 18);
-const tempMuzzleOffset = new THREE.Vector3(0.35, 0.7, 1.1);
+const tempMuzzleOffset = new THREE.Vector3();
 const tempMuzzlePos = new THREE.Vector3();
 const tempHurtOffset = new THREE.Vector3();
 const tempTargetQuat = new THREE.Quaternion();
 const tempTargetMat = new THREE.Matrix4();
+const UP = new THREE.Vector3(0, 1, 0);
+
+export interface ActiveBuff {
+  id: string;
+  name: string;
+  icon: string;
+  count: number;
+  color: string;
+}
 
 export class Player {
   public group: THREE.Group;
-  public shipMeshGroup: THREE.Group;
-  public position: THREE.Vector3 = new THREE.Vector3(0, 4, 0);
+  public rig: THREE.Group;
+  public position: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
   public velocity: THREE.Vector3 = new THREE.Vector3();
-  public radius: number = 1.0;
-  public shipClass: ShipClass = 'VANGUARD';
+  public radius: number = 0.85;
 
-  // Active Weapon Inventory Slot
-  public currentWeaponSlot: WeaponSlot = 1;
+  // ---- loadout ------------------------------------------------------------
+  public weaponId: WeaponId = 'RANGER';
+  public weapon: WeaponStats = resolveWeaponStats('RANGER', false);
+  public weaponModActive: boolean = false;
 
-  // Base Stats & Health
+  // ---- vitals -------------------------------------------------------------
   public health: number = 100;
   public maxHealth: number = 100;
-  public dashStamina: number = 100;
-  public maxDashStamina: number = 100;
-  public moveSpeed: number = 16;
+  public baseMaxHealth: number = 100;
+  public stamina: number = 100;
+  public maxStamina: number = 100;
+  public moveSpeed: number = 8.2;
 
-  // Ultimate Charge (Cyber Nova)
-  public ultCharge: number = 0;
-  public maxUltCharge: number = 100;
+  /** Fills as you kill; spends on the road flare. */
+  public adrenaline: number = 0;
+  public maxAdrenaline: number = 100;
 
-  // Level & XP Stats
-  public level: number = 1;
-  public xp: number = 0;
-  public maxXp: number = 100;
-
-  // Upgradeable Weapons & Perks
+  // ---- run modifiers (reset every run, granted by boons) -------------------
+  public damageMultiplier: number = 1.0;
   public fireRateMultiplier: number = 1.0;
-  public laserDamage: number = 30;
-  public missileAOERadius: number = 8.5;
-  public missileDamage: number = 140;
-  public dashCooldownMultiplier: number = 1.0;
+  public critChance: number = 0.05;
+  public critMultiplier: number = 2.0;
+  public bonusPierce: number = 0;
+  public bulletSpeedMultiplier: number = 1.0;
+  public lifestealChance: number = 0;
+  public lifestealAmount: number = 0;
   public pickupRadius: number = 5.5;
+  public altCooldownMultiplier: number = 1.0;
+  public healPotency: number = 1.0;
+  /** Chance a killed enemy bursts, damaging its neighbours. */
+  public burstChance: number = 0;
+  /** Flat damage reduction fraction. */
+  public toughness: number = 0;
 
+  public activeBuffs: Map<string, ActiveBuff> = new Map();
+
+  // ---- state --------------------------------------------------------------
+  public damageIFrameTimer: number = 0;
+  public isInvulnerable: boolean = false;
+  public shoveCooldown: number = 0;
   public primaryCooldown: number = 0;
-  public secondaryCooldown: number = 0;
+  public altCooldown: number = 0;
+  public isDodging: boolean = false;
 
-  private isDashing: boolean = false;
-  private dashTimer: number = 0;
-  private dashDir: THREE.Vector3 = new THREE.Vector3();
+  public getUpsRemaining: number = 1;
+  public maxGetUps: number = 1;
 
-  // Procedural Motion State
-  private hoverTime: number = 0;
+  public onTakeDamage?: () => void;
+  public onGetUp?: () => void;
+  public onDied?: () => void;
+
+  private dodgeTimer: number = 0;
+  private dodgeDir: THREE.Vector3 = new THREE.Vector3();
+
+  private walkCycle: number = 0;
   private recoilOffset: number = 0;
+  private flashTimer: number = 0;
+  private isFlashed: boolean = false;
 
-  private bodyMat!: THREE.MeshStandardMaterial;
-  private gunMesh!: THREE.Mesh;
+  private jacketMat!: THREE.MeshStandardMaterial;
+  private leftLeg!: THREE.Mesh;
+  private rightLeg!: THREE.Mesh;
+  private weaponRigs: Map<WeaponId, THREE.Group> = new Map();
 
   private scene: THREE.Scene;
   private input: InputManager;
@@ -86,217 +118,514 @@ export class Player {
     this.terrain = terrain;
 
     this.group = new THREE.Group();
-    this.shipMeshGroup = new THREE.Group();
-    this.group.add(this.shipMeshGroup);
+    this.rig = new THREE.Group();
+    this.group.add(this.rig);
 
-    this.createCommandoModel();
+    this.buildSurvivor();
+    this.buildWeaponRigs();
+    this.setWeapon('RANGER', false);
+
     this.scene.add(this.group);
   }
 
-  private createCommandoModel(): void {
-    // Tactical Commando / Soldier Body
-    const bodyGeo = new THREE.CapsuleGeometry(0.5, 1.2, 8, 16);
-    this.bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x2b3a4a,
-      roughness: 0.5,
-      metalness: 0.4,
+  // ---------------------------------------------------------------- visuals
+
+  /** A person in a work jacket and a pack. Faces -Z. */
+  private buildSurvivor(): void {
+    const boot = new THREE.MeshStandardMaterial({ color: 0x2a2419, roughness: 0.95 });
+    const denim = new THREE.MeshStandardMaterial({ color: HEX.denim, roughness: 0.9 });
+    const skin = new THREE.MeshStandardMaterial({ color: 0x9c7c5e, roughness: 0.8 });
+
+    const legGeo = new THREE.BoxGeometry(0.24, 0.72, 0.26);
+    this.leftLeg = new THREE.Mesh(legGeo, denim);
+    this.leftLeg.position.set(-0.19, 0.38, 0);
+    this.leftLeg.castShadow = true;
+    this.rig.add(this.leftLeg);
+
+    this.rightLeg = new THREE.Mesh(legGeo, denim);
+    this.rightLeg.position.set(0.19, 0.38, 0);
+    this.rightLeg.castShadow = true;
+    this.rig.add(this.rightLeg);
+
+    const bootGeo = new THREE.BoxGeometry(0.28, 0.18, 0.36);
+    const lb = new THREE.Mesh(bootGeo, boot);
+    lb.position.set(-0.19, 0.09, -0.04);
+    this.rig.add(lb);
+    const rb = new THREE.Mesh(bootGeo, boot);
+    rb.position.set(0.19, 0.09, -0.04);
+    this.rig.add(rb);
+
+    // Canvas work jacket.
+    this.jacketMat = new THREE.MeshStandardMaterial({
+      color: 0x5a5236,
+      roughness: 0.92,
+      metalness: 0.05,
       flatShading: true
     });
-    const bodyMesh = new THREE.Mesh(bodyGeo, this.bodyMat);
-    bodyMesh.position.y = 0.8;
-    this.shipMeshGroup.add(bodyMesh);
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.82, 0.44), this.jacketMat);
+    torso.position.y = 1.12;
+    torso.castShadow = true;
+    this.rig.add(torso);
 
-    // Tactical Helmet
-    const headGeo = new THREE.SphereGeometry(0.4, 8, 8);
-    const headMat = new THREE.MeshStandardMaterial({
-      color: 0x111622,
-      emissive: 0x00ffff,
-      emissiveIntensity: 0.2,
-      roughness: 0.2
-    });
-    const headMesh = new THREE.Mesh(headGeo, headMat);
-    headMesh.position.set(0, 1.5, 0.1);
-    this.shipMeshGroup.add(headMesh);
+    // Strapped-on scrap plate, the only "armour" in the game.
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, 0.34, 0.1),
+      new THREE.MeshStandardMaterial({ color: HEX.steel, roughness: 0.7, metalness: 0.6, flatShading: true })
+    );
+    plate.position.set(0, 1.2, -0.25);
+    this.rig.add(plate);
 
-    // Visible Assault Rifle Barrel
-    const gunGeo = new THREE.BoxGeometry(0.2, 0.2, 1.2);
-    const gunMat = new THREE.MeshStandardMaterial({
-      color: 0x111111,
-      roughness: 0.2,
-      metalness: 0.9
-    });
-    this.gunMesh = new THREE.Mesh(gunGeo, gunMat);
-    this.gunMesh.position.set(0.35, 0.9, 0.6);
-    this.shipMeshGroup.add(this.gunMesh);
+    // Backpack.
+    const pack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.48, 0.55, 0.3),
+      new THREE.MeshStandardMaterial({ color: 0x4a3f2c, roughness: 1.0 })
+    );
+    pack.position.set(0, 1.16, 0.34);
+    pack.castShadow = true;
+    this.rig.add(pack);
+
+    const bedroll = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11, 0.11, 0.5, 6),
+      new THREE.MeshStandardMaterial({ color: 0x6b5c3f, roughness: 1.0 })
+    );
+    bedroll.rotation.z = Math.PI / 2;
+    bedroll.position.set(0, 1.44, 0.36);
+    this.rig.add(bedroll);
+
+    // Head, hood and a scarf pulled up. No glowing visor anywhere.
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.32), skin);
+    head.position.set(0, 1.68, 0);
+    head.castShadow = true;
+    this.rig.add(head);
+
+    const hood = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.26, 0.4),
+      new THREE.MeshStandardMaterial({ color: 0x4d4630, roughness: 1.0, flatShading: true })
+    );
+    hood.position.set(0, 1.83, 0.02);
+    this.rig.add(hood);
+
+    const scarf = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.14, 0.36),
+      new THREE.MeshStandardMaterial({ color: 0x7a3b2c, roughness: 1.0 })
+    );
+    scarf.position.set(0, 1.53, 0);
+    this.rig.add(scarf);
+
+    // Support arm holding the fore-end.
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.6, 0.17), this.jacketMat);
+    arm.position.set(-0.36, 1.12, -0.28);
+    arm.rotation.set(Math.PI / 3.4, -Math.PI / 7, 0);
+    this.rig.add(arm);
   }
 
-  public setShipClass(shipClass: ShipClass): void {
-    this.shipClass = shipClass;
-    if (shipClass === 'STRIKER') {
-      this.maxHealth = 65;
-      this.moveSpeed = 22;
-      this.laserDamage = 24;
-      this.bodyMat.color.setHex(0xd90429);
-      this.shipMeshGroup.scale.set(0.85, 0.85, 0.85);
-    } else if (shipClass === 'JUGGERNAUT') {
-      this.maxHealth = 160;
-      this.moveSpeed = 12.5;
-      this.laserDamage = 22;
-      this.bodyMat.color.setHex(0x3a0ca3);
-      this.shipMeshGroup.scale.set(1.3, 1.3, 1.3);
-    } else {
-      this.maxHealth = 100;
-      this.moveSpeed = 16;
-      this.laserDamage = 30;
-      this.bodyMat.color.setHex(0x2b3a4a);
-      this.shipMeshGroup.scale.set(1.0, 1.0, 1.0);
+  /** One small procedural mesh per firearm, only the equipped one is visible. */
+  private buildWeaponRigs(): void {
+    const gunmetal = new THREE.MeshStandardMaterial({ color: 0x24261f, roughness: 0.55, metalness: 0.7, flatShading: true });
+    const wood = new THREE.MeshStandardMaterial({ color: 0x4a3220, roughness: 0.85, metalness: 0.05, flatShading: true });
+    const tank = new THREE.MeshStandardMaterial({ color: 0x5c6a4a, roughness: 0.8, metalness: 0.4, flatShading: true });
+
+    const make = (id: WeaponId, build: (g: THREE.Group) => void) => {
+      const g = new THREE.Group();
+      g.position.set(0.33, 1.1, 0);
+      build(g);
+      g.visible = false;
+      this.rig.add(g);
+      this.weaponRigs.set(id, g);
+    };
+
+    make('RANGER', (g) => {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.16, 1.15), gunmetal);
+      body.position.z = -0.55;
+      g.add(body);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.19, 0.42), wood);
+      stock.position.z = 0.18;
+      g.add(stock);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.3, 0.14), gunmetal);
+      mag.position.set(0, -0.2, -0.35);
+      mag.rotation.x = 0.16;
+      g.add(mag);
+      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.34, 8), gunmetal);
+      scope.rotation.x = Math.PI / 2;
+      scope.position.set(0, 0.14, -0.42);
+      g.add(scope);
+    });
+
+    make('BOOMSTICK', (g) => {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.17, 0.5), wood);
+      body.position.z = -0.18;
+      g.add(body);
+      const barrel = new THREE.CylinderGeometry(0.055, 0.055, 0.72, 8);
+      barrel.rotateX(-Math.PI / 2);
+      const lb = new THREE.Mesh(barrel, gunmetal);
+      lb.position.set(-0.055, 0.02, -0.6);
+      g.add(lb);
+      const rb = new THREE.Mesh(barrel, gunmetal);
+      rb.position.set(0.055, 0.02, -0.6);
+      g.add(rb);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 0.16), wood);
+      grip.position.set(0, -0.16, 0.06);
+      grip.rotation.x = -0.3;
+      g.add(grip);
+    });
+
+    make('WIDOWMAKER', (g) => {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.15, 0.72), wood);
+      body.position.z = -0.32;
+      g.add(body);
+      const barrel = new THREE.CylinderGeometry(0.035, 0.035, 1.5, 8);
+      barrel.rotateX(-Math.PI / 2);
+      const b = new THREE.Mesh(barrel, gunmetal);
+      b.position.set(0, 0.01, -1.0);
+      g.add(b);
+      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.46, 10), gunmetal);
+      scope.rotation.x = Math.PI / 2;
+      scope.position.set(0, 0.16, -0.42);
+      g.add(scope);
+      const bolt = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.05), gunmetal);
+      bolt.position.set(0.1, 0.06, -0.05);
+      g.add(bolt);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.22, 0.5), wood);
+      stock.position.z = 0.22;
+      g.add(stock);
+    });
+
+    make('STUTTER', (g) => {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.46), gunmetal);
+      body.position.z = -0.2;
+      g.add(body);
+      const barrel = new THREE.CylinderGeometry(0.03, 0.03, 0.34, 6);
+      barrel.rotateX(-Math.PI / 2);
+      const b = new THREE.Mesh(barrel, gunmetal);
+      b.position.set(0, 0.02, -0.55);
+      g.add(b);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.36, 0.1), gunmetal);
+      mag.position.set(0, -0.24, -0.16);
+      g.add(mag);
+    });
+
+    make('HARVESTER', (g) => {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.78), tank);
+      body.position.z = -0.36;
+      g.add(body);
+      const barrel = new THREE.CylinderGeometry(0.028, 0.028, 0.7, 6);
+      barrel.rotateX(-Math.PI / 2);
+      const b = new THREE.Mesh(barrel, gunmetal);
+      b.position.set(0, 0.02, -0.95);
+      g.add(b);
+      const bottle = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.46, 10), tank);
+      bottle.rotation.x = Math.PI / 2;
+      bottle.position.set(0, -0.16, 0.05);
+      g.add(bottle);
+      const hose = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.022, 6, 12), gunmetal);
+      hose.position.set(0, -0.05, -0.2);
+      g.add(hose);
+    });
+  }
+
+  // ---------------------------------------------------------------- loadout
+
+  public setWeapon(id: WeaponId, modActive: boolean): void {
+    this.weaponId = WEAPONS[id] ? id : 'RANGER';
+    this.weaponModActive = modActive;
+    this.weapon = resolveWeaponStats(this.weaponId, modActive);
+
+    for (const w of WEAPON_ORDER) {
+      const rig = this.weaponRigs.get(w);
+      if (rig) rig.visible = w === this.weaponId;
     }
-    this.health = this.maxHealth;
+    this.primaryCooldown = 0;
+    this.altCooldown = 0;
   }
 
-  public resetStats(): void {
+  public get weaponDef() {
+    return WEAPONS[this.weaponId];
+  }
+
+  public getMuzzlePos(): THREE.Vector3 {
+    const z = this.weaponId === 'WIDOWMAKER' ? -1.75
+      : this.weaponId === 'BOOMSTICK' ? -0.98
+      : this.weaponId === 'HARVESTER' ? -1.3
+      : this.weaponId === 'STUTTER' ? -0.74
+      : -1.15;
+    tempMuzzleOffset.set(0.33, 1.1, z);
+    tempMuzzlePos.copy(tempMuzzleOffset).applyQuaternion(this.group.quaternion).add(this.position);
+    return tempMuzzlePos;
+  }
+
+  // ---------------------------------------------------------------- run state
+
+  /**
+   * Wipes everything a boon could have touched and re-applies the permanent
+   * workbench ranks. Called once at the start of each run.
+   */
+  public beginRun(opts: {
+    weaponId: WeaponId;
+    weaponMod: boolean;
+    bonusHealth: number;
+    bonusSpeed: number;
+    fireRateBonus: number;
+    critBonus: number;
+    pickupBonus: number;
+    healBonus: number;
+    extraGetUps: number;
+  }): void {
+    this.setWeapon(opts.weaponId, opts.weaponMod);
+
+    this.baseMaxHealth = 100 + opts.bonusHealth;
+    this.maxHealth = this.baseMaxHealth;
     this.health = this.maxHealth;
-    this.dashStamina = this.maxDashStamina;
-    this.ultCharge = 0;
-    this.level = 1;
-    this.xp = 0;
-    this.maxXp = 100;
-    this.recoilOffset = 0;
-    this.currentWeaponSlot = 1;
 
-    this.fireRateMultiplier = 1.0;
-    this.dashCooldownMultiplier = 1.0;
-    this.pickupRadius = 5.5;
+    this.moveSpeed = 8.2 + opts.bonusSpeed;
+    this.stamina = this.maxStamina;
+    this.adrenaline = 0;
 
-    this.position.set(0, 4, 0);
+    this.damageMultiplier = 1.0;
+    this.fireRateMultiplier = Math.max(0.4, 1.0 - opts.fireRateBonus);
+    this.critChance = 0.05 + opts.critBonus;
+    this.critMultiplier = 2.0;
+    this.bonusPierce = 0;
+    this.bulletSpeedMultiplier = 1.0;
+    this.lifestealChance = 0;
+    this.lifestealAmount = 0;
+    this.pickupRadius = 5.5 + opts.pickupBonus;
+    this.altCooldownMultiplier = 1.0;
+    this.healPotency = 1.0 + opts.healBonus;
+    this.burstChance = 0;
+    this.toughness = 0;
+
+    this.maxGetUps = 1 + opts.extraGetUps;
+    this.getUpsRemaining = this.maxGetUps;
+
+    this.damageIFrameTimer = 0;
+    this.isInvulnerable = false;
+    this.isDodging = false;
+    this.dodgeTimer = 0;
+    this.primaryCooldown = 0;
+    this.altCooldown = 0;
+    this.shoveCooldown = 0;
+    this.activeBuffs.clear();
+    this.jacketMat.color.setHex(0x5a5236);
+  }
+
+  public addBuff(id: string, name: string, icon: string, color: string): void {
+    const existing = this.activeBuffs.get(id);
+    if (existing) {
+      existing.count++;
+    } else {
+      this.activeBuffs.set(id, { id, name, icon, count: 1, color });
+    }
+  }
+
+  public getActiveBuffList(): ActiveBuff[] {
+    return Array.from(this.activeBuffs.values());
+  }
+
+  public resetPositionAndVelocity(pos?: THREE.Vector3): void {
+    if (pos) this.position.copy(pos);
+    else this.position.set(0, 1, 0);
+
     this.velocity.set(0, 0, 0);
+    this.isDodging = false;
+    this.dodgeTimer = 0;
     this.group.position.copy(this.position);
   }
 
+  public clampToBounds(minX: number, maxX: number, minZ: number, maxZ: number): void {
+    let clamped = false;
+    if (this.position.x < minX) { this.position.x = minX; clamped = true; }
+    if (this.position.x > maxX) { this.position.x = maxX; clamped = true; }
+    if (this.position.z < minZ) { this.position.z = minZ; clamped = true; }
+    if (this.position.z > maxZ) { this.position.z = maxZ; clamped = true; }
+
+    if (clamped) {
+      this.velocity.set(0, 0, 0);
+      if (this.isDodging) {
+        this.isDodging = false;
+        this.dodgeTimer = 0;
+      }
+      this.group.position.copy(this.position);
+    }
+  }
+
+  // ---------------------------------------------------------------- combat
+
   public triggerRecoil(): void {
-    if (this.currentWeaponSlot === 2) {
-      this.recoilOffset = -0.45; // Heavy shotgun kick
-    } else if (this.currentWeaponSlot === 3) {
-      this.recoilOffset = -0.30; // Grenade launcher thump
-    } else {
-      this.recoilOffset = -0.12; // Light rifle tap
-    }
-    // Muzzle flash spark
-    const muzzle = this.getWeaponMuzzlePos();
-    const flashColor = this.currentWeaponSlot === 2 ? 0xff6600 : this.currentWeaponSlot === 3 ? 0xffaa00 : 0x00ffff;
-    this.particles.emitBurst(muzzle, this.currentWeaponSlot === 2 ? 8 : 4, flashColor, 5, 0.25);
+    this.recoilOffset = Math.min(0.5, this.weapon.recoil);
+    const muzzle = this.getMuzzlePos();
+    this.particles.emitBurst(muzzle, this.weapon.pellets > 3 ? 7 : 3, HEX.muzzle, 5, 0.2);
   }
 
-  public addXp(amount: number): boolean {
-    this.xp += amount;
-    this.audio.playPickup();
-    if (this.xp >= this.maxXp) {
-      this.xp -= this.maxXp;
-      this.level++;
-      this.maxXp = Math.floor(this.maxXp * 1.4);
-      this.audio.playLevelUp();
-      return true;
-    }
-    return false;
-  }
-
-  public addUltCharge(amount: number): void {
-    this.ultCharge = Math.min(this.maxUltCharge, this.ultCharge + amount);
+  public addAdrenaline(amount: number): void {
+    this.adrenaline = Math.min(this.maxAdrenaline, this.adrenaline + amount);
   }
 
   public heal(amount: number): void {
-    this.health = Math.min(this.maxHealth, this.health + amount);
-    this.audio.playPickup();
+    const before = this.health;
+    this.health = Math.min(this.maxHealth, this.health + amount * this.healPotency);
+    if (this.health > before) this.audio.playPickup();
+  }
+
+  /** Boot to the chest: knocks the nearest bodies off you and stuns them. */
+  public shove(enemies: Enemy[]): boolean {
+    if (this.shoveCooldown > 0) return false;
+    this.shoveCooldown = 5.0;
+    this.audio.playShove();
+    this.particles.emitShockwave(this.position, 5.0, HEX.smoke);
+
+    const facing = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
+    let hits = 0;
+
+    for (const e of enemies) {
+      if (!e.active) continue;
+      const dx = e.position.x - this.position.x;
+      const dz = e.position.z - this.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > 30.25) continue; // 5.5m
+
+      const d = Math.sqrt(d2) || 1;
+      // Anything vaguely in front takes the full hit; behind you it is a nudge.
+      const facingDot = (dx / d) * facing.x + (dz / d) * facing.z;
+      const force = facingDot > 0.1 ? 26 : 10;
+
+      e.velocity.x += (dx / d) * force;
+      e.velocity.z += (dz / d) * force;
+      e.stunTimer = facingDot > 0.1 ? 1.4 : 0.6;
+      e.takeDamage(12, this.position);
+      hits++;
+    }
+
+    if (hits > 0) this.particles.emitBurst(this.position, 10, HEX.smoke, 7, 0.4);
+    return true;
   }
 
   public takeDamage(damage: number): void {
-    this.health = Math.max(0, this.health - damage);
+    if (this.isInvulnerable || this.isDodging || this.damageIFrameTimer > 0 || this.health <= 0) return;
+
+    const reduced = Math.max(1, Math.round(damage * (1 - this.toughness)));
+
+    if (this.health - reduced <= 0 && this.getUpsRemaining > 0) {
+      this.getUpsRemaining--;
+      this.health = Math.floor(this.maxHealth * 0.45);
+      this.damageIFrameTimer = 2.2;
+      this.isInvulnerable = true;
+      this.audio.playGetUp();
+      this.particles.emitExplosion(this.position, 8.0, HEX.amber);
+      this.onGetUp?.();
+      return;
+    }
+
+    this.health = Math.max(0, this.health - reduced);
+    this.damageIFrameTimer = 0.45;
+    this.isInvulnerable = true;
     this.audio.playPlayerHurt();
-    tempHurtOffset.copy(this.group.position).add(new THREE.Vector3(0, 1, 0));
-    this.particles.emitBurst(tempHurtOffset, 15, 0xff0044, 8, 0.4);
+
+    tempHurtOffset.copy(this.group.position).setY(this.group.position.y + 1.1);
+    this.particles.emitBurst(tempHurtOffset, 12, HEX.gore, 7, 0.34);
+
+    this.onTakeDamage?.();
+    if (this.health <= 0) this.onDied?.();
   }
 
-  public update(delta: number, camera: THREE.PerspectiveCamera): void {
+  // ---------------------------------------------------------------- tick
+
+  public update(delta: number, camera: THREE.PerspectiveCamera, allowMove: boolean = true): void {
     if (this.primaryCooldown > 0) this.primaryCooldown -= delta;
-    if (this.secondaryCooldown > 0) this.secondaryCooldown -= delta;
+    if (this.altCooldown > 0) this.altCooldown -= delta;
+    if (this.shoveCooldown > 0) this.shoveCooldown = Math.max(0, this.shoveCooldown - delta);
+    if (this.recoilOffset > 0) this.recoilOffset = THREE.MathUtils.lerp(this.recoilOffset, 0, delta * 16);
 
-    if (this.input.justSwappedWeapon) {
-      this.currentWeaponSlot = this.input.selectedWeaponSlot as WeaponSlot;
-      this.audio.playPickup();
-    }
-
-    this.hoverTime += delta;
-    if (this.recoilOffset < 0) {
-      this.recoilOffset = THREE.MathUtils.lerp(this.recoilOffset, 0, delta * 18);
-    }
-
-    if (this.dashStamina < this.maxDashStamina) {
-      this.dashStamina = Math.min(this.maxDashStamina, this.dashStamina + delta * 35 * this.dashCooldownMultiplier);
-    }
-
-    const moveInput = this.input.getMoveVector();
-
-    if (this.input.justDashed && this.dashStamina >= 30 && !this.isDashing) {
-      this.isDashing = true;
-      this.dashTimer = 0.22;
-      this.dashStamina -= 30;
-      this.audio.playDash();
-
-      if (moveInput.x !== 0 || moveInput.y !== 0) {
-        this.dashDir.set(moveInput.x, 0, moveInput.y).normalize();
-      } else {
-        this.dashDir.set(0, 0, 1).applyQuaternion(this.group.quaternion).normalize();
+    // Hit flash — the jacket goes pale for a few frames instead of strobing red.
+    if (this.damageIFrameTimer > 0) {
+      this.damageIFrameTimer = Math.max(0, this.damageIFrameTimer - delta);
+      this.flashTimer += delta;
+      if (this.flashTimer >= 0.05) {
+        this.flashTimer = 0;
+        this.isFlashed = !this.isFlashed;
+        this.jacketMat.color.setHex(this.isFlashed ? 0x9b2f2f : 0x5a5236);
+      }
+      if (this.damageIFrameTimer <= 0) {
+        this.isInvulnerable = false;
+        this.jacketMat.color.setHex(0x5a5236);
       }
     }
 
-    if (this.isDashing) {
-      this.dashTimer -= delta;
-      this.velocity.x = this.dashDir.x * 34;
-      this.velocity.z = this.dashDir.z * 34;
-      this.particles.emitTrail(this.position, 0x00ffff);
+    if (this.stamina < this.maxStamina) {
+      this.stamina = Math.min(this.maxStamina, this.stamina + delta * 38);
+    }
 
-      camera.fov = THREE.MathUtils.lerp(camera.fov, 62, delta * 12);
+    const move = allowMove ? this.input.getMoveVector() : { x: 0, y: 0 };
+    const moveX = move.x;
+    const moveZ = move.y;
+
+    if (allowMove && this.input.justDashed && this.stamina >= 34 && !this.isDodging) {
+      this.isDodging = true;
+      this.dodgeTimer = 0.24;
+      this.stamina -= 34;
+      this.audio.playDodge();
+
+      if (moveX !== 0 || moveZ !== 0) {
+        this.dodgeDir.set(moveX, 0, moveZ).normalize();
+      } else {
+        this.dodgeDir.set(0, 0, -1).applyQuaternion(this.group.quaternion).normalize();
+      }
+    }
+
+    if (this.isDodging) {
+      this.dodgeTimer -= delta;
+      this.velocity.x = this.dodgeDir.x * 21;
+      this.velocity.z = this.dodgeDir.z * 21;
+      this.particles.emitTrail(this.position, HEX.smoke);
+
+      camera.fov = THREE.MathUtils.lerp(camera.fov, 57, delta * 12);
       camera.updateProjectionMatrix();
 
-      if (this.dashTimer <= 0) {
-        this.isDashing = false;
-      }
+      if (this.dodgeTimer <= 0) this.isDodging = false;
     } else {
-      this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, moveInput.x * this.moveSpeed, delta * 15);
-      this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, moveInput.y * this.moveSpeed, delta * 15);
+      this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, moveX * this.moveSpeed, delta * 15);
+      this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, moveZ * this.moveSpeed, delta * 15);
 
-      camera.fov = THREE.MathUtils.lerp(camera.fov, 55, delta * 8);
+      camera.fov = THREE.MathUtils.lerp(camera.fov, 52, delta * 8);
       camera.updateProjectionMatrix();
     }
 
     ArcadePhysics.integratePosition(this.position, this.velocity, delta, 0.88);
 
-    const terrainY = this.terrain.getHeightAt(this.position.x, this.position.z) + 1.0 + Math.sin(this.hoverTime * 3.5) * 0.1;
-    this.position.y = terrainY;
-
-    this.group.position.copy(this.position);
-
-    const aimPoint = this.input.aimPoint;
-    tempPlayerLook.set(aimPoint.x, this.position.y, aimPoint.z);
-    if (this.position.distanceToSquared(tempPlayerLook) > 0.1) {
-      tempTargetMat.lookAt(this.position, tempPlayerLook, new THREE.Vector3(0, 1, 0));
-      tempTargetQuat.setFromRotationMatrix(tempTargetMat);
-      this.group.quaternion.slerp(tempTargetQuat, delta * 14);
+    for (const o of InstancedProps.obstacles) {
+      ArcadePhysics.resolveSolidObstacle(this.position, this.radius, o);
     }
 
-    const targetRoll = -this.velocity.x * 0.015;
-    const targetPitch = this.velocity.z * 0.015;
-    this.shipMeshGroup.rotation.z = THREE.MathUtils.lerp(this.shipMeshGroup.rotation.z, targetRoll, delta * 12);
-    this.shipMeshGroup.rotation.x = THREE.MathUtils.lerp(this.shipMeshGroup.rotation.x, targetPitch, delta * 12);
-    this.shipMeshGroup.position.z = this.recoilOffset;
+    this.position.y = this.terrain.getHeightAt(this.position.x, this.position.z);
+    this.group.position.copy(this.position);
+
+    // Face the cursor.
+    const aim = this.input.aimPoint;
+    tempLook.set(aim.x, this.position.y, aim.z);
+    if (this.position.distanceToSquared(tempLook) > 0.1) {
+      tempTargetMat.lookAt(this.position, tempLook, UP);
+      tempTargetQuat.setFromRotationMatrix(tempTargetMat);
+      this.group.quaternion.slerp(tempTargetQuat, delta * 15);
+    }
+
+    // Walk cycle — legs swing while moving, settle when still.
+    const speed = Math.hypot(this.velocity.x, this.velocity.z);
+    if (speed > 0.6) {
+      this.walkCycle += delta * (5.5 + speed * 0.55);
+      const swing = Math.sin(this.walkCycle) * 0.34;
+      this.leftLeg.rotation.x = swing;
+      this.rightLeg.rotation.x = -swing;
+      this.rig.position.y = Math.abs(Math.sin(this.walkCycle)) * 0.045;
+    } else {
+      this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, 0, delta * 10);
+      this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, 0, delta * 10);
+      this.rig.position.y = THREE.MathUtils.lerp(this.rig.position.y, 0, delta * 10);
+    }
+
+    this.rig.rotation.z = THREE.MathUtils.lerp(this.rig.rotation.z, -this.velocity.x * 0.012, delta * 10);
+    this.rig.position.z = this.recoilOffset;
 
     tempCamTarget.copy(this.position).add(tempCamOffset);
     camera.position.lerp(tempCamTarget, delta * 7);
-    camera.lookAt(this.position.x, this.position.y + 0.5, this.position.z);
-  }
-
-  public getWeaponMuzzlePos(): THREE.Vector3 {
-    tempMuzzlePos.copy(tempMuzzleOffset).applyQuaternion(this.group.quaternion).add(this.group.position);
-    return tempMuzzlePos;
+    camera.lookAt(this.position.x, this.position.y + 0.9, this.position.z);
   }
 }

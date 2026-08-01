@@ -1,91 +1,167 @@
 import * as THREE from 'three';
 import { createNoise2D } from 'simplex-noise';
+import { HEX } from '../theme/Palette';
 
+/**
+ * Cracked road surface with dirt worn through it. Almost flat — this is a
+ * top-down shooter, so height is texture, not terrain.
+ */
 export class TerrainGenerator {
   public mesh!: THREE.Mesh;
+  public material!: THREE.MeshStandardMaterial;
   private noise2D = createNoise2D();
 
-  public width: number = 140;
-  public depth: number = 140;
-  public segments: number = 70;
+  public width: number = 150;
+  public depth: number = 150;
+  public segments: number = 64;
 
   private scene: THREE.Scene;
+  private fenceGroup!: THREE.Group;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.generate();
+    this.createPerimeterFence();
   }
 
   public getHeightAt(x: number, z: number): number {
-    const scale1 = 0.02;
-    const scale2 = 0.05;
-    const n1 = this.noise2D(x * scale1, z * scale1);
-    const n2 = this.noise2D(x * scale2 + 100, z * scale2 + 100);
+    return this.noise2D(x * 0.028, z * 0.028) * 0.3;
+  }
 
-    const distFromCenter = Math.sqrt(x * x + z * z);
-    const centerFlatten = Math.max(0, Math.min(1, (distFromCenter - 15) / 45));
+  private createRoadTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
 
-    let height = (n1 * 4.5 + n2 * 1.5) * centerFlatten;
+    // The map is a near-neutral detail layer, not the colour of the road.
+    // Material colour supplies the hue and the two are multiplied, so a dark
+    // texture here would drag the whole surface to black.
+    ctx.fillStyle = '#c2c2ba';
+    ctx.fillRect(0, 0, 512, 512);
 
-    if (distFromCenter > 55) {
-      height += Math.pow((distFromCenter - 55) * 0.4, 1.6);
+    // Patchy dirt blown across the tarmac.
+    for (let i = 0; i < 90; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      const r = 18 + Math.random() * 60;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(150, 128, 92, ${0.14 + Math.random() * 0.2})`);
+      g.addColorStop(1, 'rgba(150, 128, 92, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    return height;
+    // Aggregate speckle so the surface is not a flat wash at close range.
+    for (let i = 0; i < 2600; i++) {
+      const shade = 150 + Math.floor(Math.random() * 60);
+      ctx.fillStyle = `rgba(${shade + 10}, ${shade + 8}, ${shade}, 0.45)`;
+      ctx.fillRect(Math.random() * 512, Math.random() * 512, 1.5, 1.5);
+    }
+
+    // Cracks: short branching polylines.
+    ctx.strokeStyle = 'rgba(52, 50, 42, 0.5)';
+    for (let i = 0; i < 26; i++) {
+      let x = Math.random() * 512;
+      let y = Math.random() * 512;
+      let a = Math.random() * Math.PI * 2;
+      ctx.lineWidth = 0.8 + Math.random() * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      const segs = 4 + Math.floor(Math.random() * 6);
+      for (let s = 0; s < segs; s++) {
+        a += (Math.random() - 0.5) * 1.1;
+        x += Math.cos(a) * (10 + Math.random() * 26);
+        y += Math.sin(a) * (10 + Math.random() * 26);
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // Faded lane marking.
+    ctx.fillStyle = 'rgba(235, 228, 196, 0.3)';
+    for (let y = 20; y < 512; y += 128) {
+      ctx.fillRect(250, y, 10, 62);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(11, 11);
+    texture.anisotropy = 4;
+    return texture;
   }
 
   private generate(): void {
-    const geometry = new THREE.PlaneGeometry(
-      this.width,
-      this.depth,
-      this.segments,
-      this.segments
-    );
+    const geometry = new THREE.PlaneGeometry(this.width, this.depth, this.segments, this.segments);
     geometry.rotateX(-Math.PI / 2);
 
     const posAttr = geometry.attributes.position;
-    const count = posAttr.count;
-    const colors: number[] = [];
-
-    const colorValleys = new THREE.Color('#0a1128');
-    const colorPlains = new THREE.Color('#002244');
-    const colorLowRidge = new THREE.Color('#005577');
-    const colorHighRidge = new THREE.Color('#00ffff');
-    const colorPeak = new THREE.Color('#ff00aa');
-
-    for (let i = 0; i < count; i++) {
-      const x = posAttr.getX(i);
-      const z = posAttr.getZ(i);
-      const h = this.getHeightAt(x, z);
-      posAttr.setY(i, h);
-
-      const c = new THREE.Color();
-      if (h < 0.2) {
-        c.lerpColors(colorValleys, colorPlains, (h + 2) / 2.2);
-      } else if (h < 2.5) {
-        c.lerpColors(colorPlains, colorLowRidge, h / 2.5);
-      } else if (h < 5.5) {
-        c.lerpColors(colorLowRidge, colorHighRidge, (h - 2.5) / 3.0);
-      } else {
-        c.lerpColors(colorHighRidge, colorPeak, Math.min(1, (h - 5.5) / 4.0));
-      }
-
-      colors.push(c.r, c.g, c.b);
+    for (let i = 0; i < posAttr.count; i++) {
+      posAttr.setY(i, this.getHeightAt(posAttr.getX(i), posAttr.getZ(i)));
     }
-
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
 
-    const material = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      flatShading: true,
-      roughness: 0.85,
-      metalness: 0.15
+    this.material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#6d7052'),
+      map: this.createRoadTexture(),
+      roughness: 0.96,
+      metalness: 0.0
     });
 
-    this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh = new THREE.Mesh(geometry, this.material);
     this.mesh.receiveShadow = true;
-    this.mesh.castShadow = true;
     this.scene.add(this.mesh);
+  }
+
+  /** A ring of leaning chain-link and jersey barriers marking the play area. */
+  private createPerimeterFence(): void {
+    this.fenceGroup = new THREE.Group();
+
+    const postGeo = new THREE.CylinderGeometry(0.13, 0.13, 3.4, 5);
+    const postMat = new THREE.MeshStandardMaterial({ color: HEX.steel, roughness: 0.85, metalness: 0.35 });
+    const meshGeo = new THREE.PlaneGeometry(5.4, 3.0);
+    const meshMat = new THREE.MeshStandardMaterial({
+      color: 0x6a6d63,
+      roughness: 0.9,
+      metalness: 0.2,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide
+    });
+
+    const count = 54;
+    const radius = 60;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const px = Math.cos(angle) * radius;
+      const pz = Math.sin(angle) * radius;
+      const py = this.getHeightAt(px, pz);
+
+      const post = new THREE.Mesh(postGeo, postMat);
+      post.position.set(px, py + 1.7, pz);
+      post.rotation.z = (Math.random() - 0.5) * 0.16;
+      this.fenceGroup.add(post);
+
+      const panel = new THREE.Mesh(meshGeo, meshMat);
+      const mid = angle + Math.PI / count;
+      panel.position.set(Math.cos(mid) * radius, py + 1.55, Math.sin(mid) * radius);
+      panel.rotation.y = -mid;
+      this.fenceGroup.add(panel);
+    }
+
+    this.scene.add(this.fenceGroup);
+  }
+
+  public setGroundColor(color: string | number | THREE.Color): void {
+    this.material?.color.set(color);
+  }
+
+  public setVisible(visible: boolean): void {
+    if (this.mesh) this.mesh.visible = visible;
+    if (this.fenceGroup) this.fenceGroup.visible = visible;
   }
 }
