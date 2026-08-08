@@ -45,8 +45,11 @@ export class CameraJuice {
       // orthographic projection a world-Y jolt would slide the whole ground
       // plane sideways instead of nudging the frame, because there is no
       // perspective to sell it as the lens moving.
-      this.camera.translateX((Math.random() - 0.5) * shake * 1.5);
-      this.camera.translateY((Math.random() - 0.5) * shake * 1.5);
+      // 1.8 is the same fraction of the frame the old perspective shake moved:
+      // it threw the camera 1.8 world units about a view that was 26 units
+      // tall, and the orthographic frame is 28.
+      this.camera.translateX((Math.random() - 0.5) * shake * 1.9);
+      this.camera.translateY((Math.random() - 0.5) * shake * 1.9);
 
       // Roll only. Pitch jitter reads as the floor swimming when nothing
       // tapers with distance.

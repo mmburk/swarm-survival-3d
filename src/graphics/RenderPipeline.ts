@@ -128,6 +128,16 @@ const SUN_OFFSET = new THREE.Vector3(-10, 46, -28);
 /** Half-width of the shadow frustum, in world units. */
 const SHADOW_EXTENT = 46;
 
+/**
+ * Fog densities below are authored against the old raked camera, which could
+ * only see about 39 units down the field. The isometric rake is flatter and
+ * reaches 55, and FogExp2 squares the distance, so leaving them alone turned
+ * the top of the frame to soup -- the boss arena went from half hidden to
+ * three quarters. Scaling here rather than in the tables keeps the sectors
+ * readable relative to each other, which is what those numbers are really for.
+ */
+const FOG_RANGE_SCALE = 39 / 55;
+
 export class RenderPipeline {
   public scene: THREE.Scene;
   public camera: THREE.OrthographicCamera;
@@ -151,7 +161,7 @@ export class RenderPipeline {
     this.bgColor.copy(start.skyColor);
     this.fogColor.copy(start.fogColor);
     this.scene.background = this.bgColor;
-    this.fog = new THREE.FogExp2(this.fogColor.getHex(), start.fogDensity);
+    this.fog = new THREE.FogExp2(this.fogColor.getHex(), start.fogDensity * FOG_RANGE_SCALE);
     this.scene.fog = this.fog;
 
     // Orthographic, not perspective: nothing tapers with distance, so a runner
@@ -230,7 +240,7 @@ export class RenderPipeline {
     this.fogColor.copy(sector.fogColor);
     this.scene.background = this.bgColor;
     this.fog.color.copy(this.fogColor);
-    this.fog.density = sector.fogDensity;
+    this.setFogDensity(sector.fogDensity);
 
     this.dirLight.color.copy(sector.keyLight);
     this.dirLight.intensity = sector.keyIntensity;
@@ -250,7 +260,7 @@ export class RenderPipeline {
     this.fogColor.copy(SHELTER_LIGHT.sky);
     this.scene.background = this.bgColor;
     this.fog.color.copy(this.fogColor);
-    this.fog.density = SHELTER_LIGHT.fogDensity;
+    this.setFogDensity(SHELTER_LIGHT.fogDensity);
 
     this.dirLight.color.copy(SHELTER_LIGHT.key);
     this.dirLight.intensity = SHELTER_LIGHT.keyIntensity;
@@ -264,7 +274,7 @@ export class RenderPipeline {
   /** Boss arena: red dust and a hard, low sun. */
   public applyBossLighting(terrain?: TerrainGenerator): void {
     this.applySector(5, terrain);
-    this.fog.density = 0.022;
+    this.setFogDensity(0.022);
     this.dirLight.intensity = 3.3;
     this.ambientLight.intensity = 1.85;
   }
@@ -283,6 +293,11 @@ export class RenderPipeline {
 
   public setBloomEnabled(enabled: boolean): void {
     this.bloomPass.enabled = enabled;
+  }
+
+  /** Applies an authored density through the camera-range compensation. */
+  private setFogDensity(density: number): void {
+    this.fog.density = density * FOG_RANGE_SCALE;
   }
 
   /**

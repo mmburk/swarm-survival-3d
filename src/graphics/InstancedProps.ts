@@ -6,6 +6,13 @@ export interface Obstacle {
   x: number;
   z: number;
   radius: number;
+  /**
+   * How tall the thing standing here is. Collision does not care, but the
+   * camera does: under a 33-degree rake anything above about two units can
+   * come between the lens and the player, and the player has to stay visible
+   * through it.
+   */
+  height?: number;
 }
 
 /**
@@ -36,8 +43,16 @@ export class InstancedProps {
     this.scene.add(this.root);
   }
 
+  /**
+   * Whether the field clutter is on screen. The obstacle list outlives the
+   * field -- it is still populated while you are down in the shelter -- so
+   * anything reading it for sightlines has to check this first.
+   */
+  public static visible: boolean = true;
+
   public setVisible(visible: boolean): void {
     this.root.visible = visible;
+    InstancedProps.visible = visible;
   }
 
   private ring(i: number, count: number, min: number, span: number, jitter = 0.5) {
@@ -72,7 +87,7 @@ export class InstancedProps {
       const y = this.terrain.getHeightAt(x, z);
       const rot = Math.random() * Math.PI * 2;
 
-      InstancedProps.obstacles.push({ x, z, radius: 2.0 });
+      InstancedProps.obstacles.push({ x, z, radius: 2.0, height: 2.0 });
 
       this.dummy.scale.set(1, 1, 1);
       this.dummy.rotation.set(0, rot, 0);
@@ -115,7 +130,7 @@ export class InstancedProps {
       const { x, z } = this.ring(i, count, 13, 42, 0.9);
       const y = this.terrain.getHeightAt(x, z);
 
-      InstancedProps.obstacles.push({ x, z, radius: 0.8 });
+      InstancedProps.obstacles.push({ x, z, radius: 0.8, height: 6.4 });
 
       this.dummy.scale.set(1, 0.8 + Math.random() * 0.5, 1);
       this.dummy.rotation.set((Math.random() - 0.5) * 0.12, Math.random() * Math.PI, (Math.random() - 0.5) * 0.12);
@@ -159,7 +174,7 @@ export class InstancedProps {
       const dx = Math.cos(heading);
       const dz = Math.sin(heading);
 
-      InstancedProps.obstacles.push({ x, z, radius: 1.5 });
+      InstancedProps.obstacles.push({ x, z, radius: 1.5, height: 1.1 });
 
       for (let b = 0; b < perWall; b++) {
         const row = Math.floor(b / 3);
@@ -194,7 +209,7 @@ export class InstancedProps {
       const y = this.terrain.getHeightAt(x, z);
       const rot = Math.random() * Math.PI;
 
-      InstancedProps.obstacles.push({ x, z, radius: 1.35 });
+      InstancedProps.obstacles.push({ x, z, radius: 1.35, height: 1.5 });
 
       this.dummy.scale.set(1, 1, 1);
       this.dummy.rotation.set(0, rot, 0);

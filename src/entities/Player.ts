@@ -95,6 +95,7 @@ export class Player {
   private isFlashed: boolean = false;
 
   private jacketMat!: THREE.MeshStandardMaterial;
+  private occlusionMark!: THREE.Mesh;
   private leftLeg!: THREE.Mesh;
   private rightLeg!: THREE.Mesh;
   private weaponRigs: Map<WeaponId, THREE.Group> = new Map();
@@ -123,10 +124,80 @@ export class Player {
     this.group.add(this.rig);
 
     this.buildSurvivor();
+    this.buildOcclusionMark();
     this.buildWeaponRigs();
     this.setWeapon('RANGER', false);
 
     this.scene.add(this.group);
+  }
+
+  /**
+   * A pale silhouette drawn through whatever is standing in front of you.
+   *
+   * The isometric rake made this necessary. At the old 48 degrees a dead tree
+   * hid about six units of the ground behind it; at 33 it hides eleven, and
+   * losing the player behind a tree trunk in a game about being surrounded is
+   * not a thing you can ask someone to live with. It ignores the depth buffer
+   * entirely and is switched on only while something tall is actually in the
+   * way -- see resolveOcclusion.
+   */
+  private buildOcclusionMark(): void {
+    this.occlusionMark = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.24, 1.0, 3, 8),
+      new THREE.MeshBasicMaterial({
+        color: HEX.ash,
+        transparent: true,
+        // Faint on purpose. It has to be readable through a tree trunk without
+        // becoming a marker that sits on top of the character and hides him,
+        // because it is drawn over him too -- there is no way to draw only the
+        // hidden part of a shape that is inside the thing hiding it.
+        opacity: 0.3,
+        depthTest: false,
+        depthWrite: false
+      })
+    );
+    this.occlusionMark.position.y = 0.98;
+    this.occlusionMark.renderOrder = 999;
+    this.occlusionMark.visible = false;
+    this.group.add(this.occlusionMark);
+  }
+
+  /**
+   * Turns the silhouette on when a tall prop sits on the line between the
+   * camera and the player. Worked in the flat, against the rig's own angle
+   * rather than the live camera, so a shake never makes it flicker.
+   */
+  private resolveOcclusion(): void {
+    const o = CAMERA_RIG.offset;
+    const flat = Math.hypot(o.x, o.z);
+    if (!InstancedProps.visible || flat < 1e-4) {
+      this.occlusionMark.visible = false;
+      return;
+    }
+    // How fast the sightline climbs as it travels back towards the camera.
+    const rise = o.y / flat;
+    const dirX = o.x / flat;
+    const dirZ = o.z / flat;
+
+    let hidden = false;
+    for (const ob of InstancedProps.obstacles) {
+      if (!ob.height || ob.height < 2.2) continue;
+
+      const dx = ob.x - this.position.x;
+      const dz = ob.z - this.position.z;
+      // Distance along the sightline, and how far off it the prop sits.
+      const along = dx * dirX + dz * dirZ;
+      if (along <= 0 || along > flat) continue;
+      const off = Math.abs(dx * dirZ - dz * dirX);
+      if (off > ob.radius + this.radius) continue;
+      // Tall enough to still be in the way once the line has climbed.
+      if (ob.height > this.position.y + along * rise) {
+        hidden = true;
+        break;
+      }
+    }
+
+    this.occlusionMark.visible = hidden;
   }
 
   // ---------------------------------------------------------------- visuals
@@ -632,6 +703,8 @@ export class Player {
 
     this.rig.rotation.z = THREE.MathUtils.lerp(this.rig.rotation.z, -this.velocity.x * 0.012, delta * 10);
     this.rig.position.z = this.recoilOffset;
+
+    this.resolveOcclusion();
 
     tempCamTarget.copy(this.position).add(CAMERA_RIG.offset);
     camera.position.lerp(tempCamTarget, delta * 7);
