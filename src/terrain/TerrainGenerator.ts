@@ -116,14 +116,27 @@ export class TerrainGenerator {
     this.scene.add(this.mesh);
   }
 
-  /** A ring of leaning chain-link and jersey barriers marking the play area. */
+  /**
+   * A ring of leaning chain-link and jersey barriers marking the play area.
+   *
+   * Instanced: 54 posts and 54 panels used to be 108 individual meshes, which
+   * on its own was a quarter of the frame's draw calls for scenery nobody
+   * looks at.
+   */
   private createPerimeterFence(): void {
     this.fenceGroup = new THREE.Group();
 
+    const count = 54;
+    const radius = 60;
+    const dummy = new THREE.Object3D();
+
     const postGeo = new THREE.CylinderGeometry(0.13, 0.13, 3.4, 5);
     const postMat = new THREE.MeshStandardMaterial({ color: HEX.steel, roughness: 0.85, metalness: 0.35 });
-    const meshGeo = new THREE.PlaneGeometry(5.4, 3.0);
-    const meshMat = new THREE.MeshStandardMaterial({
+    const posts = new THREE.InstancedMesh(postGeo, postMat, count);
+    posts.castShadow = true;
+
+    const panelGeo = new THREE.PlaneGeometry(5.4, 3.0);
+    const panelMat = new THREE.MeshStandardMaterial({
       color: 0x6a6d63,
       roughness: 0.9,
       metalness: 0.2,
@@ -132,27 +145,32 @@ export class TerrainGenerator {
       opacity: 0.5,
       side: THREE.DoubleSide
     });
+    const panels = new THREE.InstancedMesh(panelGeo, panelMat, count);
 
-    const count = 54;
-    const radius = 60;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
       const px = Math.cos(angle) * radius;
       const pz = Math.sin(angle) * radius;
       const py = this.getHeightAt(px, pz);
 
-      const post = new THREE.Mesh(postGeo, postMat);
-      post.position.set(px, py + 1.7, pz);
-      post.rotation.z = (Math.random() - 0.5) * 0.16;
-      this.fenceGroup.add(post);
+      dummy.scale.set(1, 1, 1);
+      dummy.rotation.set(0, 0, (Math.random() - 0.5) * 0.16);
+      dummy.position.set(px, py + 1.7, pz);
+      dummy.updateMatrix();
+      posts.setMatrixAt(i, dummy.matrix);
 
-      const panel = new THREE.Mesh(meshGeo, meshMat);
       const mid = angle + Math.PI / count;
-      panel.position.set(Math.cos(mid) * radius, py + 1.55, Math.sin(mid) * radius);
-      panel.rotation.y = -mid;
-      this.fenceGroup.add(panel);
+      dummy.rotation.set(0, -mid, 0);
+      dummy.position.set(Math.cos(mid) * radius, py + 1.55, Math.sin(mid) * radius);
+      dummy.updateMatrix();
+      panels.setMatrixAt(i, dummy.matrix);
     }
 
+    posts.instanceMatrix.needsUpdate = true;
+    panels.instanceMatrix.needsUpdate = true;
+
+    this.fenceGroup.add(posts);
+    this.fenceGroup.add(panels);
     this.scene.add(this.fenceGroup);
   }
 

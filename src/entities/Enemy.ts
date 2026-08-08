@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { IPoolable } from '../pooling/ObjectPool';
 import { ParticleSystem } from '../graphics/ParticleSystem';
 import { AudioManager } from '../core/AudioManager';
@@ -49,6 +50,76 @@ const tempAvoid = new THREE.Vector3();
 
 let nextEnemyId = 1;
 
+// ---------------------------------------------------------------- geometry
+//
+// The body used to be eight separate meshes per zombie, which meant thirty of
+// them cost ~300 draw calls on their own. Everything that does not animate is
+// merged into a single geometry with the part colours baked into vertex
+// colours, and the result is shared by every zombie of that type.
+
+/** Paints a flat colour into a geometry's vertex-colour attribute. */
+function tint(geo: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
+  const c = new THREE.Color(hex);
+  const n = geo.attributes.position.count;
+  const colors = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
+const SOCKET_COLOR = 0x14120e;
+const JAW_COLOR = 0x6b1a1a;
+
+const bodyGeometries = new Map<EnemyType, THREE.BufferGeometry>();
+
+/** Builds (once) the merged, vertex-coloured body for one zombie type. */
+function bodyGeometryFor(type: EnemyType): THREE.BufferGeometry {
+  const cached = bodyGeometries.get(type);
+  if (cached) return cached;
+
+  const p = PROFILES[type] ?? PROFILES.SHAMBLER;
+  const parts: THREE.BufferGeometry[] = [];
+
+  const leftLeg = new THREE.BoxGeometry(0.21, 0.62, 0.21).translate(-0.17, 0.31, 0.04);
+  const rightLeg = new THREE.BoxGeometry(0.21, 0.62, 0.21).translate(0.17, 0.31, 0.04);
+  const torso = new THREE.BoxGeometry(0.62, 0.8, 0.42).translate(0, 0.98, 0);
+  parts.push(tint(leftLeg, p.cloth), tint(rightLeg, p.cloth), tint(torso, p.cloth));
+
+  // Exposed ribs through the torn shirt front.
+  const wound = new THREE.BoxGeometry(0.3, 0.34, 0.06).translate(0.04, 0.96, -0.22);
+  // Head lolls to one side; the tilt is baked in.
+  const head = new THREE.BoxGeometry(0.36, 0.38, 0.36).rotateZ(0.14).translate(0, 1.55, -0.06);
+  parts.push(tint(wound, p.flesh), tint(head, p.flesh));
+
+  const leftSocket = new THREE.BoxGeometry(0.09, 0.07, 0.05).translate(-0.09, 1.59, -0.25);
+  const rightSocket = new THREE.BoxGeometry(0.09, 0.07, 0.05).translate(0.09, 1.59, -0.25);
+  parts.push(tint(leftSocket, SOCKET_COLOR), tint(rightSocket, SOCKET_COLOR));
+
+  const jaw = new THREE.BoxGeometry(0.2, 0.1, 0.12).translate(0, 1.42, -0.2);
+  parts.push(tint(jaw, JAW_COLOR));
+
+  // useGroups = false: grouping would keep one draw call per material and
+  // defeat the whole point of merging.
+  const merged = mergeGeometries(parts, false);
+  for (const part of parts) part.dispose();
+
+  bodyGeometries.set(type, merged);
+  return merged;
+}
+
+let armGeometry: THREE.BufferGeometry | null = null;
+function sharedArmGeometry(): THREE.BufferGeometry {
+  if (!armGeometry) armGeometry = new THREE.BoxGeometry(0.15, 0.15, 0.7);
+  return armGeometry;
+}
+
+let hpBackGeometry: THREE.BufferGeometry | null = null;
+let hpFillGeometry: THREE.BufferGeometry | null = null;
+
 export class Enemy implements IPoolable {
   public active: boolean = false;
   public group: THREE.Group;
@@ -82,11 +153,11 @@ export class Enemy implements IPoolable {
   private spawnTimer: number = 0;
   private baseScale: number = 1.0;
   private lurch: number = 0;
-  private baseFlesh: number = HEX.flesh;
 
   private body: THREE.Group;
-  private fleshMat!: THREE.MeshStandardMaterial;
-  private clothMat!: THREE.MeshStandardMaterial;
+  private bodyMesh!: THREE.Mesh;
+  private bodyMat!: THREE.MeshStandardMaterial;
+  private armMat!: THREE.MeshStandardMaterial;
   private leftArm!: THREE.Mesh;
   private rightArm!: THREE.Mesh;
   private hpBar!: THREE.Mesh;
@@ -116,62 +187,43 @@ export class Enemy implements IPoolable {
   private buildModel(): void {
     this.body.rotation.x = -0.22; // hunched
 
-    this.fleshMat = new THREE.MeshStandardMaterial({ color: HEX.flesh, roughness: 0.95, metalness: 0.0, flatShading: true });
-    this.clothMat = new THREE.MeshStandardMaterial({ color: 0x4c4b41, roughness: 1.0, metalness: 0.0, flatShading: true });
+    // One mesh for everything that does not move. Colours come from the
+    // merged geometry, so a single material covers cloth, flesh, sockets and
+    // jaw at once.
+    this.bodyMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.95,
+      metalness: 0.0,
+      flatShading: true
+    });
+    this.bodyMesh = new THREE.Mesh(bodyGeometryFor(EnemyType.SHAMBLER), this.bodyMat);
+    this.body.add(this.bodyMesh);
 
-    const legGeo = new THREE.BoxGeometry(0.21, 0.62, 0.21);
-    const ll = new THREE.Mesh(legGeo, this.clothMat);
-    ll.position.set(-0.17, 0.31, 0.04);
-    this.body.add(ll);
-    const rl = new THREE.Mesh(legGeo, this.clothMat);
-    rl.position.set(0.17, 0.31, 0.04);
-    this.body.add(rl);
+    // Arms stay separate because they animate out of phase — that paw forward
+    // is most of what makes the silhouette read as a zombie.
+    this.armMat = new THREE.MeshStandardMaterial({
+      color: HEX.flesh,
+      roughness: 0.95,
+      metalness: 0.0,
+      flatShading: true
+    });
 
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.8, 0.42), this.clothMat);
-    torso.position.y = 0.98;
-    torso.castShadow = true;
-    this.body.add(torso);
-
-    // Exposed ribs / torn shirt front.
-    const wound = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.06), this.fleshMat);
-    wound.position.set(0.04, 0.96, -0.22);
-    this.body.add(wound);
-
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.38, 0.36), this.fleshMat);
-    head.position.set(0, 1.55, -0.06);
-    head.rotation.z = 0.14; // lolling
-    head.castShadow = true;
-    this.body.add(head);
-
-    // Sunken sockets — dark, not glowing.
-    const socketMat = new THREE.MeshStandardMaterial({ color: 0x14120e, roughness: 1.0 });
-    const socketGeo = new THREE.BoxGeometry(0.09, 0.07, 0.05);
-    const ls = new THREE.Mesh(socketGeo, socketMat);
-    ls.position.set(-0.09, 1.59, -0.25);
-    this.body.add(ls);
-    const rs = new THREE.Mesh(socketGeo, socketMat);
-    rs.position.set(0.09, 1.59, -0.25);
-    this.body.add(rs);
-
-    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.12), new THREE.MeshStandardMaterial({ color: 0x6b1a1a, roughness: 1.0 }));
-    jaw.position.set(0, 1.42, -0.2);
-    this.body.add(jaw);
-
-    // Reaching arms.
-    const armGeo = new THREE.BoxGeometry(0.15, 0.15, 0.7);
-    this.leftArm = new THREE.Mesh(armGeo, this.fleshMat);
+    this.leftArm = new THREE.Mesh(sharedArmGeometry(), this.armMat);
     this.leftArm.position.set(-0.38, 1.0, -0.38);
     this.leftArm.rotation.x = Math.PI / 2 - 0.2;
     this.body.add(this.leftArm);
 
-    this.rightArm = new THREE.Mesh(armGeo, this.fleshMat);
+    this.rightArm = new THREE.Mesh(sharedArmGeometry(), this.armMat);
     this.rightArm.position.set(0.38, 1.0, -0.38);
     this.rightArm.rotation.x = Math.PI / 2 - 0.1;
     this.body.add(this.rightArm);
 
     // Damage readout — a scratched strip, only shown once hurt.
+    if (!hpBackGeometry) hpBackGeometry = new THREE.PlaneGeometry(1.1, 0.1);
+    if (!hpFillGeometry) hpFillGeometry = new THREE.PlaneGeometry(1.06, 0.07);
+
     this.hpBack = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.1, 0.1),
+      hpBackGeometry,
       new THREE.MeshBasicMaterial({ color: 0x1a1a14, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
     );
     this.hpBack.position.set(0, 2.15, 0);
@@ -180,7 +232,7 @@ export class Enemy implements IPoolable {
     this.group.add(this.hpBack);
 
     this.hpBar = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.06, 0.07),
+      hpFillGeometry,
       new THREE.MeshBasicMaterial({ color: HEX.blood, side: THREE.DoubleSide })
     );
     this.hpBar.position.set(0, 2.15, 0.012);
@@ -214,10 +266,13 @@ export class Enemy implements IPoolable {
     this.scoreValue = p.score;
     this.scrapValue = p.scrap;
     this.baseScale = p.scale;
-    this.baseFlesh = p.flesh;
 
-    this.fleshMat.color.setHex(p.flesh);
-    this.clothMat.color.setHex(p.cloth);
+    // Cloth, sockets and jaw colours live in the shared geometry; only the
+    // arms carry a per-instance colour.
+    this.bodyMesh.geometry = bodyGeometryFor(type);
+    this.armMat.color.setHex(p.flesh);
+    this.bodyMat.emissive.setHex(0x000000);
+    this.armMat.emissive.setHex(0x000000);
 
     this.hpBack.visible = false;
     this.hpBar.visible = false;
@@ -234,7 +289,10 @@ export class Enemy implements IPoolable {
 
     this.health -= damage;
     this.hitFlashTimer = 0.07;
-    this.fleshMat.color.setHex(0xd8c6b4);
+    // Flash via emissive rather than base colour: the body's colours are baked
+    // into the geometry now, so there is no single colour left to override.
+    this.bodyMat.emissive.setHex(0x9a8a74);
+    this.armMat.emissive.setHex(0x9a8a74);
 
     if (hitPoint) {
       const dx = this.position.x - hitPoint.x;
@@ -285,7 +343,10 @@ export class Enemy implements IPoolable {
 
     if (this.hitFlashTimer > 0) {
       this.hitFlashTimer -= delta;
-      if (this.hitFlashTimer <= 0) this.fleshMat.color.setHex(this.baseFlesh);
+      if (this.hitFlashTimer <= 0) {
+        this.bodyMat.emissive.setHex(0x000000);
+        this.armMat.emissive.setHex(0x000000);
+      }
     }
 
     if (this.stunTimer > 0) {
@@ -309,7 +370,10 @@ export class Enemy implements IPoolable {
         this.swellTimer -= delta;
         const puff = 1 + (0.85 - this.swellTimer) * 0.55;
         this.group.scale.setScalar(this.baseScale * puff);
-        this.fleshMat.color.setHex(Math.floor(frameCount / 4) % 2 === 0 ? 0xc9c06a : this.baseFlesh);
+        // Pulses hotter as the gas builds — the tell that it is about to go.
+        const hot = Math.floor(frameCount / 4) % 2 === 0 ? 0x6a6420 : 0x000000;
+        this.bodyMat.emissive.setHex(hot);
+        this.armMat.emissive.setHex(hot);
 
         if (this.swellTimer <= 0) {
           onBurst?.(this);
