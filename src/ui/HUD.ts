@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { injectTheme, CSS } from '../theme/Palette';
+import { CAMERA_RIG } from '../graphics/CameraRig';
 
 interface DamageText {
   el: HTMLElement;
@@ -21,6 +22,7 @@ export interface Vitals {
 }
 
 const tempVec = new THREE.Vector3();
+const tempBlip = new THREE.Vector2();
 
 /**
  * Everything on the glass. Painted like a field kit: stencilled labels,
@@ -397,7 +399,7 @@ export class HUD {
     item.el.style.display = 'block';
   }
 
-  public updateDamageNumbers(delta: number, camera: THREE.PerspectiveCamera): void {
+  public updateDamageNumbers(delta: number, camera: THREE.OrthographicCamera): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
 
@@ -612,26 +614,34 @@ export class HUD {
     ctx.moveTo(0, cy); ctx.lineTo(w, cy);
     ctx.stroke();
 
+    // Blips are rotated out of world space and onto the camera's screen axes.
+    // The rig is swung 45 degrees round, so plotting raw x/z would put a runner
+    // drawn to the north-east of you somewhere off to the side of where you
+    // actually see it — the map has to point the same way the room does.
+    const blip = (wx: number, wz: number): THREE.Vector2 => {
+      CAMERA_RIG.toScreen(wx - playerPos.x, wz - playerPos.z, tempBlip);
+      return tempBlip.set(cx + tempBlip.x * scale, cy + tempBlip.y * scale);
+    };
+
     ctx.fillStyle = 'rgba(142,35,35,0.9)';
     for (const e of enemies) {
-      const x = cx + (e.position.x - playerPos.x) * scale;
-      const y = cy + (e.position.z - playerPos.z) * scale;
-      if (x < 3 || x > w - 3 || y < 3 || y > h - 3) continue;
-      ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+      const p = blip(e.position.x, e.position.z);
+      if (p.x < 3 || p.x > w - 3 || p.y < 3 || p.y > h - 3) continue;
+      ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
     }
 
     ctx.fillStyle = CSS.amber;
     for (const g of gates) {
-      const x = cx + (g.x - playerPos.x) * scale;
-      const y = cy + (g.z - playerPos.z) * scale;
-      const cxp = Math.max(4, Math.min(w - 4, x));
-      const cyp = Math.max(4, Math.min(h - 4, y));
+      const p = blip(g.x, g.z);
+      const cxp = Math.max(4, Math.min(w - 4, p.x));
+      const cyp = Math.max(4, Math.min(h - 4, p.y));
       ctx.fillRect(cxp - 3, cyp - 3, 6, 6);
     }
 
     if (boss) {
-      const x = Math.max(5, Math.min(w - 5, cx + (boss.x - playerPos.x) * scale));
-      const y = Math.max(5, Math.min(h - 5, cy + (boss.z - playerPos.z) * scale));
+      const p = blip(boss.x, boss.z);
+      const x = Math.max(5, Math.min(w - 5, p.x));
+      const y = Math.max(5, Math.min(h - 5, p.y));
       ctx.fillStyle = '#d05a2a';
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, Math.PI * 2);

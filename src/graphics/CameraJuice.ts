@@ -1,11 +1,11 @@
 import * as THREE from 'three';
+import { CAMERA_RIG } from './CameraRig';
 
 export class CameraJuice {
   private trauma: number = 0;
-  private camera: THREE.PerspectiveCamera;
-  private shakeOffset: THREE.Vector3 = new THREE.Vector3();
+  private camera: THREE.OrthographicCamera;
 
-  constructor(camera: THREE.PerspectiveCamera) {
+  constructor(camera: THREE.OrthographicCamera) {
     this.camera = camera;
   }
 
@@ -14,9 +14,19 @@ export class CameraJuice {
     this.trauma = Math.min(1.0, this.trauma + amount);
   }
 
+  /** Drops the camera straight onto its mark, with no easing. */
+  public snapTo(targetPos: THREE.Vector3): void {
+    const o = CAMERA_RIG.offset;
+    this.trauma = 0;
+    this.camera.position.set(targetPos.x + o.x, targetPos.y + o.y, targetPos.z + o.z);
+    this.camera.lookAt(targetPos.x, targetPos.y + CAMERA_RIG.lookHeight, targetPos.z);
+  }
+
   public update(delta: number, targetPos: THREE.Vector3): void {
-    const camOffsetZ = 18;
-    const camOffsetY = 20;
+    const camOffsetX = CAMERA_RIG.offset.x;
+    const camOffsetY = CAMERA_RIG.offset.y;
+    const camOffsetZ = CAMERA_RIG.offset.z;
+    const lookHeight = CAMERA_RIG.lookHeight;
 
     if (this.trauma > 0.001) {
       // Quadratic decay curve for natural weight feeling
@@ -24,31 +34,30 @@ export class CameraJuice {
 
       const shake = this.trauma * this.trauma;
 
-      // Positional shake impulse
-      this.shakeOffset.set(
-        (Math.random() - 0.5) * shake * 1.8,
-        (Math.random() - 0.5) * shake * 1.4,
-        (Math.random() - 0.5) * shake * 1.8
-      );
+      // Smooth camera position follow, on its mark before the kick is added
+      this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetPos.x + camOffsetX, delta * 12);
+      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetPos.y + camOffsetY, delta * 12);
+      this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetPos.z + camOffsetZ, delta * 12);
 
-      // Smooth camera position follow with added shake
-      this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetPos.x, delta * 12) + this.shakeOffset.x;
-      this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetPos.y + camOffsetY, delta * 12) + this.shakeOffset.y;
-      this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetPos.z + camOffsetZ, delta * 12) + this.shakeOffset.z;
+      this.camera.lookAt(targetPos.x, targetPos.y + lookHeight, targetPos.z);
 
-      this.camera.lookAt(targetPos.x, targetPos.y + 0.5, targetPos.z);
+      // The kick rides the camera's own axes rather than the world's. Under an
+      // orthographic projection a world-Y jolt would slide the whole ground
+      // plane sideways instead of nudging the frame, because there is no
+      // perspective to sell it as the lens moving.
+      this.camera.translateX((Math.random() - 0.5) * shake * 1.5);
+      this.camera.translateY((Math.random() - 0.5) * shake * 1.5);
 
-      // Rotational pitch/roll/yaw jitter impulse
-      const rotShake = shake * 0.08;
-      this.camera.rotation.z += (Math.random() - 0.5) * rotShake;
-      this.camera.rotation.x += (Math.random() - 0.5) * rotShake * 0.5;
+      // Roll only. Pitch jitter reads as the floor swimming when nothing
+      // tapers with distance.
+      this.camera.rotation.z += (Math.random() - 0.5) * shake * 0.08;
     } else {
       this.trauma = 0;
       // Smooth follow when idle
-      this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetPos.x, delta * 8);
+      this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetPos.x + camOffsetX, delta * 8);
       this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetPos.y + camOffsetY, delta * 8);
       this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetPos.z + camOffsetZ, delta * 8);
-      this.camera.lookAt(targetPos.x, targetPos.y + 0.5, targetPos.z);
+      this.camera.lookAt(targetPos.x, targetPos.y + lookHeight, targetPos.z);
     }
   }
 }

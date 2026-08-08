@@ -24,6 +24,31 @@ const HALF_X = 14.5;
 const HALF_Z = 12.0;
 
 /**
+ * The room is a box with two of its walls missing.
+ *
+ * The camera looks in over the south-east corner, so an east wall and a south
+ * wall would stand directly between it and the floor the player walks on. The
+ * old fix was to build them anyway and hold everyone well back from them, which
+ * cost about three metres of room on each side. This is the fix every fixed
+ * camera isometric game actually uses: those two walls are simply never built.
+ * The player still cannot leave — the boundary below is enforced in code, not
+ * in concrete — and a low footing runs along each open edge so the floor reads
+ * as ending at a wall line rather than being torn off.
+ *
+ * The consequence to remember: this only works because the rig yaw is pinned at
+ * 45 degrees. Swing the camera round and the missing walls are in shot.
+ */
+
+/** How far the floor slides under the two walls that are still modelled. */
+const FAR_OVERHANG = 2.0;
+/** How far it runs past the open edges, to carry the footing. */
+const NEAR_LIP = 0.6;
+
+/** Half-extents of the floor the player is actually allowed to stand on. */
+const WALK_X = HALF_X - 0.7;
+const WALK_Z = HALF_Z - 0.7;
+
+/**
  * THE SHELTER — a boarded-up basement under a hardware store.
  *
  * This is the hub the whole loop returns to: you pick a gun off the rack,
@@ -113,15 +138,25 @@ export class Shelter {
     floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
     floorTex.repeat.set(7, 6);
 
-    const floorGeo = new THREE.PlaneGeometry(HALF_X * 2 + 3, HALF_Z * 2 + 3);
+    // The slab is deliberately off-centre: it runs under the north and west
+    // walls the way a real floor would, and stops just past the open edges,
+    // where there is nothing left to hide the seam behind.
+    const floorW = HALF_X * 2 + FAR_OVERHANG + NEAR_LIP;
+    const floorD = HALF_Z * 2 + FAR_OVERHANG + NEAR_LIP;
+    const floorCX = (NEAR_LIP - FAR_OVERHANG) / 2;
+    const floorCZ = (NEAR_LIP - FAR_OVERHANG) / 2;
+
+    const floorGeo = new THREE.PlaneGeometry(floorW, floorD);
     floorGeo.rotateX(-Math.PI / 2);
     const floor = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({
       color: 0x6e6d5f, map: floorTex, roughness: 1.0, metalness: 0.0
     }));
+    floor.position.set(floorCX, 0, floorCZ);
     floor.receiveShadow = true;
     this.group.add(floor);
 
-    // Walls.
+    // Walls — north and west only. The east and south runs are the ones the
+    // camera would be looking through, so they do not exist.
     const wallMat = this.concrete(0x57564b);
     const wallH = 7;
     const mkWall = (w: number, d: number, x: number, z: number) => {
@@ -132,31 +167,67 @@ export class Shelter {
       return m;
     };
     mkWall(HALF_X * 2 + 3, 1, 0, -HALF_Z - 1.5);
-    mkWall(HALF_X * 2 + 3, 1, 0, HALF_Z + 1.5);
     mkWall(1, HALF_Z * 2 + 3, -HALF_X - 1.5, 0);
-    mkWall(1, HALF_Z * 2 + 3, HALF_X + 1.5, 0);
 
-    // Exposed ceiling joists, only visible at the edges of the frame but they
-    // make the space read as "under something".
+    // What is left of the two that went: a footing about ankle high, sitting on
+    // the line the player is stopped at. It draws the edge of the room without
+    // ever rising far enough to cover anything, and stops the slab from just
+    // ending in mid air.
+    const footMat = this.concrete(0x3c3b33);
+    const footH = 0.34;
+    const mkFooting = (w: number, d: number, x: number, z: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, footH, d), footMat);
+      m.position.set(x, footH / 2, z);
+      m.receiveShadow = true;
+      this.group.add(m);
+    };
+    mkFooting(0.6, floorD, HALF_X + 0.3, floorCZ);
+    mkFooting(floorW, 0.6, floorCX, HALF_Z + 0.3);
+
+    // Exposed ceiling joists. A raked camera looks *through* the ceiling on its
+    // way to the floor, so a full grid of these lay across the room as a set of
+    // bars. Only the runs against the two far walls are kept: they sit at the
+    // top and left edges of the frame, they make the space read as "under
+    // something", and their sightline to the lens never crosses the floor the
+    // player walks on.
     const joistMat = this.wood(0x3e3020);
-    for (let i = -4; i <= 4; i++) {
+    for (const z of [-12.9, -11.5]) {
       const joist = new THREE.Mesh(new THREE.BoxGeometry(HALF_X * 2 + 2, 0.32, 0.42), joistMat);
-      joist.position.set(0, 6.6, i * 3.0);
+      joist.position.set(0, 6.6, z);
       this.group.add(joist);
     }
+    for (let i = -3; i <= 2; i++) {
+      // Stopped short of the walking area entirely: a beam east of where the
+      // player can stand would cross them on its way to the camera.
+      const stub = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.32, 0.42), joistMat);
+      stub.position.set(-HALF_X - 1.1, 6.6, i * 3.0);
+      this.group.add(stub);
+    }
 
-    // Boarded-up windows high on the side walls.
-    for (const side of [-1, 1]) {
-      for (let i = -1; i <= 1; i++) {
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.5, 2.2), this.concrete(0x25251f));
-        frame.position.set(side * (HALF_X + 1.0), 5.0, i * 6.0);
-        this.group.add(frame);
-        for (let b = 0; b < 3; b++) {
-          const board = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.34, 2.6), this.wood(0x5a4830));
-          board.position.set(side * (HALF_X + 0.8), 4.6 + b * 0.48, i * 6.0);
-          board.rotation.x = (b - 1) * 0.06;
-          this.group.add(board);
-        }
+    // The lamps used to hang off the joists that are no longer there, so they
+    // get their own strung cable to hang from.
+    for (const z of [-6, 4.5]) {
+      const cable = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.05, HALF_X * 2 + 2, 4),
+        this.metal(0x25241e)
+      );
+      cable.rotation.z = Math.PI / 2;
+      cable.position.set(0, 6.62, z);
+      this.group.add(cable);
+    }
+
+    // Boarded-up windows high on the west wall. There used to be a matching set
+    // on the east one; with that wall gone they would have been three window
+    // frames hanging in the dark.
+    for (let i = -1; i <= 1; i++) {
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.5, 2.2), this.concrete(0x25251f));
+      frame.position.set(-(HALF_X + 1.0), 5.0, i * 6.0);
+      this.group.add(frame);
+      for (let b = 0; b < 3; b++) {
+        const board = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.34, 2.6), this.wood(0x5a4830));
+        board.position.set(-(HALF_X + 0.8), 4.6 + b * 0.48, i * 6.0);
+        board.rotation.x = (b - 1) * 0.06;
+        this.group.add(board);
       }
     }
   }
@@ -213,7 +284,13 @@ export class Shelter {
     shelf.position.set(p.x - 0.7, 0.95, p.z);
     shelf.receiveShadow = true;
     this.group.add(shelf);
-    this.furniture.push({ x: p.x - 0.9, z: p.z, radius: 1.5 });
+    // Three overlapping stops rather than one, so the whole length of the
+    // backboard is solid. A single circle left the ends open, and the camera
+    // now sits east of the rack: anyone who squeezed round the back of it went
+    // behind the planks and out of sight.
+    for (const dz of [-2.4, 0, 2.4]) {
+      this.furniture.push({ x: p.x - 0.9, z: p.z + dz, radius: 1.5 });
+    }
 
     // Five silhouettes on pegs — one per weapon in the armoury.
     const gunmetal = this.metal(0x2c2e26);
@@ -272,11 +349,22 @@ export class Shelter {
       this.group.add(part);
     }
 
+    // Set back on the open east edge. There is no wall behind it any more, so
+    // it doubles as the thing that closes the room off on this side — and it is
+    // still on the camera's side of the bench top, which is where it has to be.
     const pegboard = new THREE.Mesh(new THREE.BoxGeometry(0.24, 3.0, 5.0), this.wood(0x453722));
-    pegboard.position.set(p.x + 1.6, 3.0, p.z);
+    pegboard.position.set(p.x + 2.7, 3.0, p.z);
     this.group.add(pegboard);
 
-    this.addStencil(new THREE.Vector3(p.x + 1.4, 4.9, p.z), 'BENCH', -Math.PI / 2);
+    // Solid, in three overlapping stops along its length. Since the east wall
+    // came down the player can reach further this way than the board stands,
+    // and behind it is the one place in the room the camera cannot see.
+    for (const dz of [-1.7, 0, 1.7]) {
+      this.furniture.push({ x: p.x + 2.7, z: p.z + dz, radius: 1.1 });
+    }
+
+    // Painted on the pegboard rather than the wall above it, which is gone.
+    this.addStencil(new THREE.Vector3(p.x + 2.55, 3.9, p.z), 'BENCH', -Math.PI / 2);
   }
 
   private buildRadioDesk(): void {
@@ -315,40 +403,55 @@ export class Shelter {
   private buildPinBoard(): void {
     const p = this.stations[3].position;
 
+    // Same story as the pegboard: pushed back towards the wall so it never
+    // stands between the camera and the floor you read it from.
     const board = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.2, 4.6), this.wood(0x6b5a3c));
-    board.position.set(p.x + 1.5, 3.2, p.z);
+    board.position.set(p.x + 3.1, 3.2, p.z);
     this.group.add(board);
 
-    // Notes and photographs pinned all over it.
-    for (let i = 0; i < 16; i++) {
-      const note = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.4 + Math.random() * 0.36, 0.5 + Math.random() * 0.32),
-        new THREE.MeshStandardMaterial({
-          color: [0xd9d2ba, 0xc7bb96, 0xb9ae8e][i % 3],
-          roughness: 1.0,
-          side: THREE.DoubleSide
-        })
-      );
-      note.position.set(p.x + 1.37, 2.1 + Math.random() * 2.1, p.z - 1.9 + Math.random() * 3.8);
-      note.rotation.set(0, -Math.PI / 2, (Math.random() - 0.5) * 0.3);
-      this.group.add(note);
+    // Same as the pegboard: stopped off so nobody walks round the back of it
+    // into the blind strip along the open edge.
+    for (const dz of [-1.5, 0, 1.5]) {
+      this.furniture.push({ x: p.x + 3.1, z: p.z + dz, radius: 1.1 });
     }
 
-    // Red string between two of them, because of course there is.
-    const string = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.012, 0.012, 3.0, 3),
-      new THREE.MeshStandardMaterial({ color: 0x8e2323, roughness: 1.0 })
-    );
-    string.position.set(p.x + 1.34, 3.2, p.z);
-    string.rotation.set(0.4, 0, Math.PI / 2);
-    this.group.add(string);
+    // Notes and photographs pinned all over it — on both faces, because the
+    // camera passes over this end of the room and sees the board from whichever
+    // side the player happens to put it on.
+    for (const face of [-1, 1]) {
+      for (let i = 0; i < 16; i++) {
+        const note = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.4 + Math.random() * 0.36, 0.5 + Math.random() * 0.32),
+          new THREE.MeshStandardMaterial({
+            color: [0xd9d2ba, 0xc7bb96, 0xb9ae8e][i % 3],
+            roughness: 1.0,
+            side: THREE.DoubleSide
+          })
+        );
+        note.position.set(p.x + 3.1 + face * 0.14, 2.1 + Math.random() * 2.1, p.z - 1.9 + Math.random() * 3.8);
+        note.rotation.set(0, face * Math.PI / 2, (Math.random() - 0.5) * 0.3);
+        this.group.add(note);
+      }
+
+      // Red string between two of them, because of course there is.
+      const string = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.012, 3.0, 3),
+        new THREE.MeshStandardMaterial({ color: 0x8e2323, roughness: 1.0 })
+      );
+      string.position.set(p.x + 3.1 + face * 0.16, 3.2, p.z);
+      string.rotation.set(0.4, 0, Math.PI / 2);
+      this.group.add(string);
+    }
 
     const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.0, 1.1), this.wood(0x54432c));
     crate.position.set(p.x + 0.4, 0.5, p.z + 1.6);
     this.group.add(crate);
     this.furniture.push({ x: p.x + 0.4, z: p.z + 1.6, radius: 0.9 });
 
-    this.addStencil(new THREE.Vector3(p.x + 1.3, 5.1, p.z), 'RECORDS', -Math.PI / 2);
+    // Across the top of the board itself and facing back into the room, where
+    // you read it from — the camera is over your shoulder for that. It used to
+    // be higher up, on an east wall that is no longer built.
+    this.addStencil(new THREE.Vector3(p.x + 2.88, 4.4, p.z), 'RECORDS', -Math.PI / 2);
   }
 
   private buildStairs(): void {
@@ -389,7 +492,9 @@ export class Shelter {
       this.furniture.push({ x: p.x + side * 2.9, z: p.z, radius: 1.0 });
     }
 
-    this.addStencil(new THREE.Vector3(p.x, 5.2, p.z - 5.3), 'OUT', 0);
+    // On the room side of the north wall — out at the door frame it was sealed
+    // inside the concrete and never drew.
+    this.addStencil(new THREE.Vector3(p.x, 5.0, p.z - 2.6), 'OUT', 0);
   }
 
   /** Table, bunk, stove, shelving — the parts that are just somebody's home. */
@@ -572,12 +677,16 @@ export class Shelter {
     this.group.visible = false;
   }
 
-  /** Keeps the player inside the walls and out of the furniture. */
+  /**
+   * Keeps the player inside the room and out of the furniture. Two of those
+   * four lines have no wall standing on them — this is the only thing holding
+   * the player in on the east and south sides.
+   */
   public constrain(player: Player): void {
     for (const f of this.furniture) {
       ArcadePhysics.resolveSolidObstacle(player.position, player.radius, f);
     }
-    player.clampToBounds(-HALF_X, HALF_X, -HALF_Z, HALF_Z);
+    player.clampToBounds(-HALF_X, WALK_X, -HALF_Z, WALK_Z);
   }
 
   /** Nearest station the player is standing in, or null. */
@@ -633,11 +742,15 @@ export class Shelter {
       } else if (this.dogWanderTimer <= 0) {
         this.dogWanderTimer = 3.5 + Math.random() * 4.0;
         this.dogTarget.set(
-          THREE.MathUtils.clamp(this.dogHome.x + (Math.random() - 0.5) * 9, -HALF_X + 2, HALF_X - 2),
+          this.dogHome.x + (Math.random() - 0.5) * 9,
           0,
-          THREE.MathUtils.clamp(this.dogHome.z + (Math.random() - 0.5) * 7, -HALF_Z + 2, HALF_Z - 2)
+          this.dogHome.z + (Math.random() - 0.5) * 7
         );
       }
+      // He keeps to the floor, same as you. He can use the near corner now that
+      // there are no walls there to eat him.
+      this.dogTarget.x = THREE.MathUtils.clamp(this.dogTarget.x, -HALF_X + 2, WALK_X - 1);
+      this.dogTarget.z = THREE.MathUtils.clamp(this.dogTarget.z, -HALF_Z + 2, WALK_Z - 1);
     }
 
     const dx = this.dogTarget.x - this.dog.position.x;

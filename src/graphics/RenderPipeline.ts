@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { TerrainGenerator } from '../terrain/TerrainGenerator';
+import { CAMERA_RIG } from './CameraRig';
 
 export interface Sector {
   id: number;
@@ -114,9 +115,22 @@ const SHELTER_LIGHT = {
   ambientIntensity: 2.9
 };
 
+/**
+ * Direction and distance of the key light, relative to whatever it follows.
+ * Swung round to the far side of the rig on purpose: with the camera looking in
+ * from the south-east, a sun over the same shoulder would drop every shadow
+ * behind the thing casting it, where nobody can see it. From here they fall
+ * down and to the left of the screen, which is where an isometric game wants
+ * them — they read as the contact point that orthographic projection otherwise
+ * gives you no depth cue for.
+ */
+const SUN_OFFSET = new THREE.Vector3(-10, 46, -28);
+/** Half-width of the shadow frustum, in world units. */
+const SHADOW_EXTENT = 46;
+
 export class RenderPipeline {
   public scene: THREE.Scene;
-  public camera: THREE.PerspectiveCamera;
+  public camera: THREE.OrthographicCamera;
   public renderer: THREE.WebGLRenderer;
   public composer: EffectComposer;
   public bloomPass: UnrealBloomPass;
@@ -140,9 +154,14 @@ export class RenderPipeline {
     this.fog = new THREE.FogExp2(this.fogColor.getHex(), start.fogDensity);
     this.scene.fog = this.fog;
 
-    this.camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 260);
-    this.camera.position.set(0, 20, 18);
+    // Orthographic, not perspective: nothing tapers with distance, so a runner
+    // at the top of the frame is exactly the size of the one about to reach
+    // you. That is the whole point of the isometric look, and it is also what
+    // makes the arena readable when a dozen of them are strung out across it.
+    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 260);
+    this.camera.position.copy(CAMERA_RIG.offset);
     this.camera.lookAt(0, 0, 0);
+    this.applyCameraFrame();
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -163,16 +182,24 @@ export class RenderPipeline {
     this.scene.add(this.hemiLight);
 
     this.dirLight = new THREE.DirectionalLight(start.keyLight, start.keyIntensity);
-    this.dirLight.position.set(26, 46, 18);
+    this.dirLight.position.copy(SUN_OFFSET);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.set(1024, 1024);
+    // 2048, not 1024: the flatter isometric rake sees roughly half again as far
+    // down the field as the old raked camera did, so the frustum below had to
+    // grow with it. Same map size would have meant coarser texels than before.
+    this.dirLight.shadow.mapSize.set(2048, 2048);
     this.dirLight.shadow.camera.near = 1;
-    this.dirLight.shadow.camera.far = 140;
-    this.dirLight.shadow.camera.left = -55;
-    this.dirLight.shadow.camera.right = 55;
-    this.dirLight.shadow.camera.top = 55;
-    this.dirLight.shadow.camera.bottom = -55;
+    this.dirLight.shadow.camera.far = 120;
+    // The frustum covers a little more than the camera can see and then
+    // follows the player, instead of trying to blanket the whole 110-unit
+    // arena. Same map, roughly 1.6x the texel density, and the shadow pass
+    // only has to consider what is actually near the action.
+    this.dirLight.shadow.camera.left = -SHADOW_EXTENT;
+    this.dirLight.shadow.camera.right = SHADOW_EXTENT;
+    this.dirLight.shadow.camera.top = SHADOW_EXTENT;
+    this.dirLight.shadow.camera.bottom = -SHADOW_EXTENT;
     this.dirLight.shadow.bias = -0.0012;
+    this.dirLight.shadow.camera.updateProjectionMatrix();
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
 
@@ -242,13 +269,40 @@ export class RenderPipeline {
     this.ambientLight.intensity = 1.85;
   }
 
+  /**
+   * Keeps the sun (and therefore the shadow frustum) centred on the player.
+   * Snapped to whole units so the shadow texels do not swim as you walk.
+   */
+  public followSun(target: THREE.Vector3): void {
+    const x = Math.round(target.x);
+    const z = Math.round(target.z);
+    this.dirLight.position.set(x + SUN_OFFSET.x, SUN_OFFSET.y, z + SUN_OFFSET.z);
+    this.dirLight.target.position.set(x, 0, z);
+    this.dirLight.target.updateMatrixWorld();
+  }
+
   public setBloomEnabled(enabled: boolean): void {
     this.bloomPass.enabled = enabled;
   }
 
-  private onWindowResize(): void {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
+  /**
+   * Sizes the orthographic box from the rig's view height. An ortho camera has
+   * no field of view to widen, so the frame is stated directly in world units:
+   * whatever the window shape, you always see the same number of metres from
+   * the top of the screen to the bottom.
+   */
+  public applyCameraFrame(): void {
+    const halfH = CAMERA_RIG.viewHeight / 2;
+    const halfW = halfH * (window.innerWidth / window.innerHeight);
+    this.camera.top = halfH;
+    this.camera.bottom = -halfH;
+    this.camera.left = -halfW;
+    this.camera.right = halfW;
     this.camera.updateProjectionMatrix();
+  }
+
+  private onWindowResize(): void {
+    this.applyCameraFrame();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.composer.setSize(window.innerWidth, window.innerHeight);
     this.bloomPass.setSize(Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.5));

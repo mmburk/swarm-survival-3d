@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { RenderPipeline, sectorFor } from '../graphics/RenderPipeline';
 import { InputManager } from './InputManager';
 import { CameraJuice } from '../graphics/CameraJuice';
+import { CAMERA_RIG } from '../graphics/CameraRig';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { InstancedProps } from '../graphics/InstancedProps';
 import { ParticleSystem } from '../graphics/ParticleSystem';
@@ -270,9 +271,8 @@ export class Engine {
       this.shelter.activate();
 
       this.player.resetPositionAndVelocity(new THREE.Vector3(0, 0, 8));
-      this.render.camera.position.set(0, 20, 26);
-      this.render.camera.lookAt(0, 0, 8);
-      this.cameraJuice.update(0, this.player.position);
+      CAMERA_RIG.useShelter();
+      this.cameraJuice.snapTo(this.player.position);
 
       this.hud.setShelterMode(true);
       this.uiPaused = false;
@@ -382,10 +382,8 @@ export class Engine {
 
   private placePlayerAtSectorStart(): void {
     this.player.resetPositionAndVelocity(new THREE.Vector3(0, 0, 16));
-    const p = this.player.position;
-    this.render.camera.position.set(p.x, p.y + 20, p.z + 18);
-    this.render.camera.lookAt(p.x, p.y + 0.9, p.z);
-    this.cameraJuice.update(0, p);
+    CAMERA_RIG.useField();
+    this.cameraJuice.snapTo(this.player.position);
   }
 
   /** Sets up the world for a sector: lighting, boss, trader, optional crate. */
@@ -1083,6 +1081,7 @@ export class Engine {
     this.instPickups.render(this.drops.getActiveItems(), performance.now() / 1000);
 
     this.cameraJuice.update(delta, this.player.position);
+    this.render.followSun(this.player.position);
   }
 
   /** A Burster going off: damages the player and everything near it. */

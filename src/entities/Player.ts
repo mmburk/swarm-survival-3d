@@ -5,13 +5,14 @@ import { AudioManager } from '../core/AudioManager';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
 import { InstancedProps } from '../graphics/InstancedProps';
+import { CAMERA_RIG } from '../graphics/CameraRig';
 import { HEX } from '../theme/Palette';
 import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId, type WeaponStats } from '../config/Weapons';
 import type { Enemy } from './Enemy';
 
 const tempLook = new THREE.Vector3();
 const tempCamTarget = new THREE.Vector3();
-const tempCamOffset = new THREE.Vector3(0, 20, 18);
+const tempMove = new THREE.Vector2();
 const tempMuzzleOffset = new THREE.Vector3();
 const tempMuzzlePos = new THREE.Vector3();
 const tempHurtOffset = new THREE.Vector3();
@@ -529,7 +530,7 @@ export class Player {
 
   // ---------------------------------------------------------------- tick
 
-  public update(delta: number, camera: THREE.PerspectiveCamera, allowMove: boolean = true): void {
+  public update(delta: number, camera: THREE.OrthographicCamera, allowMove: boolean = true): void {
     if (this.primaryCooldown > 0) this.primaryCooldown -= delta;
     if (this.altCooldown > 0) this.altCooldown -= delta;
     if (this.shoveCooldown > 0) this.shoveCooldown = Math.max(0, this.shoveCooldown - delta);
@@ -554,9 +555,14 @@ export class Player {
       this.stamina = Math.min(this.maxStamina, this.stamina + delta * 38);
     }
 
+    // Input is read in screen space and rotated into the world, so pushing
+    // "up" always walks away from the camera even when the rig is swung round
+    // to a corner (the shelter). On open ground the rig is dead-on and this is
+    // an identity.
     const move = allowMove ? this.input.getMoveVector() : { x: 0, y: 0 };
-    const moveX = move.x;
-    const moveZ = move.y;
+    CAMERA_RIG.toWorld(move.x, move.y, tempMove);
+    const moveX = tempMove.x;
+    const moveZ = tempMove.y;
 
     if (allowMove && this.input.justDashed && this.stamina >= 34 && !this.isDodging) {
       this.isDodging = true;
@@ -577,7 +583,10 @@ export class Player {
       this.velocity.z = this.dodgeDir.z * 21;
       this.particles.emitTrail(this.position, HEX.smoke);
 
-      camera.fov = THREE.MathUtils.lerp(camera.fov, 57, delta * 12);
+      // The dash punch. An ortho camera has no field of view to flare, so the
+      // same beat is played on zoom instead: below 1 the frame takes in more
+      // world, which is the pull-back you feel when you roll.
+      camera.zoom = THREE.MathUtils.lerp(camera.zoom, 0.93, delta * 12);
       camera.updateProjectionMatrix();
 
       if (this.dodgeTimer <= 0) this.isDodging = false;
@@ -585,7 +594,7 @@ export class Player {
       this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, moveX * this.moveSpeed, delta * 15);
       this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, moveZ * this.moveSpeed, delta * 15);
 
-      camera.fov = THREE.MathUtils.lerp(camera.fov, 52, delta * 8);
+      camera.zoom = THREE.MathUtils.lerp(camera.zoom, 1, delta * 8);
       camera.updateProjectionMatrix();
     }
 
@@ -624,8 +633,8 @@ export class Player {
     this.rig.rotation.z = THREE.MathUtils.lerp(this.rig.rotation.z, -this.velocity.x * 0.012, delta * 10);
     this.rig.position.z = this.recoilOffset;
 
-    tempCamTarget.copy(this.position).add(tempCamOffset);
+    tempCamTarget.copy(this.position).add(CAMERA_RIG.offset);
     camera.position.lerp(tempCamTarget, delta * 7);
-    camera.lookAt(this.position.x, this.position.y + 0.9, this.position.z);
+    camera.lookAt(this.position.x, this.position.y + CAMERA_RIG.lookHeight, this.position.z);
   }
 }
