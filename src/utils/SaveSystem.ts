@@ -18,6 +18,20 @@ export interface NarrativeState {
   heard: Partial<Record<Caller, number>>;
 }
 
+/**
+ * The frame ceilings offered on the settings card. `0` means "whatever the
+ * display does" — the loop hands every animation frame straight through, which
+ * is what the game did before there was a setting at all.
+ */
+export const FPS_CAPS = [30, 45, 60, 75, 90, 120, 144, 0] as const;
+
+export interface DisplaySettings {
+  /** Frames per second the loop refuses to exceed. 0 leaves it to the display. */
+  fpsCap: number;
+  /** The little counter in the corner. */
+  showFps: boolean;
+}
+
 export interface SaveData {
   /** The single persistent currency. Kept on death — that is the whole point. */
   scrap: number;
@@ -35,6 +49,8 @@ export interface SaveData {
    */
   tuned: Caller | null;
   narrative: NarrativeState;
+  /** How the machine is asked to run. Not progression — it survives a wipe. */
+  settings: DisplaySettings;
   /** Prophecies taken off the pin board and paid out. */
   claimed: string[];
   tally: Tally;
@@ -70,6 +86,7 @@ function defaultSave(): SaveData {
     nightLevel: 0,
     tuned: null,
     narrative: { seen: [], heard: {} },
+    settings: { fpsCap: 0, showFps: false },
     claimed: [],
     tally: emptyTally(),
     stats: { runs: 0, deaths: 0, bestSector: 0, totalKills: 0, bestScore: 0, clears: 0 }
@@ -110,6 +127,11 @@ export class SaveSystem {
         if (parsed.narrative) {
           base.narrative.seen = Array.isArray(parsed.narrative.seen) ? parsed.narrative.seen.slice() : [];
           base.narrative.heard = parsed.narrative.heard ? { ...parsed.narrative.heard } : {};
+        }
+        if (parsed.settings) {
+          const cap = Math.floor(parsed.settings.fpsCap ?? 0);
+          base.settings.fpsCap = (FPS_CAPS as readonly number[]).includes(cap) ? cap : 0;
+          base.settings.showFps = !!parsed.settings.showFps;
         }
         if (Array.isArray(parsed.claimed)) base.claimed = parsed.claimed.slice();
         if (parsed.tally) base.tally = { ...base.tally, ...parsed.tally };
@@ -271,6 +293,24 @@ export class SaveSystem {
     this.save();
   }
 
+  // ---- display ------------------------------------------------------------
+
+  public static getSettings(): DisplaySettings {
+    return this.load().settings;
+  }
+
+  /** Anything not on the dial falls back to letting the display decide. */
+  public static setFpsCap(cap: number): void {
+    const s = this.load();
+    s.settings.fpsCap = (FPS_CAPS as readonly number[]).includes(cap) ? cap : 0;
+    this.save();
+  }
+
+  public static setShowFps(show: boolean): void {
+    this.load().settings.showFps = show;
+    this.save();
+  }
+
   // ---- the radio log ------------------------------------------------------
 
   public static hasHeardLine(id: string): boolean {
@@ -367,9 +407,16 @@ export class SaveSystem {
     this.save();
   }
 
-  /** Wipes everything. Only reachable from an explicit confirm in the records screen. */
+  /**
+   * Wipes everything. Only reachable from an explicit confirm in the records
+   * screen — and it spares the display settings, because burning the records is
+   * about the run history, not about handing the player back a frame ceiling
+   * their machine cannot hold.
+   */
   public static wipe(): void {
+    const settings = { ...this.load().settings };
     this.cache = defaultSave();
+    this.cache.settings = settings;
     try {
       localStorage.removeItem(KEY);
       localStorage.removeItem(LEGACY_CORES);

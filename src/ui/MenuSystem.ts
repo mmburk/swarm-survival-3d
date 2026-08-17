@@ -1,5 +1,5 @@
 import { injectTheme, CSS } from '../theme/Palette';
-import { SaveSystem } from '../utils/SaveSystem';
+import { SaveSystem, FPS_CAPS } from '../utils/SaveSystem';
 import { META_DEFS, NIGHT_TIERS } from '../config/Progression';
 import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId } from '../config/Weapons';
 import { CALLERS } from './BoonModal';
@@ -45,6 +45,13 @@ export class MenuSystem {
 
   /** Weapon currently highlighted on the rack, not yet confirmed. */
   private previewWeapon: WeaponId;
+
+  /**
+   * Told by the engine that the display settings moved. The menu writes to the
+   * save and then says so; what a frame ceiling actually means is the loop's
+   * business, not this card's.
+   */
+  public onDisplayChange: (() => void) | null = null;
 
   constructor() {
     injectTheme();
@@ -264,6 +271,43 @@ export class MenuSystem {
       .tune-chip.active { background: rgba(255,255,255,0.06); }
       .tune-chip.active .tune-name { color: var(--paper); }
 
+      /* The frame ceiling dial. Reads as a row of switch positions. */
+      .opt-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 7px;
+        margin-top: 12px;
+      }
+      .opt-chip {
+        padding: 10px 6px 9px;
+        border: 1px solid var(--char);
+        background: rgba(0,0,0,0.24);
+        cursor: pointer;
+        text-align: center;
+        transition: background 0.12s linear, border-color 0.12s linear;
+      }
+      .opt-chip:hover { background: rgba(255,255,255,0.05); }
+      .opt-chip .opt-num {
+        font-family: var(--stencil);
+        font-size: 21px;
+        letter-spacing: 1.6px;
+        color: var(--ash);
+        line-height: 1.1;
+      }
+      .opt-chip .opt-note {
+        font-size: 9px;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
+        color: var(--steel);
+        margin-top: 3px;
+      }
+      .opt-chip.active {
+        border-color: var(--amber);
+        background: rgba(217,164,65,0.12);
+      }
+      .opt-chip.active .opt-num { color: var(--amber); }
+      .opt-chip.active .opt-note { color: var(--bone); }
+
       .mn-scrap {
         font-family: var(--stencil);
         font-size: 24px;
@@ -314,7 +358,10 @@ export class MenuSystem {
           <div class="ll-tag">PUT DOWN ${st.totalKills}</div>
         </div>
 
-        <button id="btn-enter" class="ll-btn" style="margin-top:26px;">Go Down To The Shelter</button>
+        <div style="display:flex; gap:10px; margin-top:26px;">
+          <button id="btn-enter" class="ll-btn" style="flex:1;">Go Down To The Shelter</button>
+          <button id="btn-settings" class="ll-btn-ghost" style="flex:0 0 auto; padding:0 18px;">SETTINGS</button>
+        </div>
 
         <div style="margin-top:20px; font-size:11.5px; line-height:1.9; color:var(--ash); letter-spacing:0.6px;">
           <b style="color:var(--bone)">WASD</b> move &nbsp;·&nbsp;
@@ -333,6 +380,85 @@ export class MenuSystem {
     document.getElementById('btn-enter')!.addEventListener('click', () => {
       this.hide();
       onEnter();
+    });
+
+    document.getElementById('btn-settings')!.addEventListener('click', () => {
+      this.showSettings(() => this.showTitle(onEnter));
+    });
+  }
+
+  // --------------------------------------------------------------- settings
+
+  /**
+   * The one card that is not about the run: what the machine is asked to do.
+   *
+   * A ceiling above the display's own refresh does nothing — the browser hands
+   * out frames at the panel's rate and no setting here can invent more. The
+   * lower positions are the useful ones: they buy back heat, battery and fan
+   * noise on a laptop that would otherwise render 144 frames of the same
+   * street.
+   */
+  public showSettings(onBack: () => void): void {
+    const s = SaveSystem.getSettings();
+
+    const chips = FPS_CAPS.map((cap) => {
+      const active = s.fpsCap === cap;
+      return `
+        <div class="opt-chip ${active ? 'active' : ''}" data-fps="${cap}">
+          <div class="opt-num">${cap === 0 ? '∞' : cap}</div>
+          <div class="opt-note">${cap === 0 ? 'Display' : 'fps'}</div>
+        </div>
+      `;
+    }).join('');
+
+    this.present(`
+      <div class="ll-panel ll-pinned mn-shell" style="width:640px;">
+        <div class="mn-head">
+          <div>
+            <div class="ll-title" style="font-size:30px;">Settings</div>
+            <div class="ll-sub">How hard the machine works to keep the lights on.</div>
+          </div>
+        </div>
+
+        <div class="ll-sub" style="margin:18px 0 0;">Frame ceiling</div>
+        <div style="font-size:12px; color:var(--ash); margin-top:6px; line-height:1.6;">
+          The loop will not run faster than this. <b style="color:var(--bone)">Display</b> leaves it
+          alone and takes every frame the screen offers — the way it has always worked. A ceiling
+          above your screen's refresh rate changes nothing; a lower one runs cooler and quieter, and
+          the game keeps real time either way.
+        </div>
+        <div class="opt-row">${chips}</div>
+
+        <div class="ll-rule"></div>
+
+        <div class="mn-row">
+          <div style="flex:1;">
+            <div class="mn-name" style="font-size:16px;">Frame counter</div>
+            <div class="mn-note">A small readout at the top of the screen. Turns amber under 50, red under 30.</div>
+          </div>
+          <button id="btn-fps-toggle" class="ll-btn-ghost">${s.showFps ? 'SHOWN' : 'HIDDEN'}</button>
+        </div>
+
+        <button id="btn-back" class="ll-btn" style="margin-top:20px;">Back</button>
+      </div>
+    `);
+
+    this.root.querySelectorAll<HTMLElement>('[data-fps]').forEach((el) => {
+      el.addEventListener('click', () => {
+        SaveSystem.setFpsCap(parseInt(el.dataset.fps!, 10));
+        this.onDisplayChange?.();
+        this.showSettings(onBack);
+      });
+    });
+
+    document.getElementById('btn-fps-toggle')!.addEventListener('click', () => {
+      SaveSystem.setShowFps(!SaveSystem.getSettings().showFps);
+      this.onDisplayChange?.();
+      this.showSettings(onBack);
+    });
+
+    document.getElementById('btn-back')!.addEventListener('click', () => {
+      onBack();
     });
   }
 
@@ -941,7 +1067,8 @@ export class MenuSystem {
         <div class="ll-sub">Nothing out there is waiting politely.</div>
         <div class="ll-rule"></div>
         <button id="btn-resume" class="ll-btn">Keep Going</button>
-        <button id="btn-abandon" class="ll-btn-ghost" style="width:100%; margin-top:11px;">
+        <button id="btn-settings" class="ll-btn-ghost" style="width:100%; margin-top:11px;">SETTINGS</button>
+        <button id="btn-abandon" class="ll-btn-ghost" style="width:100%; margin-top:9px;">
           WALK AWAY — KEEP THE SCRAP, LOSE THE RUN
         </button>
       </div>
@@ -950,6 +1077,9 @@ export class MenuSystem {
     document.getElementById('btn-resume')!.addEventListener('click', () => {
       this.hide();
       onResume();
+    });
+    document.getElementById('btn-settings')!.addEventListener('click', () => {
+      this.showSettings(() => this.showPause(onResume, onAbandon));
     });
     document.getElementById('btn-abandon')!.addEventListener('click', () => {
       this.hide();

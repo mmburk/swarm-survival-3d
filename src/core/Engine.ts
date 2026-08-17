@@ -118,6 +118,26 @@ export class Engine {
   private frame: number = 0;
   private hitStop: number = 0;
 
+  /**
+   * Frame pacing. `frameIntervalMs` of 0 is the old behaviour — every animation
+   * frame the browser offers gets used. Anything else and the loop sits out the
+   * frames that arrive early, holding `nextFrame` on a fixed cadence rather
+   * than restarting it each time, so a 60 ceiling on a 144Hz panel averages 60
+   * instead of collapsing to the 48 that whole-frame skipping would give.
+   */
+  private frameIntervalMs: number = 0;
+  private nextFrame: number = 0;
+  /**
+   * The ceiling on a single step of game time. Derived from the frame ceiling,
+   * because a fixed 1/30 would run a capped-at-30 game in slow motion — see
+   * bug.md.
+   */
+  private maxDelta: number = 0.033;
+
+  /** Frames and real seconds since the counter last published a number. */
+  private fpsFrames: number = 0;
+  private fpsElapsed: number = 0;
+
   private runKills: number = 0;
   private runScore: number = 0;
   private runScrap: number = 0;
@@ -195,6 +215,9 @@ export class Engine {
 
       this.wirePlayer();
       this.wireSectors();
+
+      this.menus.onDisplayChange = () => this.applyDisplaySettings();
+      this.applyDisplaySettings();
 
       this.mode = 'TITLE';
       this.hud.setShelterMode(true);
@@ -1487,6 +1510,18 @@ export class Engine {
 
       this.updateRun(delta);
     } else if (this.mode === 'SHELTER') {
+      // Downstairs there is nothing to pause, so the same key opens the one
+      // card that is not about the run. Otherwise the settings would only be
+      // reachable from the title screen or from the middle of a fight.
+      if (this.input.justToggledPause && !this.uiPaused) {
+        this.uiPaused = true;
+        this.menus.showSettings(() => {
+          this.menus.hide();
+          this.uiPaused = false;
+          this.lastTime = performance.now();
+        });
+      }
+
       this.updateShelter(delta);
     }
 
@@ -1525,11 +1560,57 @@ export class Engine {
     this.input.clearFrameState();
   }
 
+  /**
+   * Reads the settings card and turns it into the two numbers the loop cares
+   * about. Called once at start-up and again every time a chip is clicked, so a
+   * change lands on the very next frame without a reload.
+   */
+  private applyDisplaySettings(): void {
+    const s = SaveSystem.getSettings();
+
+    this.frameIntervalMs = s.fpsCap > 0 ? 1000 / s.fpsCap : 0;
+    this.nextFrame = 0;
+
+    // A 30fps ceiling hands over steps of 1/30 and a late frame slightly more.
+    // Clamping those back to 1/30 would drop game time on the floor every
+    // frame, so the ceiling on a step follows the ceiling on frames — with the
+    // old 1/30 as the floor and 1/10 as the hard stop that keeps a tab-out
+    // from teleporting everything through walls.
+    const capped = s.fpsCap > 0 ? (1 / s.fpsCap) * 1.6 : 0;
+    this.maxDelta = Math.min(0.1, Math.max(0.033, capped));
+
+    this.hud.setFpsVisible(s.showFps);
+  }
+
   private loop(now: number): void {
+    requestAnimationFrame((t) => this.loop(t));
+
+    if (this.frameIntervalMs > 0) {
+      if (now < this.nextFrame) return;
+      // Behind by more than a whole interval means a stall rather than jitter:
+      // start the cadence again instead of trying to make the frames up.
+      this.nextFrame = now - this.nextFrame > this.frameIntervalMs
+        ? now + this.frameIntervalMs
+        : this.nextFrame + this.frameIntervalMs;
+    }
+
     const raw = (now - this.lastTime) / 1000;
     this.lastTime = now;
-    // Clamped so a tab-out does not teleport everything through walls.
-    const delta = Math.min(Math.max(raw, 0.001), 0.033);
+    const delta = Math.min(Math.max(raw, 0.001), this.maxDelta);
+
+    // Measured on real time, not the clamped step, and over a window rather
+    // than per frame — a number that changes 120 times a second is unreadable.
+    // A gap longer than half a second is a tab-out, and would drag the average
+    // down long after the game is running normally again.
+    if (raw < 0.5) {
+      this.fpsFrames++;
+      this.fpsElapsed += raw;
+      if (this.fpsElapsed >= 0.35) {
+        this.hud.setFps(this.fpsFrames / this.fpsElapsed);
+        this.fpsFrames = 0;
+        this.fpsElapsed = 0;
+      }
+    }
 
     try {
       this.update(delta);
@@ -1542,7 +1623,5 @@ export class Engine {
     } catch (err) {
       console.warn('Recovered from an error while rendering:', err);
     }
-
-    requestAnimationFrame((t) => this.loop(t));
   }
 }

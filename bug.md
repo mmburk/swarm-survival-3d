@@ -135,7 +135,35 @@ Mesh sayısı değişmedi.
 
 ## Açık olanlar
 
-Şu an yok.
+### 8. 30 fps'in altında oyun ağır çekime düşüyor
+
+**Yer:** `src/core/Engine.ts` — `loop()`
+**Durum:** frame ceiling yolu düzeltildi, genel hâli açık.
+
+```ts
+const delta = Math.min(Math.max(raw, 0.001), 0.033);
+```
+
+Bu kırpma sekme dışına çıkıldığında her şeyin duvarlardan geçmesini önlemek için
+var, ama tavanı 1/30. Yani makine gerçekten 30 fps'in altına düşerse geçen
+gerçek zamanın bir kısmı her karede yere düşüyor: **oyun yavaşlıyor, kare
+atlamıyor.**
+
+Ölçüldü (kare akışı sentetik zaman damgalarıyla sürülerek): 20 fps'lik bir
+akışta 2 saniyelik gerçek zamana karşılık oyun **1.32 saniye** ilerliyor —
+%66 hız.
+
+Frame ceiling ayarı bunu kendi yolunda düzeltiyor: `maxDelta` artık tavandan
+türetiliyor (30 tavanı → 0.0533), yoksa "30 fps'e kilitle" seçeneği oyunu
+doğrudan ağır çekime alırdı. Ayar 30 tavanında 2 saniyeye karşılık 1.979 saniye
+oyun zamanı veriyor.
+
+Kalan hâli — tavansız çalışan zayıf bir makine — açık. Düzeltmenin bedeli var:
+tabanı yükseltmek (mesela 1/15) mermilerin adım başına kat ettiği yolu iki
+katına çıkarır, mermi geçişi de grid'i merminin o anki konumunda sorguladığı
+için ince zombilerin içinden geçme riski doğar. Doğrusu sabit adımlı bir
+birikimli döngü, ama bu şu anki `update(delta)` sözleşmesini baştan yazmak
+demek.
 
 ---
 

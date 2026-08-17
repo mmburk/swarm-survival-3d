@@ -68,6 +68,15 @@ export class HUD {
   private dmgContainer!: HTMLElement;
   private dmgPool: DamageText[] = [];
 
+  /**
+   * The frame counter lives outside the HUD root on purpose. The root sits at
+   * z-index 10 and every full-screen surface is drawn over it at 1000, so a
+   * counter parented to it would be lost behind the settings card that turns it
+   * on — which is the one screen where you most want to read it.
+   */
+  private fpsEl!: HTMLElement;
+  private lastFpsShown = -1;
+
   private uiTimer = 0;
   private minimapTimer = 0;
   private toastTimer = 0;
@@ -93,6 +102,30 @@ export class HUD {
 
     this.build();
     this.buildDamagePool();
+    this.buildFpsReadout();
+  }
+
+  private buildFpsReadout(): void {
+    this.fpsEl = document.createElement('div');
+    this.fpsEl.id = 'fps-readout';
+    this.fpsEl.style.cssText = `
+      position: fixed;
+      top: 8px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 2000;
+      display: none;
+      padding: 3px 10px;
+      background: rgba(8,9,6,0.72);
+      border: 1px solid var(--char);
+      font-family: var(--stencil);
+      font-size: 13px;
+      letter-spacing: 2px;
+      color: var(--ash);
+      pointer-events: none;
+      user-select: none;
+    `;
+    this.fpsEl.textContent = '-- FPS';
+    document.body.appendChild(this.fpsEl);
   }
 
   private build(): void {
@@ -486,6 +519,27 @@ export class HUD {
   public flashDamage(): void {
     this.vignette.style.opacity = '1';
     setTimeout(() => { this.vignette.style.opacity = '0'; }, 150);
+  }
+
+  public setFpsVisible(show: boolean): void {
+    this.fpsEl.style.display = show ? 'block' : 'none';
+    this.lastFpsShown = -1;
+  }
+
+  /**
+   * Written only when the whole number changes, so the counter is not a DOM
+   * write every frame on a screen whose whole purpose is measuring frames.
+   * Colour is the reading, not decoration: amber under 50, red under 30.
+   */
+  public setFps(fps: number): void {
+    if (this.fpsEl.style.display === 'none') return;
+
+    const whole = Math.round(fps);
+    if (whole === this.lastFpsShown) return;
+    this.lastFpsShown = whole;
+
+    this.fpsEl.textContent = `${whole} FPS`;
+    this.fpsEl.style.color = whole < 30 ? CSS.blood : whole < 50 ? CSS.amber : CSS.ash;
   }
 
   public setMuteState(enabled: boolean): void {
