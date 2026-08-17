@@ -76,40 +76,51 @@ instanced dönüşümler eski scene graph'a karşı doğrulanabilsin ve birebir 
 Ölçüm: beş tipten kırk gövdede yüz, oyuncuya giden doğrunun 0.976'sı içinde;
 eksik kalan pay -0.22'lik öne kamburluk.
 
----
+### 5. Can barları kameraya değil zombiye bakıyordu
 
-## Açık olanlar
+**Yer:** `src/graphics/InstancedEnemies.ts` — `barRoot` / `barBack` / `barFill`
+**Commit:** `ab0924d`
 
-### 5. Can barları kameraya değil zombiye bakıyor
-
-**Yer:** `src/graphics/InstancedEnemies.ts:165-172` — `barBack` / `barFill`,
-`root`'un çocukları
-**Durum:** açık. Instancing sırasında davranış birebir korundu, düzeltilmedi.
-
-Barlar yaw'lanan grubun çocukları, dolayısıyla zombiyle birlikte dönüyorlar.
-Sabit bir `rotation.x = -π/3.4` var ama Y ekseninde kameraya hizalanma yok.
+Barlar yaw'lanan grubun çocuklarıydı, dolayısıyla zombiyle birlikte dönüyorlardı.
+Sabit bir `rotation.x = -π/3.4` vardı ama Y ekseninde kameraya hizalanma yoktu.
 
 Ölçüldü: oyuncunun etrafına halka halinde dizilmiş 16 zombinin barlarından
 **5'i** kameraya 0.25'ten yakın, yani neredeyse görünmez birer çizgi; **1'i**
-tamamen ters dönük (`DoubleSide` sayesinde yine de çiziliyor). Yani hangi
-zombinin canının kaldığını görmek zombinin hangi yöne baktığına bağlı.
+tamamen ters dönük (`DoubleSide` sayesinde yine de çiziliyordu). Yani hangi
+zombinin canının kaldığını görmek zombinin hangi yöne baktığına bağlıydı.
 
-Düzeltmesi: barları `root`'un yaw'ından ayırıp her kare kameranın ekran
-eksenlerine hizalamak. Instanced dünya matrisini zaten elle kuruyoruz, o yüzden
-tek yer: yaw'ı barlara uygulamayı bırakmak.
+Barlar artık gövdeden ayrı bir `barRoot` altında ve her kare kameraya
+dönüyorlar. İki taraflı bir hata çıktı ortaya: yaw eksikti ama o sabit tilt de
+yanlıştı — doğru açı rake'in kendisi (sahada 33°), yazılı olan -52.9°. En iyi
+hizalanmış bar bile 21° yatıktı.
 
-### 6. Hasar sayısı havuzu doluysa uçan bir sayıyı çalıyor
+Tilt artık elle seçilmiyor, rig'den türetiliyor (`CAMERA_RIG.facingTilt()`,
+`facingYaw()`'un yanına eklendi). Sığınak rig'i sahadan 5° dik olduğu için elle
+seçilen tek bir sayı ikisinden birinde zaten yanlış olurdu.
 
-**Yer:** `src/ui/HUD.ts:400`
-**Durum:** açık. Kozmetik.
+Ölçüm sonrası: 16 barın hepsi 0.9999 hizada, sıfırı kenarda; barın kendi X ekseni
+kameranın sağıyla birebir (1.0000), yani ekranda yatık durmuyorlar. Hem sahada
+(33°) hem sığınakta (38°) doğrulandı. Yan fayda: fill artık her zombide ekranın
+aynı tarafından eksiliyor, zombinin baktığı yöne göre değil.
+
+### 6. Hasar sayısı havuzu doluysa uçan bir sayıyı çalıyordu
+
+**Yer:** `src/ui/HUD.ts` — `takeDamageSlot()`
+**Commit:** `ab0924d`
 
 ```ts
 const item = this.dmgPool.find((d) => !d.active) ?? this.dmgPool[0];
 ```
 
-40 slotun tamamı doluysa slot 0 ne kadar taze olursa olsun kapılıyor — ekranda
-yeni doğmuş bir sayı yerinden sıçrıyor. Doğrusu en yaşlısını seçmek. Kalabalık
-bir shotgun karesinde görülebilir; oyunu bozmaz.
+40 slotun tamamı doluysa slot 0 ne kadar taze olursa olsun kapılıyordu — bir
+karelik ömrü olan bir sayı ekranın öbür ucuna sıçrayıp baştan başlıyor, neredeyse
+sönmüş bir tanesi ise yerini koruyordu. Artık ömrünün en sonundaki seçiliyor.
+
+---
+
+## Açık olanlar
+
+Şu an yok.
 
 ---
 
