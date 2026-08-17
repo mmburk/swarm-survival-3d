@@ -119,7 +119,7 @@ sönmüş bir tanesi ise yerini koruyordu. Artık ömrünün en sonundaki seçil
 ### 7. Karakterin botları yürürken yerde çakılı duruyordu
 
 **Yer:** `src/entities/Player.ts` — `buildSurvivor()`
-**Commit:** bu commit
+**Commit:** `38f5996`
 
 Botlar hareketsiz `kitMesh`'in içindeydi, bacaklar ise ayrı meshlerdi. Yürüyüş
 döngüsü bacakları döndürüyor, botlar yerinde kalıyordu. Üstüne bacak meshinin
