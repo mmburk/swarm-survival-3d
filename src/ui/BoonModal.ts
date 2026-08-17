@@ -1,5 +1,11 @@
 import { injectTheme, TIER_COLOR } from '../theme/Palette';
 import type { Player } from '../entities/Player';
+import { callerPortrait, callerSigil, type CallerArtId } from './art/Portraits';
+import { emblemSvg } from './art/Emblems';
+import type { FieldWork } from '../config/FieldWorks';
+
+/** Cold steel, so the bench never reads as one of the five voices. */
+const WORKS_INK = '#b9c5cc';
 
 /**
  * SIGNALS.
@@ -7,8 +13,11 @@ import type { Player } from '../entities/Player';
  * Hades hands you boons from gods on Olympus. Out here, five people are still
  * broadcasting, and each of them helps in the only way they know how. Taking
  * from one repeatedly is how a run develops an identity.
+ *
+ * The gate you walked through decides who is on the handset, so the choice is
+ * made outside on the street and the cards only pick which favour you take.
  */
-export type Caller = 'SARGE' | 'VASQUEZ' | 'MAE' | 'ELI' | 'QUIET';
+export type Caller = CallerArtId;
 export type Tier = 'SALVAGED' | 'SOLID' | 'PRIME' | 'RELIC';
 
 interface CallerInfo {
@@ -95,6 +104,13 @@ const TEMPLATES: BoonTemplate[] = [
     describe: (k) => `Your heavy attack comes back ${Math.round(16 * k)}% sooner.`,
     apply: (p, k) => { p.altCooldownMultiplier *= 1 - 0.16 * k; }
   },
+  {
+    id: 'rounds_downrange',
+    caller: 'SARGE',
+    title: 'Rounds Downrange',
+    describe: (k) => `+${Math.round(9 * k)}% rate of fire and ${Math.round(18 * k)}% flatter shots.`,
+    apply: (p, k) => { p.fireRateMultiplier *= 1 - 0.09 * k; p.bulletSpeedMultiplier *= 1 + 0.18 * k; }
+  },
 
   // ---- VASQUEZ: the infection, turned around ------------------------------
   {
@@ -117,6 +133,13 @@ const TEMPLATES: BoonTemplate[] = [
     title: 'Antigen Draw',
     describe: (k) => `${Math.round(22 * k)}% of kills return ${Math.round(3 * k)} health.`,
     apply: (p, k) => { p.lifestealChance += 0.22 * k; p.lifestealAmount += Math.round(3 * k); }
+  },
+  {
+    id: 'cross_infection',
+    caller: 'VASQUEZ',
+    title: 'Cross-Infection',
+    describe: (k) => `${Math.round(9 * k)}% more ruptures, and rounds carry through one more body.`,
+    apply: (p, k) => { p.burstChance += 0.09 * k; p.bonusPierce += 1; }
   },
 
   // ---- MAE: the gun itself ------------------------------------------------
@@ -141,6 +164,13 @@ const TEMPLATES: BoonTemplate[] = [
     describe: (k) => `+${(2.5 * k).toFixed(1)}m salvage range, and bandages do ${Math.round(25 * k)}% more.`,
     apply: (p, k) => { p.pickupRadius += 2.5 * k; p.healPotency += 0.25 * k; }
   },
+  {
+    id: 'scavenged_springs',
+    caller: 'MAE',
+    title: 'Scavenged Springs',
+    describe: (k) => `+${Math.round((1 / (1 - 0.08 * k) - 1) * 100)}% rate of fire and +${(1.5 * k).toFixed(1)}m salvage range.`,
+    apply: (p, k) => { p.fireRateMultiplier *= 1 - 0.08 * k; p.pickupRadius += 1.5 * k; }
+  },
 
   // ---- ELI: staying alive -------------------------------------------------
   {
@@ -163,6 +193,13 @@ const TEMPLATES: BoonTemplate[] = [
     title: 'Not Finished Yet',
     describe: () => 'Get back up one more time before the night takes you.',
     apply: (p) => { p.maxGetUps += 1; p.getUpsRemaining += 1; }
+  },
+  {
+    id: 'lay_on_hands',
+    caller: 'ELI',
+    title: 'Lay On Hands',
+    describe: (k) => `Bandages do ${Math.round(35 * k)}% more, and ${Math.round(12 * k)}% of kills give back ${Math.round(2 * k)}.`,
+    apply: (p, k) => { p.healPotency += 0.35 * k; p.lifestealChance += 0.12 * k; p.lifestealAmount += Math.round(2 * k); }
   },
 
   // ---- THE QUIET ONE: sharp edges both ways -------------------------------
@@ -190,6 +227,17 @@ const TEMPLATES: BoonTemplate[] = [
       p.maxHealth = Math.max(30, p.maxHealth - 10);
       p.health = Math.min(p.health, p.maxHealth);
     }
+  },
+  {
+    id: 'nothing_personal',
+    caller: 'QUIET',
+    title: 'Nothing Personal',
+    describe: (k) => `+${Math.round(14 * k)}% damage. Drop 8 maximum health.`,
+    apply: (p, k) => {
+      p.damageMultiplier *= 1 + 0.14 * k;
+      p.maxHealth = Math.max(30, p.maxHealth - 8);
+      p.health = Math.min(p.health, p.maxHealth);
+    }
   }
 ];
 
@@ -204,10 +252,19 @@ function rollTier(sectorNumber: number): Tier {
 }
 
 /**
- * Three offers, never two from the same caller, weighted toward whoever the
- * player has been taking from — runs should be able to specialise.
+ * Three offers.
+ *
+ * When the gate named a caller — which is the normal case now — every offer
+ * comes from that one person, exactly like walking through a door marked with
+ * a god's symbol. The mixed draw below is the fallback for anything that hands
+ * out a signal without a door in front of it.
  */
-export function generateBoons(sectorNumber: number, favouredCaller?: Caller): Boon[] {
+export function generateBoons(sectorNumber: number, favouredCaller?: Caller, lockedCaller?: Caller): Boon[] {
+  if (lockedCaller) {
+    const theirs = TEMPLATES.filter((b) => b.caller === lockedCaller).sort(() => Math.random() - 0.5);
+    return theirs.slice(0, 3).map((b) => ({ ...b, tier: rollTier(sectorNumber) }));
+  }
+
   const pool = [...TEMPLATES];
 
   // Nudge one favoured-caller offer to the front when the player has a theme.
@@ -273,10 +330,50 @@ export class BoonModal {
 
     const style = document.createElement('style');
     style.textContent = `
+      /* The caller's plate: portrait, name, and the frequency they are on. */
+      .sig-who {
+        display: flex;
+        align-items: stretch;
+        gap: 18px;
+        padding: 14px 22px 14px 14px;
+        background: linear-gradient(90deg, rgba(28,30,21,0.95), rgba(14,16,10,0.6));
+        border: 1px solid var(--char);
+        border-left: 4px solid var(--steel);
+        animation: llFadeUp 0.26s ease-out;
+      }
+      .sig-who-art {
+        position: relative;
+        flex: 0 0 auto;
+        /* The figure is cut out and carries its own shadow, so framing it here
+           would only draw a box round the empty air beside its shoulders. */
+      }
+      .sig-who-name {
+        font-family: var(--stencil);
+        font-size: 34px;
+        letter-spacing: 4px;
+        line-height: 1.05;
+      }
+      .sig-who-band {
+        font-size: 10.5px;
+        letter-spacing: 2.6px;
+        text-transform: uppercase;
+        color: var(--ash);
+        margin-top: 5px;
+      }
+      .sig-who-sting {
+        font-size: 12.5px;
+        font-style: italic;
+        color: var(--bone);
+        margin-top: 12px;
+        max-width: 340px;
+        line-height: 1.5;
+      }
+
       .sig-card {
         position: relative;
         width: 292px;
         min-height: 340px;
+        overflow: hidden;
         background: linear-gradient(180deg, #23251b 0%, #14150f 100%);
         border: 1px solid var(--char);
         border-left: 3px solid var(--steel);
@@ -348,35 +445,79 @@ export class BoonModal {
         padding: 8px 0;
       }
       .sig-card:hover .sig-take { color: var(--paper); }
+
+      /* The caller's mark, stamped large and faint across the card. */
+      .sig-mark {
+        position: absolute;
+        right: -18px;
+        bottom: -14px;
+        opacity: 0.13;
+        pointer-events: none;
+        transition: opacity 0.15s linear, transform 0.2s ease-out;
+      }
+      .sig-card:hover .sig-mark { opacity: 0.22; transform: translateY(-6px); }
+      .sig-card > *:not(.sig-mark) { position: relative; z-index: 1; }
     `;
     document.head.appendChild(style);
   }
 
   public show(boons: Boon[], onSelect: (boon: Boon) => void): void {
+    // Gate-driven offers all come from one person, and then the portrait plate
+    // above the cards carries the identity instead of repeating it three times.
+    const single = boons.length > 0 && boons.every((b) => b.caller === boons[0].caller);
+    const host = single ? boons[0].caller : null;
+
     const cards = boons.map((b, i) => {
       const info = CALLERS[b.caller];
       const tierColor = TIER_COLOR[b.tier];
       return `
         <div class="sig-card" data-idx="${i}" style="border-left-color:${info.color}; animation-delay:${i * 60}ms;">
+          <div class="sig-mark">${callerSigil(b.caller, 150, info.color)}</div>
           <div class="sig-tier" style="color:${tierColor}; border-color:${tierColor};">${b.tier}</div>
-          <div class="sig-band">${info.band}</div>
-          <div class="sig-caller" style="color:${info.color};">${info.name}</div>
-          <div class="sig-title">${b.title}</div>
+          ${
+            single
+              ? `<div class="sig-band">Offer ${i + 1} of ${boons.length}</div>`
+              : `<div class="sig-band">${info.band}</div>
+                 <div class="sig-caller" style="color:${info.color};">${info.name}</div>`
+          }
+          <div class="sig-title"${single ? ' style="margin-top:8px;"' : ''}>${b.title}</div>
           <div class="sig-desc">${boonText(b)}</div>
-          <div class="sig-sting">${info.sting}</div>
+          ${single ? '' : `<div class="sig-sting">${info.sting}</div>`}
           <div class="sig-take">ANSWER</div>
         </div>
       `;
     }).join('');
 
-    this.root.innerHTML = `
-      <div style="text-align:center; margin-bottom:26px; animation: llFade 0.3s ease-out;">
-        <div style="font-size:11px; letter-spacing:5px; color:var(--ash); text-transform:uppercase;">
-          The handset crackles
+    const plate = host
+      ? `
+        <div class="sig-who" style="border-left-color:${CALLERS[host].color}; margin-bottom:24px;">
+          <div class="sig-who-art">${callerPortrait(host, 132)}</div>
+          <div style="display:flex; flex-direction:column; justify-content:center;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              ${callerSigil(host, 26, CALLERS[host].color)}
+              <div class="sig-who-name" style="color:${CALLERS[host].color};">${CALLERS[host].name}</div>
+            </div>
+            <div class="sig-who-band">${CALLERS[host].band}</div>
+            <div class="sig-who-sting">${CALLERS[host].sting}</div>
+          </div>
         </div>
-        <div class="ll-title" style="font-size:38px; margin-top:8px;">Somebody Is Still Out There</div>
+      `
+      : '';
+
+    this.root.innerHTML = `
+      <div style="text-align:center; margin-bottom:20px; animation: llFade 0.3s ease-out;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+          ${emblemSvg('signal', 26)}
+          <div style="font-size:11px; letter-spacing:5px; color:var(--ash); text-transform:uppercase;">
+            The handset crackles
+          </div>
+        </div>
+        <div class="ll-title" style="font-size:38px; margin-top:8px;">
+          ${host ? 'They Picked Up' : 'Somebody Is Still Out There'}
+        </div>
         <div class="ll-sub">Take one offer. The others go quiet.</div>
       </div>
+      ${plate}
       <div style="display:flex; gap:24px; justify-content:center; flex-wrap:wrap; padding:0 20px;">
         ${cards}
       </div>
@@ -387,6 +528,54 @@ export class BoonModal {
         const idx = parseInt(el.dataset.idx ?? '0', 10);
         this.hide();
         onSelect(boons[idx]);
+      });
+    });
+
+    this.root.style.display = 'flex';
+    this.visible = true;
+  }
+
+  /**
+   * The workbench, laid out on the same cards.
+   *
+   * It is not a signal and nobody is on the handset for it — the gun is the
+   * only thing talking. The cards are shared with the boon draw on purpose:
+   * the player has already learned that three cards means "take one, the rest
+   * go away", and the workbench should not have to teach that again.
+   */
+  public showWorks(works: FieldWork[], weaponName: string, onSelect: (work: FieldWork) => void): void {
+    const cards = works.map((w, i) => `
+      <div class="sig-card" data-idx="${i}" style="border-left-color:${WORKS_INK}; animation-delay:${i * 60}ms;">
+        <div class="sig-mark">${emblemSvg('works', 150)}</div>
+        <div class="sig-tier" style="color:${WORKS_INK}; border-color:${WORKS_INK};">FITTED HERE</div>
+        <div class="sig-band">Bench work ${i + 1} of ${works.length}</div>
+        <div class="sig-title" style="margin-top:8px;">${w.name}</div>
+        <div class="sig-desc">${w.desc}</div>
+        <div class="sig-take">FIT IT</div>
+      </div>
+    `).join('');
+
+    this.root.innerHTML = `
+      <div style="text-align:center; margin-bottom:20px; animation: llFade 0.3s ease-out;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+          ${emblemSvg('works', 26)}
+          <div style="font-size:11px; letter-spacing:5px; color:var(--ash); text-transform:uppercase;">
+            The vice is still tight
+          </div>
+        </div>
+        <div class="ll-title" style="font-size:38px; margin-top:8px;">The Workbench</div>
+        <div class="ll-sub">One piece of work on the ${weaponName}. It stays fitted for the rest of the run.</div>
+      </div>
+      <div style="display:flex; gap:24px; justify-content:center; flex-wrap:wrap; padding:0 20px;">
+        ${cards}
+      </div>
+    `;
+
+    this.root.querySelectorAll<HTMLElement>('.sig-card').forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.dataset.idx ?? '0', 10);
+        this.hide();
+        onSelect(works[idx]);
       });
     });
 

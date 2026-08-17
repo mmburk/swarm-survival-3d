@@ -22,16 +22,22 @@ import { Flare } from '../entities/Flare';
 import { Shelter, type Station } from '../entities/Shelter';
 import { Trader } from '../entities/Trader';
 import { SupplyCache } from '../entities/SupplyCache';
-import type { RewardType } from '../entities/ExitDoor';
+import { SignalDrop } from '../entities/SignalDrop';
+import type { GateOffer } from './SectorManager';
 
 import { AudioManager } from './AudioManager';
 import { SectorManager } from './SectorManager';
 
 import { HUD } from '../ui/HUD';
 import { MenuSystem } from '../ui/MenuSystem';
-import { BoonModal, generateBoons, applyBoon, type Boon, type Caller } from '../ui/BoonModal';
+import { BoonModal, generateBoons, applyBoon, CALLERS, type Boon, type Caller } from '../ui/BoonModal';
+import { pickFieldWorks } from '../config/FieldWorks';
 import { CodexModal } from '../ui/CodexModal';
 import { LoadingScreen } from '../ui/LoadingScreen';
+import { RadioDialogue } from '../ui/RadioDialogue';
+import { pickLine, logProgress, type LastRun, type RadioContext } from '../narrative/RadioLog';
+import { pickSignalOffer } from '../narrative/SignalOffers';
+import { readyCount, type ProphecyContext, type ProphecyView } from '../narrative/Prophecies';
 
 import { SaveSystem } from '../utils/SaveSystem';
 import { HEX } from '../theme/Palette';
@@ -41,6 +47,8 @@ type Mode = 'TITLE' | 'SHELTER' | 'RUN' | 'DEBRIEF';
 
 const tmpSpawn = new THREE.Vector3();
 const tmpDrop = new THREE.Vector3();
+const tmpSignal = new THREE.Vector3();
+const tmpFrame = new THREE.Vector2();
 const tmpDir = new THREE.Vector3();
 const tmpAim = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -73,10 +81,18 @@ export class Engine {
   private sectors!: SectorManager;
   private trader!: Trader;
   private cache!: SupplyCache;
+  private signalDrop!: SignalDrop;
   private shelter!: Shelter;
   private boons!: BoonModal;
   private codex!: CodexModal;
   private loading!: LoadingScreen;
+  private radio!: RadioDialogue;
+
+  /**
+   * What the last run did, kept for the voice waiting downstairs. Null until
+   * the player has been outside once, which is what the opening lines key on.
+   */
+  private lastRun: LastRun | null = null;
 
   private mode: Mode = 'TITLE';
   /** True whenever a full-screen surface owns input. */
@@ -92,7 +108,20 @@ export class Engine {
   private runScrap: number = 0;
   private runStart: number = 0;
   private sectorName: string = '';
-  private pendingBoon: boolean = false;
+  /**
+   * Who owes the player a favour, held from the gate that promised it until the
+   * street it leads to has been cleared. 'ANY' when the gate named nobody.
+   */
+  private pendingBoon: Caller | 'ANY' | null = null;
+  /**
+   * Set by a workbench gate. Unlike a signal, this is not handed over at the
+   * far end of the next fight: the whole point of a reworked gun is having it
+   * for the street you are about to walk into, so the bench is standing there
+   * the moment the fade lifts.
+   */
+  private pendingWorks: boolean = false;
+  /** Work already fitted this run, so the bench never offers it twice. */
+  private worksFitted: string[] = [];
   private goingHome: boolean = false;
 
   private streak: number = 0;
@@ -133,10 +162,12 @@ export class Engine {
       this.sectors = new SectorManager(this.render.scene);
       this.trader = new Trader(this.render.scene);
       this.cache = new SupplyCache(this.render.scene);
+      this.signalDrop = new SignalDrop(this.render.scene);
       this.shelter = new Shelter(this.render.scene);
       this.boons = new BoonModal();
       this.codex = new CodexModal();
       this.loading = new LoadingScreen();
+      this.radio = new RadioDialogue();
 
       this.wirePlayer();
       this.wireSectors();
@@ -202,36 +233,27 @@ export class Engine {
     this.sectors.onCleared = () => {
       this.audio.playSectorClear();
       this.particles.emitBurst(this.player.position, 22, HEX.smoke, 9, 0.6);
-      // After the Behemoth the two gates mean something different, so the
-      // boss case has to be decided here — by the time anything else runs,
-      // the ordinary gates are already open.
-      if (this.sectors.isBossSector) {
-        this.openBossGates();
-        this.hud.showBanner('THE ROAD FORKS', 'One way home. One way deeper.', 3.4);
-      } else {
-        this.sectors.openGates();
-        this.hud.setObjective('Street is clear — find a way out');
-        this.hud.showBanner('STREET CLEAR', 'Two ways out. Pick one.', 2.8);
-      }
-      this.audio.playGateOpen();
+      this.onStreetDone();
     };
 
-    this.sectors.onGateChosen = (reward) => {
+    this.sectors.onGateChosen = (offer) => {
       try {
         this.player.isInvulnerable = true;
 
-        if (reward === 'HOME') {
+        if (offer.reward === 'HOME') {
           this.goingHome = true;
           return;
         }
 
-        this.applyReward(reward);
+        this.applyReward(offer);
         this.clearField();
 
         const next = this.sectors.current + 1;
         this.sectors.setup(next);
-        this.buildSector(next);
+        // Player first: a trader sector opens its gates inside buildSector, and
+        // they are placed relative to where the player is standing.
         this.placePlayerAtSectorStart();
+        this.buildSector(next);
       } catch (err) {
         console.error('Error crossing into the next sector:', err);
       }
@@ -247,9 +269,9 @@ export class Engine {
         return;
       }
 
-      if (this.pendingBoon) {
-        this.pendingBoon = false;
-        this.offerSignal();
+      if (this.pendingWorks) {
+        this.pendingWorks = false;
+        this.openWorkbench();
       }
     };
   }
@@ -278,7 +300,96 @@ export class Engine {
       this.uiPaused = false;
       this.interactLock = 0.3;
       this.lastTime = performance.now();
+
+      // A beat after the room has faded in, not on top of the fade — the set
+      // in the corner should look like it caught up with you, not like it was
+      // waiting behind the loading screen.
+      window.setTimeout(() => this.deliverRadioLine(), 620);
     }, firstTime ? 900 : 700);
+  }
+
+  /**
+   * The one thing the band has to say tonight, if it has anything.
+   *
+   * Silence is a valid outcome and happens often. Nothing here blocks: the
+   * player can walk around the shelter while the voice talks, which is the
+   * whole reason this is a strip along the bottom and not a modal.
+   */
+  private deliverRadioLine(): void {
+    if (this.mode !== 'SHELTER' || this.radio.isOpen || this.menus.isOpen) return;
+
+    const st = SaveSystem.getStats();
+    const last = this.lastRun;
+
+    const ctx: RadioContext = {
+      runs: st.runs,
+      deaths: st.deaths,
+      clears: st.clears,
+      bestSector: st.bestSector,
+      totalKills: st.totalKills,
+      scrap: SaveSystem.getScrap(),
+      night: SaveSystem.getNightLevel(),
+      last,
+      seen: (id) => SaveSystem.hasHeardLine(id),
+      heard: (caller) => SaveSystem.heardFrom(caller),
+      leanedOn: (caller) => !!last?.callers.includes(caller),
+      claimed: (id) => SaveSystem.hasClaimed(id)
+    };
+
+    const line = pickLine(ctx);
+    if (!line) {
+      this.nudgeBoard();
+      return;
+    }
+
+    SaveSystem.markLineHeard(line.id, line.caller);
+    this.audio.playSwell();
+    this.radio.show(line, () => {
+      this.interactLock = 0.25;
+      this.lastTime = performance.now();
+      this.nudgeBoard();
+    });
+  }
+
+  /**
+   * Points at the pin board when something on it is finished and unpaid.
+   *
+   * Deliberately a toast and not a marker on the board itself: the player has
+   * to walk over and read which one it was, which is the only moment the list
+   * gets read rather than skimmed.
+   */
+  private nudgeBoard(): void {
+    if (this.mode !== 'SHELTER') return;
+    const ready = readyCount(this.boardContext());
+    if (ready <= 0) return;
+    this.hud.showToast(ready === 1
+      ? 'Something on the board is finished. Go and take it down.'
+      : `${ready} cards on the board are finished.`);
+  }
+
+  /** Everything the pin board is allowed to ask about, read fresh each time. */
+  private boardContext(): ProphecyContext {
+    const st = SaveSystem.getStats();
+    return {
+      runs: st.runs,
+      deaths: st.deaths,
+      clears: st.clears,
+      bestSector: st.bestSector,
+      totalKills: st.totalKills,
+      tally: SaveSystem.getTally(),
+      metaRanks: SaveSystem.totalMetaRanks(),
+      weaponsUnlocked: SaveSystem.unlockedWeaponCount(),
+      modsFitted: SaveSystem.fittedModCount(),
+      heard: (caller) => SaveSystem.heardFrom(caller),
+      logHeard: logProgress((id) => SaveSystem.hasHeardLine(id)).heard,
+      claimed: (id) => SaveSystem.hasClaimed(id)
+    };
+  }
+
+  private claimProphecy(view: ProphecyView): void {
+    if (view.state !== 'READY') return;
+    SaveSystem.claimProphecy(view.prophecy.id, view.prophecy.reward);
+    this.audio.playPurchase();
   }
 
   private openStation(station: Station): void {
@@ -307,18 +418,24 @@ export class Engine {
         break;
 
       case 'BOARD':
-        this.menus.showRecords(close);
+        this.menus.showList({
+          context: () => this.boardContext(),
+          claim: (view) => this.claimProphecy(view)
+        }, close);
         break;
 
-      case 'DOG':
-        // Not a menu — just a small, warm thing before you go.
+      case 'DOG': {
+        // Not a menu — just a small, warm thing, and the one order he takes.
         this.uiPaused = false;
         this.interactLock = 1.2;
-        this.shelter.celebrate();
+        const mood = this.shelter.petDog();
         this.audio.playPickup();
         this.particles.emitBurst(this.shelter.dogPosition, 8, HEX.amber, 3, 0.24);
-        this.hud.showToast('Rook leans into it. He will be here when you get back.');
+        this.hud.showToast(mood === 'FOLLOW'
+          ? 'Rook leans into it, then falls in at your heel.'
+          : 'Rook goes back to his bed. He will be there when you get back.');
         break;
+      }
 
       case 'DOOR':
         this.uiPaused = true;
@@ -335,6 +452,10 @@ export class Engine {
 
     this.sectors.setNight(SaveSystem.getNightLevel());
 
+    // Counted here rather than at the door, because his mood can still change
+    // right up until the stairs and it is the mood you leave on that matters.
+    if (this.shelter.dogMoodNow === 'FOLLOW') SaveSystem.bumpTally('dogRuns');
+
     this.loading.show(`Sector 01 — ${sectorFor(1).name}`, () => {
       this.mode = 'RUN';
       this.runKills = 0;
@@ -344,8 +465,15 @@ export class Engine {
       this.streak = 0;
       this.streakTimer = 0;
       this.hitStop = 0;
-      this.pendingBoon = false;
+      this.pendingBoon = null;
+      this.pendingWorks = false;
+      this.worksFitted.length = 0;
       this.goingHome = false;
+
+      // Everything the doors will offer tonight is dealt off one seeded bag,
+      // opened here — including the frequency the set was left on downstairs,
+      // which buys the first voice outright.
+      this.sectors.deck.beginRun(SaveSystem.getTuned());
 
       this.shelter.deactivate();
       this.props.setVisible(true);
@@ -367,8 +495,8 @@ export class Engine {
       SaveSystem.recordRunStart();
 
       this.sectors.setup(1);
-      this.buildSector(1);
       this.placePlayerAtSectorStart();
+      this.buildSector(1);
 
       this.hud.setShelterMode(false);
       this.hud.setWeapon(this.player.weaponDef.name, this.player.weaponDef.model, this.player.weaponDef.alt.name);
@@ -406,9 +534,12 @@ export class Engine {
       this.trader.activate(SaveSystem.getScrap());
       this.hud.setSector(sector, info.name, 'Trade with Vic, then move on', nightLabel);
       this.hud.showBanner('THE UNDERPASS', 'Vic is still here. Vic is always still here.', 3.2);
-      // Nothing to kill, so the way out opens immediately.
+      // Nothing to kill here, so the street counts as finished the moment it
+      // is built. Anything owed from the last gate still gets handed over
+      // first. The player has already been set down at the mouth of the sector
+      // by this point, which is what both the drop and the gates frame against.
       this.sectors.state = 'CLEARED';
-      this.sectors.openGates();
+      this.onStreetDone();
     } else {
       this.hud.setSector(sector, info.name, 'Clear the street', nightLabel);
       this.hud.showBanner(info.name, info.tagline, 3.2);
@@ -424,11 +555,22 @@ export class Engine {
     }
   }
 
-  private applyReward(reward: RewardType): void {
-    switch (reward) {
+  /**
+   * Pays out what the gate's plaque promised. The offer object comes straight
+   * from the door the player walked through, so the numbers on the sign and
+   * the numbers in the toast are the same numbers.
+   */
+  private applyReward(offer: GateOffer): void {
+    switch (offer.reward) {
       case 'SIGNAL':
-        // Deferred until the fade finishes so the cards land on the new street.
-        this.pendingBoon = true;
+        // Not paid at the door. It is paid on the far side of the next fight,
+        // by hand, in the street — see onStreetDone.
+        this.pendingBoon = offer.caller ?? 'ANY';
+        this.hud.showToast(
+          offer.caller
+            ? `${CALLERS[offer.caller].name} is setting something out for you.`
+            : 'Somebody is setting something out for you.'
+        );
         break;
 
       case 'SUPPLIES':
@@ -438,7 +580,7 @@ export class Engine {
         break;
 
       case 'SCRAP': {
-        const amount = Math.round((45 + this.sectors.current * 12) * this.sectors.night.scrapMult);
+        const amount = offer.amount || Math.round((45 + this.sectors.current * 12) * this.sectors.night.scrapMult);
         this.runScrap += amount;
         SaveSystem.addScrap(amount);
         this.audio.playScrap();
@@ -450,6 +592,15 @@ export class Engine {
         this.player.damageMultiplier *= 1.12;
         this.player.altCooldownMultiplier *= 0.9;
         this.hud.showToast('Arms cache: +12% damage, faster heavy attack.');
+        break;
+
+      case 'TRADE':
+        this.hud.showToast('Vic is set up one street over.');
+        break;
+
+      case 'WORKBENCH':
+        // Paid the instant the street loads, not after it is cleared.
+        this.pendingWorks = true;
         break;
 
       default:
@@ -470,13 +621,135 @@ export class Engine {
     return bestCount >= 2 ? best : undefined;
   }
 
-  private offerSignal(): void {
+  // ------------------------------------------------------------- the payoff
+
+  /**
+   * The street is finished. What happens next is the shape of the whole loop.
+   *
+   * If a gate promised somebody's help, that promise is now a case lying in the
+   * road, and the way out stays shut until it has been picked up. Opening the
+   * gates in the same beat would let a player walk out of the sector leaving
+   * the thing they chose it for in the dirt — and would put the choice of a
+   * favour and the choice of a door on screen at the same moment, which is two
+   * decisions competing for one held breath.
+   */
+  private onStreetDone(): void {
+    if (this.pendingBoon) {
+      const host = this.pendingBoon;
+      this.pendingBoon = null;
+      this.dropSignal(host);
+      return;
+    }
+    this.openTheWayOut();
+  }
+
+  private openTheWayOut(): void {
+    // After the Behemoth the two gates mean something different, so the boss
+    // case has to be decided here.
+    if (this.sectors.isBossSector) {
+      this.openBossGates();
+      this.hud.showBanner('THE ROAD FORKS', 'One way home. One way deeper.', 3.4);
+    } else {
+      this.sectors.openGates(this.player.position, this.favouredCaller());
+      this.hud.setObjective('Street is clear — read the gates, pick one');
+      this.hud.showBanner('STREET CLEAR', 'Two ways out. They are signed.', 2.8);
+    }
+    this.audio.playGateOpen();
+  }
+
+  /** Sets the promised case down a few paces up the street from the player. */
+  private dropSignal(host: Caller | 'ANY'): void {
+    const caller = host === 'ANY' ? null : host;
+
+    // Framed rather than dropped underfoot: far enough up the screen to be a
+    // thing you walk to, close enough that it is never a hike.
+    CAMERA_RIG.framePoint(0, 2.6, tmpFrame);
+    tmpSignal.set(this.player.position.x + tmpFrame.x, 0, this.player.position.z + tmpFrame.y);
+    const r = Math.hypot(tmpSignal.x, tmpSignal.z);
+    if (r > ARENA_RADIUS - 3) {
+      const s = (ARENA_RADIUS - 3) / r;
+      tmpSignal.x *= s;
+      tmpSignal.z *= s;
+    }
+
+    this.signalDrop.spawn(tmpSignal, caller);
+    this.audio.playGateOpen();
+    this.particles.emitBurst(tmpSignal, 18, HEX.amber, 6, 0.7);
+
+    const who = caller ? CALLERS[caller].name : 'SOMEBODY';
+    this.hud.showBanner('STREET CLEAR', `${who} left something in the road.`, 3.0);
+    this.hud.setObjective(caller ? `Pick up what ${CALLERS[caller].name} left` : 'Pick up what was left for you');
+  }
+
+  /**
+   * The player has walked onto it. Voice first, cards second: the favour is
+   * being handed over by a person, and the menu is only how it gets chosen.
+   */
+  private claimSignal(): void {
+    const caller = this.signalDrop.caller;
+    this.signalDrop.deactivate();
+
+    this.audio.playSwell();
+    this.particles.emitBurst(this.player.position, 26, HEX.amber, 8, 0.8);
+    this.cameraJuice.addTrauma(0.14);
+    this.hud.hidePrompt();
+
     this.uiPaused = true;
-    const offers = generateBoons(this.sectors.current, this.favouredCaller());
+    if (caller) this.radio.show(pickSignalOffer(caller), () => this.offerSignal(caller));
+    else this.offerSignal();
+  }
+
+  /** `host` is whoever the gate promised; without one the draw is mixed. */
+  private offerSignal(host?: Caller): void {
+    this.uiPaused = true;
+    const offers = generateBoons(this.sectors.current, this.favouredCaller(), host);
     this.boons.show(offers, (boon: Boon) => {
       applyBoon(boon, this.player);
+      // Taking it — not being offered it — is what puts a survivor in the run's
+      // band, and the fourth one closes it.
+      this.sectors.deck.noteBoon(boon.caller);
       this.hud.showToast(`${boon.title} — ${boon.tier.toLowerCase()}`);
       this.audio.playPickup();
+      this.uiPaused = false;
+      this.lastTime = performance.now();
+      // Only now is the street actually over.
+      this.openTheWayOut();
+    });
+  }
+
+  /**
+   * Somebody's garage, roller door half up, the vice still tight.
+   *
+   * Opened the moment the street the gate led to has finished loading, so the
+   * gun is reworked before the first shambler is on screen rather than after
+   * the fight it was meant to change. Nothing is dropped in the road for this
+   * one: the tools do not travel.
+   */
+  private openWorkbench(): void {
+    const works = pickFieldWorks(
+      this.player.weaponId,
+      this.worksFitted,
+      () => this.sectors.deck.random(),
+      3
+    );
+
+    // Only reachable if a weapon ever runs out of bench work, which the two-per
+    // -run cap makes impossible today. Still not worth freezing the game over.
+    if (works.length === 0) {
+      this.hud.showToast('The bench has been stripped. Nothing here fits your gun.');
+      return;
+    }
+
+    this.uiPaused = true;
+    this.audio.playSwell();
+    this.hud.showBanner('THE WORKBENCH', 'Whoever owned these tools is not coming back for them.', 3.0);
+
+    this.boons.showWorks(works, this.player.weaponDef.name, (work) => {
+      work.apply(this.player.weapon, this.player);
+      this.worksFitted.push(work.id);
+      this.hud.showToast(`${work.name} — fitted.`);
+      this.audio.playPickup();
+      this.particles.emitBurst(this.player.position, 20, HEX.smoke, 7, 0.6);
       this.uiPaused = false;
       this.lastTime = performance.now();
     });
@@ -494,6 +767,23 @@ export class Engine {
 
     SaveSystem.recordRunEnd(this.sectors.current, this.runKills, this.runScore, survived);
 
+    // Snapshotted before the field is cleared, because the buff list lives on
+    // the player and the player is about to be reset for the shelter.
+    this.lastRun = {
+      survived,
+      sector: this.sectors.current,
+      kills: this.runKills,
+      callers: this.player.getActiveBuffList()
+        .slice()
+        .sort((a, b) => b.count - a.count)
+        .map((b) => b.id as Caller),
+      night: SaveSystem.getNightLevel()
+    };
+
+    // Board counters that can only be settled once the run is over.
+    if (this.lastRun.callers.length >= 5) SaveSystem.bumpTally('fullBandRuns');
+    if (!this.lastRun.callers.includes('QUIET')) SaveSystem.recordCleanDepth(this.lastRun.sector);
+
     this.menus.showRunEnd({
       survived,
       cause,
@@ -502,7 +792,8 @@ export class Engine {
       kills: this.runKills,
       scrapEarned: this.runScrap,
       duration: (performance.now() - this.runStart) / 1000,
-      weapon: this.player.weaponDef.name
+      weapon: this.player.weaponDef.name,
+      seed: this.sectors.deck.seedLabel
     }, () => this.enterShelter(false));
   }
 
@@ -518,6 +809,7 @@ export class Engine {
     this.boss.deactivate();
     this.trader.deactivate();
     this.cache.deactivate();
+    this.signalDrop.deactivate();
     this.instProjectiles.hideAll();
     this.instPickups.hideAll();
 
@@ -656,6 +948,7 @@ export class Engine {
     landing.y = this.terrain.getHeightAt(landing.x, landing.z);
 
     this.flares.get(landing, 16 + this.sectors.current * 2, 260 + this.sectors.current * 30);
+    SaveSystem.bumpTally('flaresLit');
     this.cameraJuice.addTrauma(0.2);
     this.hud.showToast('Flare down — it will pull them in before it goes.');
   }
@@ -734,17 +1027,15 @@ export class Engine {
     const bounty = Math.round(300 * this.sectors.night.scrapMult);
     this.runScrap += bounty;
     SaveSystem.addScrap(bounty);
+    SaveSystem.bumpTally('bossKills');
 
     this.hud.showBanner('THE BEHEMOTH IS DOWN', `+${bounty} scrap. Now choose.`, 4.0);
   }
 
   /** After the boss, one gate goes home and one goes deeper. */
   private openBossGates(): void {
-    this.sectors.openGates();
-    const [a, b] = this.sectors.gates;
-    if (a) a.activate(a.position, 'HOME');
-    if (b) b.activate(b.position, 'SIGNAL');
-    this.hud.setObjective('Left gate: go home. Right gate: keep going.');
+    this.sectors.openBossGates(this.player.position);
+    this.hud.setObjective('One gate banks the run. The other has a voice on it.');
   }
 
   private resolveCollisions(delta: number): void {
@@ -950,6 +1241,12 @@ export class Engine {
     }
     this.sectors.updateGates(delta);
 
+    // What the last gate promised, waiting in the road.
+    if (this.signalDrop.active) {
+      this.signalDrop.update(delta);
+      if (this.signalDrop.checkPlayerCollision(this.player.position)) this.claimSignal();
+    }
+
     // Player.
     this.player.update(delta, this.render.camera, true);
 
@@ -1027,6 +1324,7 @@ export class Engine {
           this.interactLock = 0.4;
           if (affordable && SaveSystem.spendScrap(offer.good.cost)) {
             offer.good.apply(this.player);
+            SaveSystem.bumpTally('traderSpend', offer.good.cost);
             this.trader.markSold(offer.index);
             this.trader.refreshTags(SaveSystem.getScrap());
             this.audio.playPurchase();
@@ -1152,7 +1450,9 @@ export class Engine {
       this.updateShelter(delta);
     }
 
-    // HUD.
+    // HUD. Notices age out everywhere; the rest is combat readout only.
+    this.hud.tickNotices(delta);
+
     if (this.mode === 'RUN') {
       this.hud.update(delta, {
         health: this.player.health,

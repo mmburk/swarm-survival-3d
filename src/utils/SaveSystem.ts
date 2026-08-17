@@ -1,7 +1,22 @@
 import { META_DEFS, type MetaKey } from '../config/Progression';
 import { WEAPONS, type WeaponId } from '../config/Weapons';
+import { ALL_CALLERS } from '../core/RewardDeck';
+import type { Caller } from '../ui/BoonModal';
+import { emptyTally, type Tally } from '../narrative/Prophecies';
 
 export type MetaRanks = Record<MetaKey, number>;
+
+/**
+ * What the player has been told so far.
+ *
+ * `seen` is the struck-off list — a line in here never plays again. `heard`
+ * counts lines per survivor, which is how the band knows who the player has
+ * actually been listening to.
+ */
+export interface NarrativeState {
+  seen: string[];
+  heard: Partial<Record<Caller, number>>;
+}
 
 export interface SaveData {
   /** The single persistent currency. Kept on death — that is the whole point. */
@@ -13,6 +28,16 @@ export interface SaveData {
   activeMods: Partial<Record<WeaponId, boolean>>;
   lastWeapon: WeaponId;
   nightLevel: number;
+  /**
+   * The frequency the handset was left on. Whoever it is, the first radio gate
+   * of the next run is guaranteed to be theirs — the keepsake, in a shelter
+   * with one working radio set instead of a display case.
+   */
+  tuned: Caller | null;
+  narrative: NarrativeState;
+  /** Prophecies taken off the pin board and paid out. */
+  claimed: string[];
+  tally: Tally;
   stats: {
     runs: number;
     deaths: number;
@@ -43,6 +68,10 @@ function defaultSave(): SaveData {
     activeMods: {},
     lastWeapon: 'RANGER',
     nightLevel: 0,
+    tuned: null,
+    narrative: { seen: [], heard: {} },
+    claimed: [],
+    tally: emptyTally(),
     stats: { runs: 0, deaths: 0, bestSector: 0, totalKills: 0, bestScore: 0, clears: 0 }
   };
 }
@@ -61,6 +90,7 @@ export class SaveSystem {
         base.scrap = Math.max(0, Math.floor(parsed.scrap ?? 0));
         base.lastWeapon = (parsed.lastWeapon && WEAPONS[parsed.lastWeapon]) ? parsed.lastWeapon : 'RANGER';
         base.nightLevel = Math.max(0, Math.min(4, parsed.nightLevel ?? 0));
+        base.tuned = parsed.tuned && ALL_CALLERS.includes(parsed.tuned) ? parsed.tuned : null;
         base.unlockedMods = Array.isArray(parsed.unlockedMods) ? parsed.unlockedMods.slice() : [];
         base.activeMods = parsed.activeMods ? { ...parsed.activeMods } : {};
 
@@ -77,6 +107,12 @@ export class SaveSystem {
         if (parsed.stats) {
           base.stats = { ...base.stats, ...parsed.stats };
         }
+        if (parsed.narrative) {
+          base.narrative.seen = Array.isArray(parsed.narrative.seen) ? parsed.narrative.seen.slice() : [];
+          base.narrative.heard = parsed.narrative.heard ? { ...parsed.narrative.heard } : {};
+        }
+        if (Array.isArray(parsed.claimed)) base.claimed = parsed.claimed.slice();
+        if (parsed.tally) base.tally = { ...base.tally, ...parsed.tally };
       } else {
         this.migrateLegacy(base);
       }
@@ -223,6 +259,91 @@ export class SaveSystem {
   public static setNightLevel(level: number): void {
     this.load().nightLevel = Math.max(0, Math.min(4, Math.floor(level)));
     this.save();
+  }
+
+  /** Who the set is left tuned to, or null for a handset left scanning. */
+  public static getTuned(): Caller | null {
+    return this.load().tuned;
+  }
+
+  public static setTuned(caller: Caller | null): void {
+    this.load().tuned = caller;
+    this.save();
+  }
+
+  // ---- the radio log ------------------------------------------------------
+
+  public static hasHeardLine(id: string): boolean {
+    return this.load().narrative.seen.includes(id);
+  }
+
+  /** How many lines this survivor has delivered across every run so far. */
+  public static heardFrom(caller: Caller): number {
+    return this.load().narrative.heard[caller] ?? 0;
+  }
+
+  /** Strikes a line off for good and credits it to whoever said it. */
+  public static markLineHeard(id: string, caller: Caller): void {
+    const n = this.load().narrative;
+    if (!n.seen.includes(id)) n.seen.push(id);
+    n.heard[caller] = (n.heard[caller] ?? 0) + 1;
+    this.save();
+  }
+
+  // ---- the pin board ------------------------------------------------------
+
+  public static getTally(): Tally {
+    return this.load().tally;
+  }
+
+  /**
+   * Bumps a counter the ordinary run records do not cover.
+   *
+   * `deepestClean` is a high-water mark rather than a total, so it is set
+   * rather than added — passing the deeper of the two values is the caller's
+   * job and `bumpTally` would quietly corrupt it.
+   */
+  public static bumpTally(key: Exclude<keyof Tally, 'deepestClean'>, by: number = 1): void {
+    const t = this.load().tally;
+    t[key] += by;
+    this.save();
+  }
+
+  public static recordCleanDepth(sector: number): void {
+    const t = this.load().tally;
+    if (sector > t.deepestClean) {
+      t.deepestClean = sector;
+      this.save();
+    }
+  }
+
+  public static hasClaimed(id: string): boolean {
+    return this.load().claimed.includes(id);
+  }
+
+  /** Takes the card off the board and pays for it. */
+  public static claimProphecy(id: string, reward: number): void {
+    const s = this.load();
+    if (s.claimed.includes(id)) return;
+    s.claimed.push(id);
+    s.scrap += reward;
+    this.save();
+  }
+
+  /** Ranks bought at the workbench, summed — what the bench prophecy counts. */
+  public static totalMetaRanks(): number {
+    const m = this.load().meta;
+    return META_DEFS.reduce((sum, d) => sum + (m[d.key] ?? 0), 0);
+  }
+
+  /** Mods actually fitted to a weapon, not merely bought. */
+  public static fittedModCount(): number {
+    const s = this.load();
+    return s.unlockedWeapons.filter((w) => this.isModActive(w)).length;
+  }
+
+  public static unlockedWeaponCount(): number {
+    return this.load().unlockedWeapons.length;
   }
 
   // ---- run records --------------------------------------------------------

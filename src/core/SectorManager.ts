@@ -1,9 +1,27 @@
 import * as THREE from 'three';
 import { ExitDoor, type RewardType } from '../entities/ExitDoor';
+import { CAMERA_RIG } from '../graphics/CameraRig';
 import { EnemyType } from '../entities/Enemy';
 import { NIGHT_TIERS, type NightTier } from '../config/Progression';
+import { RewardDeck } from './RewardDeck';
+import type { CallerArtId } from '../ui/art/Portraits';
 
 export type SectorState = 'COMBAT' | 'CLEARED' | 'CHOOSING_GATE' | 'TRANSITIONING';
+
+/**
+ * What a single gate is advertising. The plaque is painted from this, and the
+ * same object is handed back when the player walks through it, so what the
+ * door promised and what the player gets can never drift apart.
+ */
+export interface GateOffer {
+  reward: RewardType;
+  /** Whose voice is on the other side. SIGNAL gates only. */
+  caller: CallerArtId | null;
+  /** Short line painted under the header, e.g. "+128 SCRAP". */
+  value: string;
+  /** The scrap a SCRAP gate actually pays, resolved when the gate opened. */
+  amount: number;
+}
 
 export interface SectorPlan {
   shamblers: number;
@@ -15,8 +33,32 @@ export interface SectorPlan {
   isTrader: boolean;
 }
 
-const GATE_A = new THREE.Vector3(-17, 0, -19);
-const GATE_B = new THREE.Vector3(17, 0, -19);
+/**
+ * Where the two gates stand up when a street clears, stated in screen units on
+ * the same scale as the rig's view height rather than in world coordinates.
+ *
+ * Screen space is the right space for this. Pinned to fixed corners of the map,
+ * the gates were wherever the fight had not left the player — usually most of
+ * the arena away — and the dimetric rig pushed one of them off the top of the
+ * frame and the other off the right edge. Composed instead, they open a short
+ * walk from where the player is actually standing, one to each shoulder, both
+ * whole in the frame: the choice is on screen the moment it exists.
+ */
+const GATE_SPREAD = 11.5;
+/**
+ * Kept low deliberately: a gate is eight metres tall with the plaque on top,
+ * and every metre the pair is pushed up the frame is another metre of board
+ * climbing towards the top edge.
+ */
+const GATE_LIFT = 3.4;
+
+/**
+ * Keeps a gate inside the player's own leash (52) so it can always be walked
+ * into, and well inside the perimeter fence (60) so it never floats outside it.
+ */
+const GATE_MAX_RADIUS = 54;
+
+const tempGate = new THREE.Vector2();
 
 /**
  * Owns the shape of a single run: what spawns in each sector, when the sector
@@ -39,8 +81,23 @@ export class SectorManager {
 
   private transitionTimer: number = 0;
   private readonly transitionDuration: number = 0.62;
-  private pendingReward: RewardType | null = null;
+  private pendingOffer: GateOffer | null = null;
   private fadeOverlay: HTMLElement;
+
+  /**
+   * Set when the player takes a TRADE gate. The next sector becomes Vic's
+   * underpass regardless of where the ordinary cadence had put it.
+   */
+  private traderNext: boolean = false;
+
+  /**
+   * What the doors are allowed to say tonight, and why.
+   *
+   * Everything about which rewards turn up, how often, whose voice is on a
+   * radio gate and when the workbench is dealt lives in here rather than in a
+   * scatter of `Math.random()` calls — see RewardDeck for the whole machine.
+   */
+  public readonly deck: RewardDeck = new RewardDeck();
 
   /**
    * Tracks the fade independently of `state`.
@@ -56,7 +113,15 @@ export class SectorManager {
   private gateA: ExitDoor;
   private gateB: ExitDoor;
 
-  public onGateChosen: ((reward: RewardType) => void) | null = null;
+  /** Recomputed every time the gates open, from where the player is standing. */
+  private readonly gatePosA = new THREE.Vector3();
+  private readonly gatePosB = new THREE.Vector3();
+
+  /** What each open gate promised. Handed straight back on entry. */
+  private offerA: GateOffer | null = null;
+  private offerB: GateOffer | null = null;
+
+  public onGateChosen: ((offer: GateOffer) => void) | null = null;
   public onTransitionDone: (() => void) | null = null;
   public onCleared: (() => void) | null = null;
 
@@ -94,7 +159,8 @@ export class SectorManager {
     if (sector % this.bossEvery === 0) {
       return { shamblers: 14, sprinters: 8, bloaters: 4, butchers: 2, bursters: 4, isBoss: true, isTrader: false };
     }
-    if (sector % this.bossEvery === 3) {
+    // A trade gate overrides the ordinary cadence — the player asked for it.
+    if (this.traderNext || sector % this.bossEvery === 3) {
       return { shamblers: 0, sprinters: 0, bloaters: 0, butchers: 0, bursters: 0, isBoss: false, isTrader: true };
     }
 
@@ -126,6 +192,7 @@ export class SectorManager {
     this.toSpawn.BURSTER = p.bursters;
     this.isBossSector = p.isBoss;
     this.isTraderSector = p.isTrader;
+    this.traderNext = false;
 
     this.gateA.deactivate();
     this.gateB.deactivate();
@@ -179,33 +246,141 @@ export class SectorManager {
     this.onCleared?.();
   }
 
-  public openGates(): void {
+  /**
+   * Plants the pair around wherever the player finished the fight: one gate off
+   * each shoulder, both lifted up the frame so the street reads as leading
+   * somewhere rather than the gates being pasted over the player.
+   */
+  private placeGates(anchor: THREE.Vector3): void {
+    // On a narrow window the frame runs out before the spread does, so the pair
+    // closes up rather than walking off the sides.
+    const spread = Math.min(GATE_SPREAD, CAMERA_RIG.halfFrameWidth() * 0.46);
+
+    // The pair wants to stand up the frame from the player, but the street ends
+    // at the fence. When the fight finished out by the wire, what gives is how
+    // far up the frame the gates sit — walked down towards the player, and past
+    // them if that is what it takes. Both gates keep their screen x through all
+    // of it, so the choice never slides out of shot sideways.
+    const steps = 6;
+    for (let i = 0; i <= steps; i++) {
+      const lift = GATE_LIFT * (1 - (2 * i) / steps);
+      this.frameGate(anchor, -spread, lift, this.gatePosA);
+      this.frameGate(anchor, spread, lift, this.gatePosB);
+      const worst = Math.max(
+        Math.hypot(this.gatePosA.x, this.gatePosA.z),
+        Math.hypot(this.gatePosB.x, this.gatePosB.z)
+      );
+      if (worst <= GATE_MAX_RADIUS) break;
+    }
+
+    // Last resort, for a player pinned against the wire: reel a gate back in
+    // along its own bearing. Costs a little symmetry, buys reachability.
+    this.reelIn(this.gatePosA);
+    this.reelIn(this.gatePosB);
+  }
+
+  /** One gate, placed at a spot in the frame relative to the player. */
+  private frameGate(anchor: THREE.Vector3, right: number, up: number, out: THREE.Vector3): void {
+    CAMERA_RIG.framePoint(right, up, tempGate);
+    out.set(anchor.x + tempGate.x, 0, anchor.z + tempGate.y);
+  }
+
+  private reelIn(gate: THREE.Vector3): void {
+    const r = Math.hypot(gate.x, gate.z);
+    if (r <= GATE_MAX_RADIUS || r < 1e-4) return;
+    const s = GATE_MAX_RADIUS / r;
+    gate.x *= s;
+    gate.z *= s;
+  }
+
+  public openGates(anchor: THREE.Vector3, favoured?: CallerArtId): void {
     if (this.gatesOpen) return;
     this.gatesOpen = true;
     this.state = 'CHOOSING_GATE';
 
-    const [a, b] = this.rollRewards();
-    this.gateA.activate(GATE_A, a);
-    this.gateB.activate(GATE_B, b);
+    this.placeGates(anchor);
+    const [a, b] = this.rollOffers(favoured);
+    this.offerA = a;
+    this.offerB = b;
+    this.gateA.activate(this.gatePosA, a.reward, true, a.caller, a.value);
+    this.gateB.activate(this.gatePosB, b.reward, true, b.caller, b.value);
+  }
+
+  /** After the Behemoth: one gate home, one gate deeper with a voice on it. */
+  public openBossGates(anchor: THREE.Vector3): void {
+    if (this.gatesOpen) return;
+    this.gatesOpen = true;
+    this.state = 'CHOOSING_GATE';
+
+    this.placeGates(anchor);
+    this.offerA = { reward: 'HOME', caller: null, value: 'BANK THE RUN', amount: 0 };
+    // The one door in the game that ignores the four-voice cap. Whatever picks
+    // up after the Behemoth is not answering because it is on your band, and a
+    // player who arrives here with four survivors behind them is the only one
+    // who will ever hear a fifth in a single night.
+    this.offerB = {
+      reward: 'SIGNAL',
+      caller: this.deck.pickCaller(undefined, true),
+      value: 'ONE OF THREE FAVOURS',
+      amount: 0
+    };
+    this.gateA.activate(this.gatePosA, 'HOME', true, null, this.offerA.value);
+    this.gateB.activate(this.gatePosB, 'SIGNAL', true, this.offerB.caller, this.offerB.value);
+  }
+
+  /** What a salvage gate is worth right now, before the player commits to it. */
+  private scrapPayout(): number {
+    return Math.round((45 + this.current * 12) * this.night.scrapMult);
+  }
+
+  private signalOffer(favoured?: CallerArtId): GateOffer {
+    return {
+      reward: 'SIGNAL',
+      caller: this.deck.pickCaller(favoured),
+      value: 'ONE OF THREE FAVOURS',
+      amount: 0
+    };
+  }
+
+  private makeOffer(reward: RewardType, favoured?: CallerArtId): GateOffer {
+    switch (reward) {
+      case 'SIGNAL':
+        return this.signalOffer(favoured);
+      case 'SCRAP': {
+        const amount = this.scrapPayout();
+        return { reward, caller: null, value: `+${amount} SCRAP`, amount };
+      }
+      case 'SUPPLIES':
+        return { reward, caller: null, value: '+15 MAX · PATCH UP', amount: 0 };
+      case 'ARSENAL':
+        return { reward, caller: null, value: '+12% DAMAGE', amount: 0 };
+      case 'TRADE':
+        return { reward, caller: null, value: 'GOODS FOR SCRAP', amount: 0 };
+      case 'WORKBENCH':
+        return { reward, caller: null, value: 'REWORK THE GUN', amount: 0 };
+      default:
+        return { reward, caller: null, value: '', amount: 0 };
+    }
   }
 
   /**
-   * Always offers two different things, and usually one of them is a radio
-   * contact — boons are the spine of the build, so they should not be rare.
+   * Two plaques, dealt off the run's bag rather than rolled fresh each time.
+   *
+   * Nothing about the odds lives here any more: which rewards are in the bag,
+   * which one is overdue, whether tonight is a workbench night and whose voice
+   * is on the radio gate are all the deck's business, and the deck remembers
+   * what the player has been doing with its offers.
    */
-  private rollRewards(): [RewardType, RewardType] {
-    const others: RewardType[] = ['SUPPLIES', 'SCRAP', 'ARSENAL'];
-    const pickOther = () => others[Math.floor(Math.random() * others.length)];
+  private rollOffers(favoured?: CallerArtId): [GateOffer, GateOffer] {
+    const draw = this.deck.draw({
+      sector: this.current,
+      isTraderSector: this.isTraderSector
+    });
 
-    if (Math.random() < 0.72) {
-      const other = pickOther();
-      return Math.random() < 0.5 ? ['SIGNAL', other] : [other, 'SIGNAL'];
-    }
-
-    const a = pickOther();
-    let b = pickOther();
-    if (a === b) b = others[(others.indexOf(a) + 1) % others.length];
-    return [a, b];
+    return [
+      this.makeOffer(draw.rewards[0], favoured),
+      this.makeOffer(draw.rewards[1], favoured)
+    ];
   }
 
   public updateGates(delta: number): void {
@@ -218,9 +393,9 @@ export class SectorManager {
     if (this.state !== 'CHOOSING_GATE') return;
 
     if (this.gateA.checkPlayerCollision(playerPos)) {
-      this.beginTransition(this.gateA.rewardType);
+      this.beginTransition(this.offerA ?? this.makeOffer(this.gateA.rewardType));
     } else if (this.gateB.checkPlayerCollision(playerPos)) {
-      this.beginTransition(this.gateB.rewardType);
+      this.beginTransition(this.offerB ?? this.makeOffer(this.gateB.rewardType));
     }
   }
 
@@ -228,11 +403,18 @@ export class SectorManager {
     return this.fading;
   }
 
-  public beginTransition(reward: RewardType): void {
+  public beginTransition(offer: GateOffer): void {
+    // The bag is told about both doors, not just the one that was walked
+    // through: a workbench left standing in the street is the whole reason the
+    // deck knows to chase the player with it later.
+    const shown = [this.offerA?.reward, this.offerB?.reward].filter(Boolean) as RewardType[];
+    if (shown.length) this.deck.noteChoice(offer.reward, shown);
+
     this.state = 'TRANSITIONING';
     this.fading = true;
     this.transitionTimer = 0;
-    this.pendingReward = reward;
+    this.pendingOffer = offer;
+    if (offer.reward === 'TRADE') this.traderNext = true;
     this.fadeOverlay.style.opacity = '1';
   }
 
@@ -242,10 +424,10 @@ export class SectorManager {
     this.transitionTimer += delta;
 
     // Swap the world at the darkest point of the fade.
-    if (this.transitionTimer >= 0.31 && this.pendingReward) {
-      const reward = this.pendingReward;
-      this.pendingReward = null;
-      this.onGateChosen?.(reward);
+    if (this.transitionTimer >= 0.31 && this.pendingOffer) {
+      const offer = this.pendingOffer;
+      this.pendingOffer = null;
+      this.onGateChosen?.(offer);
     }
 
     if (this.transitionTimer >= this.transitionDuration) {
@@ -262,7 +444,7 @@ export class SectorManager {
   /** Force the overlay clear — used when bailing back to the shelter. */
   public clearFade(): void {
     this.fading = false;
-    this.pendingReward = null;
+    this.pendingOffer = null;
     this.transitionTimer = 0;
     this.fadeOverlay.style.opacity = '0';
   }
@@ -270,7 +452,10 @@ export class SectorManager {
   public reset(): void {
     this.gateA.deactivate();
     this.gateB.deactivate();
+    this.offerA = null;
+    this.offerB = null;
     this.gatesOpen = false;
+    this.traderNext = false;
     this.state = 'COMBAT';
     this.clearFade();
   }

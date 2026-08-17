@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { injectTheme, CSS } from '../theme/Palette';
 import { CAMERA_RIG } from '../graphics/CameraRig';
+import { emblemSvg } from './art/Emblems';
 
 interface DamageText {
   el: HTMLElement;
@@ -245,9 +246,12 @@ export class HUD {
 
       <!-- Run tally -->
       <div id="tally-card" class="hud-card" style="position:absolute; top:18px; right:18px; display:flex; gap:20px; align-items:center;">
-        <div style="text-align:right;">
-          <div class="hud-label">Scrap</div>
-          <div id="scrap-val" style="font-family:var(--stencil); font-size:21px; color:var(--amber);">0</div>
+        <div style="display:flex; align-items:center; gap:9px;">
+          ${emblemSvg('scrap', 26)}
+          <div style="text-align:right;">
+            <div class="hud-label">Scrap</div>
+            <div id="scrap-val" style="font-family:var(--stencil); font-size:21px; color:var(--amber);">0</div>
+          </div>
         </div>
         <div style="width:1px; height:30px; background:var(--char);"></div>
         <div style="text-align:right;">
@@ -269,7 +273,9 @@ export class HUD {
         <div class="hud-label" style="margin-top:3px;">Wind &nbsp;·&nbsp; <span style="color:var(--bone)">SPACE</span> roll</div>
         <div class="hud-bar" style="height:8px;"><div id="stam-fill" class="hud-bar-fill"></div></div>
 
-        <div class="hud-label" style="margin-top:3px;">Flare &nbsp;·&nbsp; <span style="color:var(--bone)">Q</span></div>
+        <div class="hud-label" style="display:flex; align-items:center; gap:6px; margin-top:3px;">
+          ${emblemSvg('stim', 15)} Flare &nbsp;·&nbsp; <span style="color:var(--bone)">Q</span>
+        </div>
         <div class="hud-bar" style="height:8px;"><div id="flare-fill" class="hud-bar-fill" style="width:0%"></div></div>
       </div>
 
@@ -301,7 +307,9 @@ export class HUD {
 
       <!-- Supply cache timer -->
       <div id="cache-timer" class="hud-card" style="position:absolute; top:150px; left:50%; transform:translateX(-50%); display:none; text-align:center; border-color:var(--amber);">
-        <div class="hud-label" style="color:var(--amber);">Supply Crate — Chained</div>
+        <div class="hud-label" style="display:flex; align-items:center; justify-content:center; gap:7px; color:var(--amber);">
+          ${emblemSvg('supplies', 16)} Supply Crate — Chained
+        </div>
         <div id="cache-line" style="font-family:var(--stencil); font-size:19px; letter-spacing:2px; margin-top:3px;">0 / 12 &nbsp; 18.0s</div>
       </div>
 
@@ -526,13 +534,16 @@ export class HUD {
 
   // -------------------------------------------------------------- per-frame
 
-  public update(
-    delta: number,
-    vitals: Vitals,
-    scrap: number,
-    kills: number,
-    cooldowns: { alt: number; shove: number; flareReady: boolean }
-  ): void {
+  /**
+   * Ages out the three things that show themselves and then go away.
+   *
+   * Kept apart from `update` because `update` only runs during a run, and
+   * toasts are raised in the shelter too — racking a weapon, petting the dog,
+   * being told there is something finished on the pin board. Left inside
+   * `update` those messages had no timer running against them and simply
+   * stayed on screen until the player went outside.
+   */
+  public tickNotices(delta: number): void {
     if (this.toastTimer > 0) {
       this.toastTimer -= delta;
       if (this.toastTimer <= 0) this.toastEl.style.display = 'none';
@@ -545,7 +556,15 @@ export class HUD {
       this.streakTimer -= delta;
       if (this.streakTimer <= 0) this.streakEl.style.display = 'none';
     }
+  }
 
+  public update(
+    delta: number,
+    vitals: Vitals,
+    scrap: number,
+    kills: number,
+    cooldowns: { alt: number; shove: number; flareReady: boolean }
+  ): void {
     // Throttled: none of this needs to run at frame rate.
     this.uiTimer += delta;
     if (this.uiTimer < 0.05) return;

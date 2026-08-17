@@ -28,6 +28,8 @@ export const CAMERA_RIG = {
   /** Cached sin/cos of the camera yaw, for turning input into world motion. */
   yawSin: 0,
   yawCos: 1,
+  /** Cached sine of the rake: how hard the ground is squashed up the screen. */
+  pitchSin: 1,
 
   set(x: number, y: number, z: number, lookHeight: number): void {
     this.offset.set(x, y, z);
@@ -35,6 +37,8 @@ export const CAMERA_RIG = {
     const flat = Math.hypot(x, z);
     this.yawSin = flat > 1e-4 ? x / flat : 0;
     this.yawCos = flat > 1e-4 ? z / flat : 1;
+    const len = Math.hypot(flat, y);
+    this.pitchSin = len > 1e-4 ? y / len : 1;
   },
 
   /**
@@ -80,6 +84,33 @@ export const CAMERA_RIG = {
    */
   toScreen(x: number, z: number, out: THREE.Vector2): THREE.Vector2 {
     return out.set(x * this.yawCos - z * this.yawSin, x * this.yawSin + z * this.yawCos);
+  },
+
+  /** Half the frame's width, in the same world units as `viewHeight`. */
+  halfFrameWidth(): number {
+    const aspect = window.innerHeight > 0 ? window.innerWidth / window.innerHeight : 16 / 9;
+    return (this.viewHeight / 2) * aspect;
+  },
+
+  /**
+   * Where a thing has to stand on the ground to land at a chosen spot in the
+   * frame, as an offset from whatever the camera is centred on. `right` and
+   * `up` are screen units on the same scale as `viewHeight`.
+   *
+   * Not just a rotation: the rake squashes the screen's vertical axis, so a
+   * metre walked up the frame costs more ground than a metre walked across it.
+   * Anything that wants to be composed on screen rather than pinned to a map
+   * coordinate — the exit gates — has to go through here.
+   */
+  framePoint(right: number, up: number, out: THREE.Vector2): THREE.Vector2 {
+    const depth = this.pitchSin > 1e-3 ? up / this.pitchSin : up;
+    // toWorld reads its second argument as screen *down*.
+    return this.toWorld(right, -depth, out);
+  },
+
+  /** The yaw a flat, forward-facing mesh needs to sit square to the camera. */
+  facingYaw(): number {
+    return Math.atan2(this.offset.x, this.offset.z);
   }
 };
 

@@ -49,6 +49,33 @@ const WALK_X = HALF_X - 0.7;
 const WALK_Z = HALF_Z - 0.7;
 
 /**
+ * ROOK'S MOODS.
+ *
+ * `STAY` is his default: this is his house, and he is in it. `FOLLOW` is you
+ * having asked him to come along, and he holds it until you ask him not to.
+ * `GREET` is the few seconds after you come down the stairs, and it always
+ * falls back into whichever of the other two he was in when you left.
+ */
+export type DogMood = 'GREET' | 'FOLLOW' | 'STAY';
+
+/**
+ * His bed, in the warm corner by the stove, next to his bowl.
+ *
+ * This is deliberately across the room from where the player lands coming down
+ * the stairs. It used to be two metres from that spot, which meant he was
+ * already standing on top of you the moment the room faded in and there was no
+ * room left for him to come and meet you in.
+ */
+const DOG_BED = new THREE.Vector3(-9.2, 0, 8.6);
+/** He is stopped by the furniture now, same as you are. */
+const DOG_RADIUS = 0.38;
+/** He gets up to follow past the first, and sits down again inside the second. */
+const DOG_FOLLOW_START = 4.2;
+const DOG_FOLLOW_STOP = 2.4;
+/** Close enough for the hello to land and the greeting to end. */
+const DOG_GREET_REACH = 2.6;
+
+/**
  * THE SHELTER — a boarded-up basement under a hardware store.
  *
  * This is the hub the whole loop returns to: you pick a gun off the rack,
@@ -66,7 +93,9 @@ export class Shelter {
     { id: 'RADIO', position: new THREE.Vector3(-10.5, 0, 4.5),  radius: 2.6, label: 'Radio Set',     hint: 'Listen to how bad it is out there' },
     { id: 'BOARD', position: new THREE.Vector3(10.5, 0, 4.5),   radius: 2.6, label: 'Pin Board',     hint: 'Records, kill tallies, what you know' },
     { id: 'DOOR',  position: new THREE.Vector3(0, 0, -10.0),    radius: 2.8, label: 'Cellar Stairs', hint: 'Go out' },
-    { id: 'DOG',   position: new THREE.Vector3(0, 0, 6.0),      radius: 2.4, label: 'Rook',          hint: 'Say goodbye to the dog' }
+    // Rook moves, so this position is only a starting point — `stationAt`
+    // tracks the dog himself. The hint is rewritten as his mood changes.
+    { id: 'DOG',   position: DOG_BED.clone(),                   radius: 2.4, label: 'Rook',          hint: 'Say goodbye to the dog' }
   ];
 
   private furniture: Furniture[] = [];
@@ -74,9 +103,15 @@ export class Shelter {
 
   private dog!: THREE.Group;
   private dogTail!: THREE.Mesh;
-  private dogHome: THREE.Vector3 = new THREE.Vector3(0, 0, 6.0);
-  private dogTarget: THREE.Vector3 = new THREE.Vector3(0, 0, 6.0);
-  private dogWanderTimer: number = 0;
+  private dogTarget: THREE.Vector3 = DOG_BED.clone();
+  /** The spot `STAY` holds him to. Always his bed — that is the whole point. */
+  private dogAnchor: THREE.Vector3 = DOG_BED.clone();
+  private dogMood: DogMood = 'STAY';
+  /** What he goes back to once he has finished saying hello. */
+  private dogMoodAfterGreet: DogMood = 'STAY';
+  private dogIdleTimer: number = 0;
+  private dogWagTimer: number = 0;
+  private dogStation!: Station;
 
   private rackGuns: THREE.Group[] = [];
   private benchWheel!: THREE.Mesh;
@@ -96,6 +131,9 @@ export class Shelter {
     this.buildStairs();
     this.buildLivingSpace();
     this.buildDog();
+
+    this.dogStation = this.stations.find((s) => s.id === 'DOG')!;
+    this.syncDogHint();
 
     scene.add(this.group);
   }
@@ -587,12 +625,16 @@ export class Shelter {
   }
 
   /**
-   * Rook. He was somebody's dog before. Now he sleeps by the stove, follows
-   * you around the shelter, and will not go up the stairs.
+   * Rook. He was somebody's dog before. Now he sleeps by the stove, comes to
+   * the bottom of the stairs when he hears you on them, and will not go up.
+   *
+   * He has two settings and you pick between them by petting him: stay on his
+   * bed, or come round the shelter with you. He starts on the bed, because it
+   * is his house.
    */
   private buildDog(): void {
     this.dog = new THREE.Group();
-    this.dog.position.copy(this.dogHome);
+    this.dog.position.copy(DOG_BED);
 
     const fur = new THREE.MeshStandardMaterial({ color: 0x6b5a44, roughness: 0.95, flatShading: true });
     const furDark = new THREE.MeshStandardMaterial({ color: 0x4a3d2c, roughness: 0.95, flatShading: true });
@@ -632,9 +674,20 @@ export class Shelter {
     this.dogTail.rotation.x = -0.5;
     this.dog.add(this.dogTail);
 
-    // Tin bowl.
+    // His corner: a folded sack he sleeps on and a tin bowl beside it. No
+    // collision on either — he is meant to stand on the one and eat from the
+    // other, and they are both ankle high.
+    const pad = new THREE.Mesh(
+      new THREE.BoxGeometry(2.0, 0.12, 1.5),
+      new THREE.MeshStandardMaterial({ color: 0x4f4433, roughness: 1.0, flatShading: true })
+    );
+    pad.position.set(DOG_BED.x, 0.06, DOG_BED.z);
+    pad.rotation.y = 0.18;
+    pad.receiveShadow = true;
+    this.group.add(pad);
+
     const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.2, 0.14, 10), this.metal(0x6a6d5f));
-    bowl.position.set(1.4, 0.07, 6.4);
+    bowl.position.set(DOG_BED.x + 1.5, 0.07, DOG_BED.z - 0.7);
     this.group.add(bowl);
 
     this.group.add(this.dog);
@@ -668,8 +721,18 @@ export class Shelter {
   public activate(): void {
     this.active = true;
     this.group.visible = true;
-    this.dog.position.copy(this.dogHome);
-    this.dogTarget.copy(this.dogHome);
+
+    // He waited on his bed, and he gets up the moment the door goes. Whatever
+    // you last told him to do resumes once he has said hello — the greeting is
+    // never skipped, because the old code dropped you into the room two metres
+    // from a dog that then walked off without looking at you.
+    this.dog.position.copy(DOG_BED);
+    this.dogTarget.copy(DOG_BED);
+    this.dogMoodAfterGreet = this.dogMood === 'GREET' ? 'STAY' : this.dogMood;
+    this.dogMood = 'GREET';
+    this.dogIdleTimer = 0;
+    this.dogWagTimer = 0;
+    this.syncDogHint();
   }
 
   public deactivate(): void {
@@ -712,9 +775,32 @@ export class Shelter {
     return this.dog.position;
   }
 
-  /** Excited tail wag, used as feedback when you pet him. */
-  public celebrate(): void {
-    this.dogWanderTimer = 0.01;
+  public get dogMoodNow(): DogMood {
+    return this.dogMood;
+  }
+
+  /**
+   * Petting him is the toggle: it either invites him along or sends him back
+   * to his bed. Returns what he settled on so the caller can say so.
+   *
+   * This used to poke the wander timer, which — because you are inside his
+   * "too close to follow" radius when you are close enough to pet him — meant
+   * the one thing petting the dog reliably did was make him walk away.
+   */
+  public petDog(): DogMood {
+    this.dogWagTimer = 2.0;
+    this.dogMood = this.dogMood === 'FOLLOW' ? 'STAY' : 'FOLLOW';
+    this.dogMoodAfterGreet = this.dogMood;
+    this.dogAnchor.copy(DOG_BED);
+    this.dogIdleTimer = 0;
+    this.syncDogHint();
+    return this.dogMood;
+  }
+
+  private syncDogHint(): void {
+    this.dogStation.hint = this.dogMood === 'FOLLOW'
+      ? 'Send him back to his bed'
+      : 'Have him come round with you';
   }
 
   public update(delta: number, playerPos?: THREE.Vector3): void {
@@ -733,40 +819,104 @@ export class Shelter {
       this.rackGuns[i].rotation.z = Math.sin(this.time * 0.8 + i) * 0.012;
     }
 
-    // Rook follows you at a polite distance and wanders when you stand still.
-    this.dogWanderTimer -= delta;
+    this.updateDog(delta, playerPos);
+  }
+
+  /** Picks a standing spot `gap` metres off the player, on the side he is already on. */
+  private aimNear(playerPos: THREE.Vector3, gap: number): void {
+    const ox = this.dog.position.x - playerPos.x;
+    const oz = this.dog.position.z - playerPos.z;
+    const len = Math.hypot(ox, oz) || 1;
+    this.dogTarget.set(playerPos.x + (ox / len) * gap, 0, playerPos.z + (oz / len) * gap);
+  }
+
+  private updateDog(delta: number, playerPos?: THREE.Vector3): void {
+    const pos = this.dog.position;
+    if (this.dogWagTimer > 0) this.dogWagTimer -= delta;
+
     if (playerPos) {
-      const distToPlayer = this.dog.position.distanceTo(playerPos);
-      if (distToPlayer < 9.0 && distToPlayer > 2.2) {
-        this.dogTarget.set(playerPos.x, 0, playerPos.z + 1.6);
-      } else if (this.dogWanderTimer <= 0) {
-        this.dogWanderTimer = 3.5 + Math.random() * 4.0;
-        this.dogTarget.set(
-          this.dogHome.x + (Math.random() - 0.5) * 9,
-          0,
-          this.dogHome.z + (Math.random() - 0.5) * 7
-        );
+      const toPlayer = Math.hypot(playerPos.x - pos.x, playerPos.z - pos.z);
+
+      switch (this.dogMood) {
+        case 'GREET':
+          this.aimNear(playerPos, 1.4);
+          if (toPlayer < DOG_GREET_REACH) {
+            this.dogWagTimer = 2.4;
+            this.dogMood = this.dogMoodAfterGreet;
+            // He hangs about at your feet for a moment before he goes back to
+            // whatever he was doing, rather than turning on his heel.
+            this.dogTarget.set(pos.x, 0, pos.z);
+            this.dogIdleTimer = 3.0;
+          }
+          break;
+
+        case 'FOLLOW':
+          // Two thresholds, not one: he gets up only once you have properly
+          // pulled away, and he stops dead once he has caught up. A single
+          // threshold in a room this size had him permanently mid-stride.
+          if (toPlayer > DOG_FOLLOW_START) {
+            this.aimNear(playerPos, 1.8);
+          } else if (toPlayer < DOG_FOLLOW_STOP) {
+            this.dogTarget.set(pos.x, 0, pos.z);
+          }
+          break;
+
+        case 'STAY':
+          // He holds his bed. The drift is him shifting on it, not wandering
+          // off it — two metres is about the size of the dog.
+          this.dogIdleTimer -= delta;
+          if (this.dogIdleTimer <= 0) {
+            this.dogIdleTimer = 4.0 + Math.random() * 5.0;
+            this.dogTarget.set(
+              this.dogAnchor.x + (Math.random() - 0.5) * 2.0,
+              0,
+              this.dogAnchor.z + (Math.random() - 0.5) * 2.0
+            );
+          }
+          break;
       }
-      // He keeps to the floor, same as you. He can use the near corner now that
-      // there are no walls there to eat him.
+
       this.dogTarget.x = THREE.MathUtils.clamp(this.dogTarget.x, -HALF_X + 2, WALK_X - 1);
       this.dogTarget.z = THREE.MathUtils.clamp(this.dogTarget.z, -HALF_Z + 2, WALK_Z - 1);
     }
 
-    const dx = this.dogTarget.x - this.dog.position.x;
-    const dz = this.dogTarget.z - this.dog.position.z;
+    const dx = this.dogTarget.x - pos.x;
+    const dz = this.dogTarget.z - pos.z;
     const dist = Math.hypot(dx, dz);
+    const moving = dist > 0.35;
 
-    if (dist > 0.35) {
+    if (moving) {
       const speed = Math.min(4.4, 1.6 + dist * 0.7);
-      this.dog.position.x += (dx / dist) * speed * delta;
-      this.dog.position.z += (dz / dist) * speed * delta;
+      pos.x += (dx / dist) * speed * delta;
+      pos.z += (dz / dist) * speed * delta;
       this.dog.rotation.y = Math.atan2(dx, dz) + Math.PI;
-      this.dog.position.y = Math.abs(Math.sin(this.time * 12)) * 0.05;
-      this.dogTail.rotation.y = Math.sin(this.time * 14) * 0.5;
+      pos.y = Math.abs(Math.sin(this.time * 12)) * 0.05;
     } else {
-      this.dog.position.y = 0;
-      this.dogTail.rotation.y = Math.sin(this.time * 6) * 0.25;
+      pos.y = 0;
+      // Stood still with you nearby, he watches you rather than the wall.
+      if (playerPos) {
+        const face = Math.atan2(playerPos.x - pos.x, playerPos.z - pos.z) + Math.PI;
+        this.dog.rotation.y += THREE.MathUtils.clamp(
+          ((face - this.dog.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI,
+          -2.5 * delta, 2.5 * delta
+        );
+      }
     }
+
+    // He is part of the room now: the table, the bunk and the stove stop him
+    // the same way they stop you, and he cannot slip behind the boards into
+    // the strip along the open edges that the camera cannot see.
+    for (const f of this.furniture) {
+      ArcadePhysics.resolveSolidObstacle(pos, DOG_RADIUS, f);
+    }
+    pos.x = THREE.MathUtils.clamp(pos.x, -HALF_X + 0.6, WALK_X);
+    pos.z = THREE.MathUtils.clamp(pos.z, -HALF_Z + 0.6, WALK_Z);
+
+    // Hard wag right after a fuss, a working wag while he trots, an idle sway
+    // the rest of the time.
+    const wag = this.dogWagTimer > 0 ? Math.sin(this.time * 22) * 0.9
+      : moving ? Math.sin(this.time * 14) * 0.5
+      : Math.sin(this.time * 6) * 0.25;
+    this.dogTail.rotation.y = wag;
   }
 }

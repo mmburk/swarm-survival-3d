@@ -3,6 +3,23 @@ import { SaveSystem } from '../utils/SaveSystem';
 import { META_DEFS, NIGHT_TIERS } from '../config/Progression';
 import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId } from '../config/Weapons';
 import { CALLERS } from './BoonModal';
+import { emblemSvg, emblemChip } from './art/Emblems';
+import { callerPortrait, callerSigil, type CallerArtId } from './art/Portraits';
+import { weaponPlate, weaponThumb } from './art/Weapons2D';
+import { heardLines, logProgress } from '../narrative/RadioLog';
+import { readBoard, type ProphecyContext, type ProphecyView } from '../narrative/Prophecies';
+import { ALL_CALLERS } from '../core/RewardDeck';
+
+/**
+ * How the pin board reaches the save without the menu owning any of it: the
+ * engine hands over a way to read the current state and a way to take a
+ * finished card down. The menu re-reads through `context` after every claim,
+ * so what is on screen can never lag behind what was paid out.
+ */
+export interface BoardBinding {
+  context: () => ProphecyContext;
+  claim: (view: ProphecyView) => void;
+}
 
 export interface RunSummary {
   survived: boolean;
@@ -13,6 +30,8 @@ export interface RunSummary {
   duration: number;
   weapon: string;
   cause: string;
+  /** The number the night's doors were dealt from. Flavour, and a talking point. */
+  seed: string;
 }
 
 /**
@@ -114,24 +133,65 @@ export class MenuSystem {
 
       .wpn-grid {
         display: grid;
-        grid-template-columns: 236px 1fr;
+        grid-template-columns: 258px 1fr;
         gap: 18px;
         margin-top: 18px;
       }
       .wpn-item {
-        padding: 11px 13px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 11px;
         border: 1px solid var(--char);
         border-left: 3px solid transparent;
         background: rgba(0,0,0,0.22);
         cursor: pointer;
-        transition: border-color 0.12s linear, background 0.12s linear;
+        transition: border-color 0.12s linear, background 0.12s linear, transform 0.12s ease-out;
       }
-      .wpn-item:hover { background: rgba(255,255,255,0.04); }
+      .wpn-item:hover { background: rgba(255,255,255,0.05); transform: translateX(2px); }
       .wpn-item.active {
         border-left-color: var(--rust);
-        background: rgba(168,85,43,0.12);
+        background: rgba(168,85,43,0.14);
       }
-      .wpn-item.locked { opacity: 0.5; }
+      .wpn-item.locked .wpn-thumb { opacity: 0.4; }
+      .wpn-item.locked .mn-name { color: var(--ash); }
+      .wpn-thumb { flex: 0 0 auto; transition: opacity 0.12s linear; }
+
+      /* The plate the gun hangs on: pegboard, one lamp, a long shadow. */
+      .wpn-plate {
+        position: relative;
+        padding: 10px 14px 4px;
+        background:
+          radial-gradient(120% 90% at 22% 0%, rgba(217,164,65,0.13) 0%, rgba(217,164,65,0) 62%),
+          linear-gradient(180deg, rgba(38,41,30,0.9), rgba(15,17,11,0.94));
+        border: 1px solid var(--char);
+        border-top-color: #3b3f31;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        overflow: hidden;
+      }
+      /* Pegboard holes, cheap and convincing at this size. */
+      .wpn-plate::before {
+        content: '';
+        position: absolute; inset: 0;
+        background-image: radial-gradient(circle, rgba(0,0,0,0.5) 1.2px, transparent 1.4px);
+        background-size: 16px 16px;
+        opacity: 0.5;
+        pointer-events: none;
+      }
+      .wpn-plate > * { position: relative; }
+      .wpn-plate.locked { filter: grayscale(0.6) brightness(0.7); }
+      .wpn-stamp {
+        position: absolute;
+        top: 10px; right: 12px;
+        font-family: var(--stencil);
+        font-size: 12px;
+        letter-spacing: 3px;
+        color: var(--blood);
+        border: 2px solid var(--blood);
+        padding: 3px 9px;
+        transform: rotate(-7deg);
+        opacity: 0.85;
+      }
 
       .stat-line { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
       .stat-key {
@@ -141,8 +201,28 @@ export class MenuSystem {
         text-transform: uppercase;
         color: var(--ash);
       }
-      .stat-track { flex: 1; height: 7px; background: rgba(0,0,0,0.5); border: 1px solid var(--char); }
+      .stat-track {
+        position: relative;
+        flex: 1;
+        height: 9px;
+        background: rgba(0,0,0,0.5);
+        border: 1px solid var(--char);
+      }
+      /* Ten notches, so the bar reads as a measurement rather than a glow. */
+      .stat-track::after {
+        content: '';
+        position: absolute; inset: 0;
+        background-image: repeating-linear-gradient(90deg, transparent 0 10%, rgba(0,0,0,0.65) 10%, rgba(0,0,0,0.65) calc(10% + 1px));
+        pointer-events: none;
+      }
       .stat-val { height: 100%; background: linear-gradient(90deg, #7d5a2c, #c98d3c); }
+      .stat-num {
+        width: 34px;
+        text-align: right;
+        font-family: var(--stencil);
+        font-size: 13px;
+        color: var(--bone);
+      }
 
       .tier-item {
         padding: 12px 15px;
@@ -153,6 +233,36 @@ export class MenuSystem {
       }
       .tier-item.active { border-left-color: var(--blood); background: rgba(142,35,35,0.12); }
       .tier-item:hover { background: rgba(255,255,255,0.04); }
+
+      /* The dial: six positions, one of them "leave it scanning". */
+      .tune-row {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 7px;
+        margin-top: 12px;
+      }
+      .tune-chip {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 4px 9px;
+        border: 1px solid var(--char);
+        background: rgba(0,0,0,0.24);
+        cursor: pointer;
+        text-align: center;
+        transition: background 0.12s linear, border-color 0.12s linear;
+      }
+      .tune-chip:hover { background: rgba(255,255,255,0.05); }
+      .tune-chip .tune-name {
+        font-size: 9px;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
+        color: var(--ash);
+        line-height: 1.2;
+      }
+      .tune-chip.active { background: rgba(255,255,255,0.06); }
+      .tune-chip.active .tune-name { color: var(--paper); }
 
       .mn-scrap {
         font-family: var(--stencil);
@@ -166,9 +276,12 @@ export class MenuSystem {
 
   private scrapHeader(): string {
     return `
-      <div style="text-align:right;">
-        <div class="ll-sub" style="margin:0;">Scrap on hand</div>
-        <div class="mn-scrap">${SaveSystem.getScrap()}</div>
+      <div style="display:flex; align-items:center; gap:11px;">
+        ${emblemSvg('scrap', 38)}
+        <div style="text-align:right;">
+          <div class="ll-sub" style="margin:0;">Scrap on hand</div>
+          <div class="mn-scrap">${SaveSystem.getScrap()}</div>
+        </div>
       </div>
     `;
   }
@@ -179,15 +292,23 @@ export class MenuSystem {
     const st = SaveSystem.getStats();
 
     this.present(`
-      <div class="ll-panel ll-pinned mn-shell" style="width:560px; text-align:center; padding-top:44px;">
-        <div class="ll-sub" style="margin:0;">A roguelite of the long walk home</div>
-        <div class="ll-title" style="font-size:60px; margin-top:8px;">LAST LIGHT</div>
-        <div class="ll-sub">Sector by sector. Night after night.</div>
+      <div class="ll-panel ll-pinned mn-shell" style="width:620px; text-align:center; padding-top:34px;">
+        <!-- the person you actually are, before any of the rest of it -->
+        <div style="display:flex; align-items:center; gap:22px; text-align:left;">
+          <div style="flex:0 0 auto;">
+            ${callerPortrait('PLAYER', 132)}
+          </div>
+          <div>
+            <div class="ll-sub" style="margin:0;">A roguelite of the long walk home</div>
+            <div class="ll-title" style="font-size:54px; margin-top:6px;">LAST LIGHT</div>
+            <div class="ll-sub">Sector by sector. Night after night.</div>
+          </div>
+        </div>
 
         <div class="ll-rule"></div>
 
         <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
-          <div class="ll-tag scrap">SCRAP ${SaveSystem.getScrap()}</div>
+          <div class="ll-tag scrap">${emblemChip('scrap', SaveSystem.getScrap(), 15)}</div>
           <div class="ll-tag">RUNS ${st.runs}</div>
           <div class="ll-tag">DEEPEST SECTOR ${String(st.bestSector).padStart(2, '0')}</div>
           <div class="ll-tag">PUT DOWN ${st.totalKills}</div>
@@ -227,10 +348,21 @@ export class MenuSystem {
       const def = WEAPONS[id];
       const unlocked = SaveSystem.isWeaponUnlocked(id);
       const active = id === this.previewWeapon;
+      const fitted = unlocked && SaveSystem.isModActive(id);
       return `
         <div class="wpn-item ${active ? 'active' : ''} ${unlocked ? '' : 'locked'}" data-wpn="${id}">
-          <div class="mn-name" style="font-size:16px;">${def.name}</div>
-          <div class="mn-note">${unlocked ? def.model : `LOCKED — ${def.unlockCost} scrap`}</div>
+          <div class="wpn-thumb">${weaponThumb(id, 74, active ? CSS.rust : unlocked ? CSS.ash : CSS.steel)}</div>
+          <div style="min-width:0; flex:1;">
+            <div class="mn-name" style="font-size:15px;">${def.name}</div>
+            <div class="mn-note" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              ${unlocked ? def.model : `Locked`}
+            </div>
+            ${
+              unlocked
+                ? fitted ? `<div class="mn-note" style="color:var(--rust); margin-top:2px;">MOD FITTED</div>` : ''
+                : `<div style="margin-top:3px;">${emblemChip('scrap', def.unlockCost, 14)}</div>`
+            }
+          </div>
         </div>
       `;
     }).join('');
@@ -246,6 +378,7 @@ export class MenuSystem {
       <div class="stat-line">
         <div class="stat-key">${label}</div>
         <div class="stat-track"><div class="stat-val" style="width:${Math.round(Math.min(1, value) * 100)}%"></div></div>
+        <div class="stat-num">${Math.round(Math.min(1, value) * 10)}</div>
       </div>
     `;
 
@@ -253,7 +386,7 @@ export class MenuSystem {
     const shotsPerSecond = (1 / stats.cooldown).toFixed(1);
 
     this.present(`
-      <div class="ll-panel ll-pinned mn-shell">
+      <div class="ll-panel ll-pinned mn-shell ll-scroll" style="width:940px;">
         <div class="mn-head">
           <div>
             <div class="ll-title" style="font-size:30px;">Weapon Rack</div>
@@ -266,15 +399,21 @@ export class MenuSystem {
           <div style="display:flex; flex-direction:column; gap:7px;">${list}</div>
 
           <div style="display:flex; flex-direction:column;">
-            <div style="display:flex; justify-content:space-between; align-items:baseline;">
+            <div class="wpn-plate ${unlocked ? '' : 'locked'}">
+              ${unlocked ? '' : `<div class="wpn-stamp">NOT YOURS</div>`}
+              ${modOn ? `<div class="wpn-stamp" style="color:var(--rust); border-color:var(--rust);">MODIFIED</div>` : ''}
+              ${weaponPlate(this.previewWeapon, 560, !unlocked)}
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:12px;">
               <div class="ll-title" style="font-size:26px;">${def.name}</div>
               <div class="ll-sub" style="margin:0;">${def.model}</div>
             </div>
 
-            <div style="font-size:13.5px; line-height:1.6; color:var(--bone); margin-top:10px;">${def.desc}</div>
+            <div style="font-size:13.5px; line-height:1.6; color:var(--bone); margin-top:8px;">${def.desc}</div>
             <div style="font-size:12px; font-style:italic; color:var(--ash); margin-top:8px;">${def.flavor}</div>
 
-            <div style="margin-top:14px;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 22px; margin-top:14px;">
               ${bar('Power', r.power)}
               ${bar('Cadence', r.speed)}
               ${bar('Reach', r.reach)}
@@ -288,10 +427,13 @@ export class MenuSystem {
               ${stats.pierce > 0 ? `<div class="ll-tag">pierces ${stats.pierce}</div>` : ''}
             </div>
 
-            <div style="margin-top:16px; padding:12px 14px; background:rgba(0,0,0,0.26); border:1px solid var(--char);">
-              <div class="ll-sub" style="margin:0;">Heavy attack — right mouse</div>
-              <div class="mn-name" style="font-size:16px; margin-top:3px;">${def.alt.name}</div>
-              <div class="mn-note">${def.alt.desc} &nbsp;·&nbsp; ${def.alt.cooldown.toFixed(1)}s between uses</div>
+            <div style="margin-top:16px; padding:12px 14px; background:rgba(0,0,0,0.26); border:1px solid var(--char); display:flex; gap:13px; align-items:flex-start;">
+              ${emblemSvg('arsenal', 40)}
+              <div style="flex:1;">
+                <div class="ll-sub" style="margin:0;">Heavy attack — right mouse</div>
+                <div class="mn-name" style="font-size:16px; margin-top:3px;">${def.alt.name}</div>
+                <div class="mn-note">${def.alt.desc} &nbsp;·&nbsp; ${def.alt.cooldown.toFixed(1)}s between uses</div>
+              </div>
             </div>
 
             <div style="margin-top:12px; padding:12px 14px; background:rgba(0,0,0,0.26); border:1px solid ${modOn ? CSS.rust : CSS.char};">
@@ -305,7 +447,9 @@ export class MenuSystem {
                     ? `<div class="ll-tag">rack it first</div>`
                     : modUnlocked
                       ? `<button id="btn-mod-toggle" class="ll-btn-ghost">${modOn ? 'FITTED' : 'NOT FITTED'}</button>`
-                      : `<button id="btn-mod-buy" class="ll-btn-ghost" ${scrap < def.mod.cost ? 'disabled' : ''}>BUY · ${def.mod.cost}</button>`
+                      : `<button id="btn-mod-buy" class="ll-btn-ghost" ${scrap < def.mod.cost ? 'disabled' : ''}>
+                           ${emblemChip('scrap', def.mod.cost, 14, scrap < def.mod.cost ? CSS.blood : undefined)}
+                         </button>`
                 }
               </div>
             </div>
@@ -314,7 +458,9 @@ export class MenuSystem {
               ${
                 unlocked
                   ? `<button id="btn-take" class="ll-btn">Take ${def.name}</button>`
-                  : `<button id="btn-unlock" class="ll-btn" ${scrap < def.unlockCost ? 'disabled' : ''}>Trade ${def.unlockCost} scrap for it</button>`
+                  : `<button id="btn-unlock" class="ll-btn" ${scrap < def.unlockCost ? 'disabled' : ''}>
+                       Buy it off the wall — ${def.unlockCost} scrap
+                     </button>`
               }
               <button id="btn-close" class="ll-btn-ghost" style="white-space:nowrap;">BACK</button>
             </div>
@@ -381,7 +527,7 @@ export class MenuSystem {
             <div style="margin-top:7px;">${pips}</div>
           </div>
           <button class="ll-btn-ghost" data-meta="${d.key}" ${maxed || scrap < cost ? 'disabled' : ''}>
-            ${maxed ? 'DONE' : `${cost} SCRAP`}
+            ${maxed ? 'DONE' : emblemChip('scrap', cost, 15, scrap < cost ? CSS.blood : undefined)}
           </button>
         </div>
       `;
@@ -420,6 +566,28 @@ export class MenuSystem {
 
   public showRadio(onClose: () => void): void {
     const current = SaveSystem.getNightLevel();
+    const prog = logProgress((id) => SaveSystem.hasHeardLine(id));
+    const tuned = SaveSystem.getTuned();
+
+    // A survivor nobody has ever heard from cannot be tuned to — the dial only
+    // holds the frequencies the player has actually found.
+    const tuning = [
+      ...ALL_CALLERS.map((id) => {
+        const c = CALLERS[id];
+        const known = SaveSystem.heardFrom(id) > 0;
+        return `
+          <div class="tune-chip ${tuned === id ? 'active' : ''}" data-tune="${id}"
+               style="${tuned === id ? `border-color:${c.color};` : ''} ${known ? '' : 'opacity:0.4;'}">
+            ${callerSigil(id, 26, known ? c.color : CSS.steel)}
+            <div class="tune-name">${known ? c.name : 'STATIC'}</div>
+          </div>
+        `;
+      }),
+      `<div class="tune-chip ${tuned === null ? 'active' : ''}" data-tune="">
+         ${emblemSvg('signal', 26)}
+         <div class="tune-name">Scanning</div>
+       </div>`
+    ].join('');
 
     const rows = NIGHT_TIERS.map((t) => `
       <div class="tier-item ${t.level === current ? 'active' : ''}" data-night="${t.level}">
@@ -429,7 +597,7 @@ export class MenuSystem {
             <div class="mn-note">${t.desc}</div>
           </div>
           <div style="text-align:right; white-space:nowrap;">
-            <div class="ll-tag scrap">×${t.scrapMult.toFixed(1)} scrap</div>
+            <div class="ll-tag scrap">${emblemChip('scrap', `×${t.scrapMult.toFixed(1)}`, 14)}</div>
             <div class="mn-note" style="margin-top:5px;">
               +${Math.round((t.enemyHealth - 1) * 100)}% health · +${Math.round((t.enemyCount - 1) * 100)}% numbers
             </div>
@@ -456,7 +624,23 @@ export class MenuSystem {
           you change it.
         </div>
 
-        <button id="btn-close" class="ll-btn" style="margin-top:18px;">Switch It Off</button>
+        <div class="ll-rule"></div>
+
+        <div class="ll-sub" style="margin:0;">Leave the dial somewhere</div>
+        <div style="font-size:12px; color:var(--ash); margin-top:6px; line-height:1.6;">
+          Whoever the set is left on is the first voice you find on a gate out there. After that the
+          band deals itself — and once four of them have handed you something, the rest go quiet for
+          the night.
+        </div>
+
+        <div class="tune-row">${tuning}</div>
+
+        <div style="display:flex; gap:10px; margin-top:18px;">
+          <button id="btn-close" class="ll-btn" style="flex:1;">Switch It Off</button>
+          <button id="btn-log" class="ll-btn-ghost" style="flex:0 0 auto; padding:0 18px;">
+            Transcript · ${prog.heard}/${prog.total}
+          </button>
+        </div>
       </div>
     `);
 
@@ -467,6 +651,169 @@ export class MenuSystem {
       });
     });
 
+    this.root.querySelectorAll<HTMLElement>('[data-tune]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const id = el.dataset.tune as CallerArtId | '';
+        // A voice the player has never heard is a frequency they do not have.
+        if (id && SaveSystem.heardFrom(id) === 0) return;
+        SaveSystem.setTuned(id === '' ? null : id);
+        this.showRadio(onClose);
+      });
+    });
+
+    document.getElementById('btn-log')!.addEventListener('click', () => {
+      this.showTranscript(onClose);
+    });
+
+    document.getElementById('btn-close')!.addEventListener('click', () => {
+      this.hide();
+      onClose();
+    });
+  }
+
+  /**
+   * Everything the band has said so far, in the order it was written rather
+   * than the order it was heard — the log reads as one continuous account that
+   * happens to have gaps in it, and the gaps are the point.
+   */
+  private showTranscript(onClose: () => void): void {
+    const seen = (id: string) => SaveSystem.hasHeardLine(id);
+    const lines = heardLines(seen);
+    const prog = logProgress(seen);
+
+    const entries = lines.length === 0
+      ? `<div class="mn-note" style="padding:26px 0; text-align:center;">
+           Nothing logged. Nobody talks to a handset that has not been anywhere.
+         </div>`
+      : lines.map((l) => {
+          const c = CALLERS[l.caller];
+          const body = l.text.map((p) => `<p style="margin:0 0 7px;">${p}</p>`).join('');
+          return `
+            <div style="display:flex; gap:12px; padding:13px 0; border-bottom:1px solid var(--char);">
+              <div style="flex:0 0 auto; padding-top:2px;">${callerSigil(l.caller, 18, c.color)}</div>
+              <div style="flex:1; min-width:0;">
+                <div class="mn-name" style="font-size:12px; color:${c.color}; letter-spacing:1.6px;">
+                  ${c.name} <span style="color:var(--ash); letter-spacing:1.2px;">· ${c.band}</span>
+                </div>
+                <div style="font-size:13.5px; line-height:1.6; color:var(--bone); margin-top:6px;">${body}</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+    this.present(`
+      <div class="ll-panel ll-pinned mn-shell" style="width:760px;">
+        <div class="mn-head">
+          <div>
+            <div class="ll-title" style="font-size:30px;">Transcript</div>
+            <div class="ll-sub">${prog.heard} of ${prog.total} logged. The rest have not been said yet.</div>
+          </div>
+          ${this.scrapHeader()}
+        </div>
+
+        <div class="ll-scroll" style="max-height:52vh; overflow-y:auto; margin-top:14px; padding-right:8px;">
+          ${entries}
+        </div>
+
+        <button id="btn-back" class="ll-btn" style="margin-top:18px;">Back To The Set</button>
+      </div>
+    `);
+
+    document.getElementById('btn-back')!.addEventListener('click', () => {
+      this.showRadio(onClose);
+    });
+  }
+
+  // ------------------------------------------------------------- pin board
+
+  /**
+   * THE LIST — what the band has asked for, and what is finished.
+   *
+   * A finished card is not paid automatically. The player has to come here and
+   * take it down, which is the only reason anybody ever reads the thing twice.
+   */
+  public showList(board: BoardBinding, onClose: () => void): void {
+    const ctx = board.context();
+    const views = readBoard(ctx);
+    const ready = views.filter((v) => v.state === 'READY').length;
+    const done = views.filter((v) => v.state === 'CLAIMED').length;
+
+    const cards = views.map((v, i) => {
+      const p = v.prophecy;
+      const c = CALLERS[p.caller];
+      const pctDone = Math.round((v.progress / p.target) * 100);
+
+      const foot = v.state === 'CLAIMED'
+        ? `<div class="mn-note" style="color:${c.color}; letter-spacing:1.6px; text-transform:uppercase;">
+             Taken down · paid ${p.reward}
+           </div>`
+        : v.state === 'READY'
+          ? `<button class="ll-btn" data-claim="${i}" style="padding:7px 14px; font-size:13px;">
+               Take It Down — +${p.reward} scrap
+             </button>`
+          : `<div style="display:flex; align-items:center; gap:10px;">
+               <div style="flex:1; height:5px; background:rgba(0,0,0,0.45); border:1px solid var(--char);">
+                 <div style="width:${pctDone}%; height:100%; background:${c.color};"></div>
+               </div>
+               <div class="mn-note" style="white-space:nowrap; font-family:var(--stencil); font-size:14px; color:var(--paper);">
+                 ${v.progress} / ${p.target}
+               </div>
+             </div>`;
+
+      return `
+        <div style="
+          padding:13px 15px;
+          background:rgba(0,0,0,${v.state === 'CLAIMED' ? '0.16' : '0.26'});
+          border:1px solid var(--char);
+          border-left:3px solid ${c.color};
+          opacity:${v.state === 'CLAIMED' ? '0.55' : '1'};
+        ">
+          <div style="display:flex; align-items:center; gap:8px;">
+            ${callerSigil(p.caller, 15, c.color)}
+            <div class="mn-name" style="font-size:15px;">${p.title}</div>
+            <div class="mn-note" style="margin-left:auto; color:${c.color}; letter-spacing:1.4px;">${c.name}</div>
+          </div>
+          <div class="mn-note" style="margin-top:6px; line-height:1.6; font-style:italic;">${p.text}</div>
+          <div style="margin-top:11px;">${foot}</div>
+        </div>
+      `;
+    }).join('');
+
+    this.present(`
+      <div class="ll-panel ll-pinned mn-shell" style="width:820px;">
+        <div class="mn-head">
+          <div>
+            <div class="ll-title" style="font-size:30px;">The List</div>
+            <div class="ll-sub">
+              ${done} taken down${ready > 0 ? ` · <span style="color:var(--amber);">${ready} finished and unpaid</span>` : ''}
+            </div>
+          </div>
+          ${this.scrapHeader()}
+        </div>
+
+        <div class="ll-scroll" style="max-height:56vh; overflow-y:auto; margin-top:16px; padding-right:8px;
+                                      display:flex; flex-direction:column; gap:9px;">
+          ${cards}
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:18px;">
+          <button id="btn-close" class="ll-btn" style="flex:1;">Back To The Shelter</button>
+          <button id="btn-records" class="ll-btn-ghost" style="flex:0 0 auto; padding:0 18px;">Records</button>
+        </div>
+      </div>
+    `);
+
+    this.root.querySelectorAll<HTMLElement>('[data-claim]').forEach((el) => {
+      el.addEventListener('click', () => {
+        board.claim(views[parseInt(el.dataset.claim!, 10)]);
+        this.showList(board, onClose);
+      });
+    });
+
+    document.getElementById('btn-records')!.addEventListener('click', () => {
+      this.showRecords(board, onClose);
+    });
+
     document.getElementById('btn-close')!.addEventListener('click', () => {
       this.hide();
       onClose();
@@ -475,7 +822,7 @@ export class MenuSystem {
 
   // ---------------------------------------------------------------- records
 
-  public showRecords(onClose: () => void): void {
+  public showRecords(board: BoardBinding, onClose: () => void): void {
     const st = SaveSystem.getStats();
 
     const stat = (label: string, value: string | number) => `
@@ -485,12 +832,21 @@ export class MenuSystem {
       </div>
     `;
 
-    const callerRows = (Object.keys(CALLERS) as Array<keyof typeof CALLERS>).map((k) => {
+    // The band, as a wall of faces. Same portraits the gates and cards use, so
+    // a survivor is recognisable from the doorway before the name is readable.
+    const callerRows = (Object.keys(CALLERS) as CallerArtId[]).map((k) => {
       const c = CALLERS[k];
       return `
-        <div style="padding:9px 12px; border-left:3px solid ${c.color}; background:rgba(0,0,0,0.2);">
-          <div class="mn-name" style="font-size:14px; color:${c.color};">${c.name}</div>
-          <div class="mn-note">${c.band}</div>
+        <div style="background:rgba(0,0,0,0.24); border:1px solid var(--char); border-bottom:3px solid ${c.color};">
+          ${callerPortrait(k, 138)}
+          <div style="padding:8px 10px 10px;">
+            <div style="display:flex; align-items:center; gap:7px;">
+              ${callerSigil(k, 16, c.color)}
+              <div class="mn-name" style="font-size:13px; color:${c.color}; letter-spacing:1.4px;">${c.name}</div>
+            </div>
+            <div class="mn-note" style="margin-top:3px;">${c.band}</div>
+            <div class="mn-note" style="font-style:italic; margin-top:5px; color:var(--steel);">${c.sting}</div>
+          </div>
         </div>
       `;
     }).join('');
@@ -530,7 +886,7 @@ export class MenuSystem {
 
         <div class="ll-rule"></div>
         <div class="ll-sub" style="margin:0 0 10px;">Voices on the band</div>
-        <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:7px;">${callerRows}</div>
+        <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:8px;">${callerRows}</div>
 
         <div class="ll-rule"></div>
         <div class="ll-sub" style="margin:0 0 10px;">What is out there</div>
@@ -538,10 +894,15 @@ export class MenuSystem {
 
         <div style="display:flex; gap:10px; margin-top:20px;">
           <button id="btn-close" class="ll-btn">Back To The Shelter</button>
+          <button id="btn-list" class="ll-btn-ghost" style="white-space:nowrap;">THE LIST</button>
           <button id="btn-wipe" class="ll-btn-ghost" style="white-space:nowrap;">BURN THE RECORDS</button>
         </div>
       </div>
     `);
+
+    document.getElementById('btn-list')!.addEventListener('click', () => {
+      this.showList(board, onClose);
+    });
 
     document.getElementById('btn-close')!.addEventListener('click', () => {
       this.hide();
@@ -567,7 +928,7 @@ export class MenuSystem {
         return;
       }
       SaveSystem.wipe();
-      this.showRecords(onClose);
+      this.showRecords(board, onClose);
     });
   }
 
@@ -603,12 +964,19 @@ export class MenuSystem {
     const secs = Math.floor(summary.duration % 60);
 
     this.present(`
-      <div class="ll-panel ll-pinned mn-shell" style="width:520px; text-align:center;">
-        <div class="ll-sub" style="margin:0;">${summary.survived ? 'The street is quiet' : summary.cause}</div>
-        <div class="ll-title" style="font-size:40px; margin-top:6px; color:${summary.survived ? CSS.paper : CSS.blood};">
-          ${summary.survived ? 'YOU MADE IT BACK' : 'YOU DID NOT MAKE IT'}
+      <div class="ll-panel ll-pinned mn-shell" style="width:560px; text-align:center;">
+        <div style="display:flex; align-items:center; gap:20px; text-align:left;">
+          <div style="flex:0 0 auto; ${summary.survived ? '' : 'filter:grayscale(0.75) brightness(0.62);'}">
+            ${callerPortrait('PLAYER', 116)}
+          </div>
+          <div>
+            <div class="ll-sub" style="margin:0;">${summary.survived ? 'The street is quiet' : summary.cause}</div>
+            <div class="ll-title" style="font-size:34px; margin-top:6px; color:${summary.survived ? CSS.paper : CSS.blood};">
+              ${summary.survived ? 'YOU MADE IT BACK' : 'YOU DID NOT MAKE IT'}
+            </div>
+            <div class="ll-sub">Sector ${String(summary.sector).padStart(2, '0')} — ${summary.sectorName}</div>
+          </div>
         </div>
-        <div class="ll-sub">Sector ${String(summary.sector).padStart(2, '0')} — ${summary.sectorName}</div>
 
         <div class="ll-rule"></div>
 
@@ -619,7 +987,9 @@ export class MenuSystem {
           </div>
           <div>
             <div class="ll-sub" style="margin:0;">Scrap kept</div>
-            <div style="font-family:var(--stencil); font-size:27px; color:var(--amber);">${summary.scrapEarned}</div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:8px; font-family:var(--stencil); font-size:27px; color:var(--amber);">
+              ${emblemSvg('scrap', 24)}${summary.scrapEarned}
+            </div>
           </div>
           <div>
             <div class="ll-sub" style="margin:0;">Time out</div>
@@ -630,6 +1000,10 @@ export class MenuSystem {
         <div style="font-size:12.5px; color:var(--ash); margin-top:18px; line-height:1.6;">
           You carried <b style="color:var(--bone)">${summary.weapon}</b>.
           Everything you salvaged is already on the workbench.
+        </div>
+
+        <div style="font-size:10.5px; letter-spacing:2.4px; color:var(--steel); margin-top:12px; text-transform:uppercase;">
+          Night ${summary.seed}
         </div>
 
         <button id="btn-return" class="ll-btn" style="margin-top:22px;">Back Down To The Shelter</button>
