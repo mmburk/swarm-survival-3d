@@ -314,11 +314,15 @@ export class Enemy implements IPoolable {
 
     this.position.y = this.terrain.getHeightAt(this.position.x, this.position.z);
 
-    // Turns to the player. This reproduces what Object3D.lookAt worked out when
-    // the body was a group in the scene, spun about Y only. Note the sign:
-    // lookAt swaps its arguments for anything that is not a camera or a light,
-    // so it lays +Z along the line to the target rather than -Z.
-    this.yaw = Math.atan2(playerPos.x - this.position.x, playerPos.z - this.position.z);
+    // Turns to face the player, spun about Y only.
+    //
+    // This is a half turn from what the scene graph used to do, and the half
+    // turn is the point: the body was steered with Object3D.lookAt, which
+    // swaps its arguments for anything that is not a camera or a light and so
+    // lays +Z along the line to the target rather than -Z. Every zombie in the
+    // game has been shambling at you backwards -- jaw, eye sockets and the two
+    // arms reaching out all sit on the model's -Z, which was pointing away.
+    this.yaw = Math.atan2(this.position.x - playerPos.x, this.position.z - playerPos.z);
 
     this.gait = Math.sin(this.lurch * 1.4);
   }
