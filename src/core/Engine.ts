@@ -9,6 +9,7 @@ import { InstancedProps } from '../graphics/InstancedProps';
 import { ParticleSystem } from '../graphics/ParticleSystem';
 import { InstancedProjectiles } from '../graphics/InstancedProjectiles';
 import { InstancedPickups } from '../graphics/InstancedPickups';
+import { InstancedEnemies } from '../graphics/InstancedEnemies';
 import { SpatialHashGrid } from '../utils/SpatialHashGrid';
 import { ObjectPool } from '../pooling/ObjectPool';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
@@ -56,6 +57,19 @@ const UP = new THREE.Vector3(0, 1, 0);
 /** Play area is a circle so the player cannot hide in a fence corner. */
 const ARENA_RADIUS = 52;
 
+/**
+ * Flat distance test on the XZ plane.
+ *
+ * The grid is a broad phase — it hands back whole cells, and its integer hash
+ * can put two far-apart cells in the same bucket — so anything that means
+ * "everything inside this circle", like a blast, has to measure for itself.
+ */
+function withinRadius(a: THREE.Vector3, b: THREE.Vector3, radius: number): boolean {
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return dx * dx + dz * dz <= radius * radius;
+}
+
 export class Engine {
   private render!: RenderPipeline;
   private input!: InputManager;
@@ -65,6 +79,7 @@ export class Engine {
   private particles!: ParticleSystem;
   private instProjectiles!: InstancedProjectiles;
   private instPickups!: InstancedPickups;
+  private instEnemies!: InstancedEnemies;
   private grid!: SpatialHashGrid<Enemy>;
 
   private player!: Player;
@@ -129,6 +144,14 @@ export class Engine {
 
   private telegraphs: Array<{ pos: THREE.Vector3; type: EnemyType; timer: number }> = [];
 
+  /**
+   * The bullet pass owns its own broad-phase list. It walks the list while
+   * dealing damage, and a kill can rupture, which queries the grid again — and
+   * a long enough chain would work its way round the grid's ring of buffers and
+   * back onto this one.
+   */
+  private hitCandidates: Enemy[] = [];
+
   constructor(container: HTMLElement) {
     this.audio = new AudioManager();
 
@@ -143,13 +166,14 @@ export class Engine {
       this.particles = new ParticleSystem(this.render.scene);
       this.instProjectiles = new InstancedProjectiles(this.render.scene);
       this.instPickups = new InstancedPickups(this.render.scene);
+      this.instEnemies = new InstancedEnemies(this.render.scene);
       this.grid = new SpatialHashGrid<Enemy>(6.0);
 
       this.player = new Player(this.render.scene, this.input, this.particles, this.audio, this.terrain);
       this.boss = new BossEnemy(this.render.scene, this.particles, this.audio, this.terrain);
 
       this.enemies = new ObjectPool<Enemy>(
-        () => new Enemy(this.render.scene, this.particles, this.audio, this.terrain), 180, 320);
+        () => new Enemy(this.particles, this.audio, this.terrain), 180, 320);
       this.bullets = new ObjectPool<Projectile>(() => new Projectile(this.particles), 260, 460);
       this.drops = new ObjectPool<Pickup>(() => new Pickup(), 140, 260);
       this.flares = new ObjectPool<Flare>(
@@ -812,6 +836,7 @@ export class Engine {
     this.signalDrop.deactivate();
     this.instProjectiles.hideAll();
     this.instPickups.hideAll();
+    this.instEnemies.hideAll();
 
     this.hud.setBossBar(false);
     this.hud.setCacheTimer(false);
@@ -979,8 +1004,12 @@ export class Engine {
     if (this.player.burstChance > 0 && Math.random() < this.player.burstChance) {
       this.particles.emitBurst(enemy.position, 16, HEX.mossDark, 8, 0.5);
       const near = this.grid.query(enemy.position, 4.5);
-      for (const other of near) {
+      // Copied out: killing one of these can rupture again, and the chain would
+      // otherwise walk a list the deeper blast has already refilled.
+      const caught = near.slice();
+      for (const other of caught) {
         if (other === enemy || !other.active) continue;
+        if (!withinRadius(other.position, enemy.position, 4.5)) continue;
         if (other.takeDamage(45, enemy.position)) this.onEnemyKilled(other);
       }
     }
@@ -1072,7 +1101,7 @@ export class Engine {
         continue;
       }
 
-      const candidates = this.grid.query(b.position, 3.0);
+      const candidates = this.grid.query(b.position, 3.0, this.hitCandidates);
       for (let j = 0; j < candidates.length; j++) {
         const e = candidates[j];
         if (!e || !e.active || b.hitIds.has(e.id)) continue;
@@ -1151,8 +1180,12 @@ export class Engine {
     this.cameraJuice.addTrauma(0.4);
     this.particles.emitExplosion(centre, radius, 0xd2622a);
 
-    for (const e of this.grid.query(centre, radius)) {
+    // Snapshotted for the same reason as the rupture above: a kill in here can
+    // set off another blast, and the query buffer is not the caller's to keep.
+    const caught = this.grid.query(centre, radius).slice();
+    for (const e of caught) {
       if (!e.active) continue;
+      if (!withinRadius(e.position, centre, radius)) continue;
       if (e.takeDamage(b.damage, centre)) this.onEnemyKilled(e, centre);
     }
 
@@ -1375,6 +1408,11 @@ export class Engine {
 
     this.resolveCollisions(delta);
 
+    // Re-read rather than reusing `active`: the telegraph pass up top can put
+    // new bodies on the street after that list was taken, and a zombie that
+    // does not appear until the frame after it lands is a zombie that arrives
+    // out of nowhere. Nothing below this line reads the old list.
+    this.instEnemies.render(this.enemies.getActiveItems());
     this.instProjectiles.render(this.bullets.getActiveItems(), performance.now() / 1000);
     this.instPickups.render(this.drops.getActiveItems(), performance.now() / 1000);
 
@@ -1393,8 +1431,10 @@ export class Engine {
       this.player.takeDamage(30);
     }
 
-    for (const other of this.grid.query(pos, 5.5)) {
+    const caught = this.grid.query(pos, 5.5).slice();
+    for (const other of caught) {
       if (!other.active || other === burster) continue;
+      if (!withinRadius(other.position, pos, 5.5)) continue;
       if (other.takeDamage(110, pos)) this.onEnemyKilled(other, pos);
     }
   }

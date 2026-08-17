@@ -3,6 +3,10 @@ import { ObjectPool } from '../pooling/ObjectPool';
 
 const tempVelocity = new THREE.Vector3();
 const tempPos = new THREE.Vector3();
+const tempRing = new THREE.Vector3();
+
+/** Fireball shades, picked from per particle. */
+const FIRE_COLORS = [0xd9a441, 0xc2551f, 0x8e2323, 0x4a463c];
 
 class Particle {
   public active: boolean = false;
@@ -37,6 +41,14 @@ class Particle {
   }
 }
 
+/**
+ * Hard ceiling on live particles. The pool and the instance buffer are sized
+ * from the same number on purpose: they used to be 1000 and 600, so a couple of
+ * overlapping explosions filled the pool past what the buffer could hold and
+ * the draw ran off the end of it.
+ */
+const MAX_PARTICLES = 1000;
+
 export class ParticleSystem {
   private pool: ObjectPool<Particle>;
   private instancedMesh: THREE.InstancedMesh;
@@ -44,7 +56,7 @@ export class ParticleSystem {
   private colorBuffer: THREE.Color = new THREE.Color();
 
   constructor(scene: THREE.Scene) {
-    this.pool = new ObjectPool<Particle>(() => new Particle(), 600, 1000);
+    this.pool = new ObjectPool<Particle>(() => new Particle(), 600, MAX_PARTICLES);
 
     const geometry = new THREE.BoxGeometry(0.22, 0.22, 0.22);
     const material = new THREE.MeshStandardMaterial({
@@ -53,9 +65,12 @@ export class ParticleSystem {
       flatShading: true
     });
 
-    this.instancedMesh = new THREE.InstancedMesh(geometry, material, 600);
+    this.instancedMesh = new THREE.InstancedMesh(geometry, material, MAX_PARTICLES);
     this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.instancedMesh.count = 0;
+    // Dust is emitted all over the arena and the mesh sits at the origin, so a
+    // bounding sphere around the origin says nothing useful about where it is.
+    this.instancedMesh.frustumCulled = false;
     scene.add(this.instancedMesh);
   }
 
@@ -91,8 +106,7 @@ export class ParticleSystem {
         Math.sin(angle) * Math.cos(elevation) * speed
       );
 
-      const fireColors = [0xd9a441, 0xc2551f, 0x8e2323, 0x4a463c];
-      const col = fireColors[Math.floor(Math.random() * fireColors.length)];
+      const col = FIRE_COLORS[Math.floor(Math.random() * FIRE_COLORS.length)];
 
       const p = this.pool.get();
       if (p) {
@@ -105,11 +119,11 @@ export class ParticleSystem {
     for (let i = 0; i < ringCount; i++) {
       const angle = (i / ringCount) * Math.PI * 2;
       const speed = radius * (3.0 + Math.random() * 0.6);
-      const vel = new THREE.Vector3(Math.cos(angle) * speed, 0.8 + Math.random() * 0.8, Math.sin(angle) * speed);
+      tempVelocity.set(Math.cos(angle) * speed, 0.8 + Math.random() * 0.8, Math.sin(angle) * speed);
 
       const p = this.pool.get();
       if (p) {
-        p.reset(origin, vel, colorHex, 0.5, 1.0);
+        p.reset(origin, tempVelocity, colorHex, 0.5, 1.0);
       }
     }
 
@@ -149,10 +163,10 @@ export class ParticleSystem {
     const count = 36;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
-      const vel = new THREE.Vector3(Math.cos(angle) * radius * 3, 1.5, Math.sin(angle) * radius * 3);
+      tempVelocity.set(Math.cos(angle) * radius * 3, 1.5, Math.sin(angle) * radius * 3);
       const p = this.pool.get();
       if (p) {
-        p.reset(origin, vel, colorHex, 0.4, 0.6);
+        p.reset(origin, tempVelocity, colorHex, 0.4, 0.6);
       }
     }
   }
@@ -160,17 +174,17 @@ export class ParticleSystem {
   public emitTelegraphRing(origin: THREE.Vector3, duration: number = 0.5, colorHex: number = 0x6b1a1a): void {
     const count = 16;
     const radius = 1.2;
+    tempVelocity.set(0, 0.4, 0);
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
-      const pos = new THREE.Vector3(
+      tempRing.set(
         origin.x + Math.cos(angle) * radius,
         origin.y + 0.05,
         origin.z + Math.sin(angle) * radius
       );
-      const vel = new THREE.Vector3(0, 0.4, 0);
       const p = this.pool.get();
       if (p) {
-        p.reset(pos, vel, colorHex, duration, 0.4);
+        p.reset(tempRing, tempVelocity, colorHex, duration, 0.4);
       }
     }
   }
@@ -185,6 +199,7 @@ export class ParticleSystem {
 
       p.update(delta);
       if (!p.active) continue;
+      if (renderCount >= MAX_PARTICLES) continue;
 
       const progress = p.life / p.maxLife;
       const currentScale = p.scale * (1.0 - progress);
