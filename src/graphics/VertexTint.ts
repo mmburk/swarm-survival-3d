@@ -21,3 +21,21 @@ export function tint(geo: THREE.BufferGeometry, hex: number): THREE.BufferGeomet
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   return geo;
 }
+
+/**
+ * Bakes a flat brightness factor into the same attribute, leaving the hue to
+ * the material.
+ *
+ * The difference matters for anything whose colour is changed at runtime. The
+ * shader multiplies material colour by vertex colour, so a part carrying 0.8
+ * here is simply the shaded side of whatever the material happens to be that
+ * frame — a sleeve stays a shade darker than the chest while the whole jacket
+ * goes pale on a hit. Factors above 1 are allowed and brighten.
+ */
+export function shade(geo: THREE.BufferGeometry, factor: number): THREE.BufferGeometry {
+  const n = geo.attributes.position.count;
+  const colors = new Float32Array(n * 3);
+  colors.fill(factor);
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}

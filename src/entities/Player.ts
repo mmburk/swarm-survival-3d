@@ -7,7 +7,7 @@ import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
 import { InstancedProps } from '../graphics/InstancedProps';
 import { CAMERA_RIG } from '../graphics/CameraRig';
-import { tint } from '../graphics/VertexTint';
+import { tint, shade } from '../graphics/VertexTint';
 import { HEX } from '../theme/Palette';
 import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId, type WeaponStats } from '../config/Weapons';
 import type { Enemy } from './Enemy';
@@ -21,6 +21,34 @@ const tempHurtOffset = new THREE.Vector3();
 const tempTargetQuat = new THREE.Quaternion();
 const tempTargetMat = new THREE.Matrix4();
 const UP = new THREE.Vector3(0, 1, 0);
+
+const limbDir = new THREE.Vector3();
+const limbQuat = new THREE.Quaternion();
+
+/**
+ * A box stretched between two points in the rig's own space.
+ *
+ * Arms are the one part of a figure you cannot author as axis-aligned boxes:
+ * an upper arm that runs from a shoulder down to an elbow tucked in and
+ * forward is three rotations by eye, and every time a joint moves all three
+ * have to be found again. Given the two ends it wants to span, this works the
+ * rotation out itself. The box is run slightly long so the corners at a bend
+ * overlap into a joint instead of showing a gap.
+ */
+function limb(
+  from: [number, number, number],
+  to: [number, number, number],
+  thickness: number
+): THREE.BufferGeometry {
+  limbDir.set(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+  const length = limbDir.length();
+  limbQuat.setFromUnitVectors(UP, limbDir.normalize());
+
+  const geo = new THREE.BoxGeometry(thickness, length + thickness * 0.55, thickness);
+  geo.applyQuaternion(limbQuat);
+  geo.translate((from[0] + to[0]) / 2, (from[1] + to[1]) / 2, (from[2] + to[2]) / 2);
+  return geo;
+}
 
 export interface ActiveBuff {
   id: string;
@@ -92,6 +120,7 @@ export class Player {
   private dodgeDir: THREE.Vector3 = new THREE.Vector3();
 
   private walkCycle: number = 0;
+  private breathCycle: number = 0;
   private recoilOffset: number = 0;
   private flashTimer: number = 0;
   private isFlashed: boolean = false;
@@ -207,58 +236,98 @@ export class Player {
   /**
    * A person in a work jacket and a pack. Faces -Z.
    *
-   * Built from a dozen boxes, drawn as three meshes. Only the legs swing and
-   * only the jacket changes colour, so everything else — boots, plate, pack,
-   * bedroll, head, hood, scarf — is one merged shape with its colours baked
-   * into vertex colours, the same treatment the zombies got.
+   * Two dozen boxes, drawn as five meshes. Only the legs swing and only the
+   * jacket changes colour, so everything else is merged down by surface: one
+   * matte piece for the kit with its colours baked into vertex colours, one
+   * metal piece for the plate. The mesh count is what it was when the figure
+   * was a dozen plain boxes — the extra shapes cost vertices, which nothing
+   * here is short of, rather than draw calls.
    */
   private buildSurvivor(): void {
-    const denim = new THREE.MeshStandardMaterial({ color: HEX.denim, roughness: 0.9 });
+    // ---- legs, hung from the hip -----------------------------------------
+    // The mesh's origin is the hip joint, so `rotation.x` swings the whole leg
+    // the way a leg swings. It used to pivot around the middle of the thigh
+    // with the boots left behind in the static kit mesh, which read as a man
+    // scissoring his knees while his feet stayed nailed to the ground.
+    const legParts = [
+      tint(new THREE.BoxGeometry(0.25, 0.42, 0.27).translate(0, -0.21, 0), HEX.denim),
+      tint(new THREE.BoxGeometry(0.21, 0.3, 0.23).translate(0, -0.55, 0.01), 0x333c47),
+      tint(new THREE.BoxGeometry(0.24, 0.15, 0.34).translate(0, -0.67, -0.04), 0x2a2419)
+    ];
+    const legGeo = mergeGeometries(legParts, false);
+    for (const part of legParts) part.dispose();
 
-    const legGeo = new THREE.BoxGeometry(0.24, 0.72, 0.26);
+    const denim = new THREE.MeshStandardMaterial({
+      roughness: 0.9,
+      vertexColors: true
+    });
+
     this.leftLeg = new THREE.Mesh(legGeo, denim);
-    this.leftLeg.position.set(-0.19, 0.38, 0);
+    this.leftLeg.position.set(-0.17, 0.74, 0);
     this.leftLeg.castShadow = true;
     this.rig.add(this.leftLeg);
 
     this.rightLeg = new THREE.Mesh(legGeo, denim);
-    this.rightLeg.position.set(0.19, 0.38, 0);
+    this.rightLeg.position.set(0.17, 0.74, 0);
     this.rightLeg.castShadow = true;
     this.rig.add(this.rightLeg);
 
-    // Canvas work jacket: the torso and the support arm holding the fore-end.
-    // Kept out of the merge because the whole thing goes pale when you are hit.
+    // ---- jacket ------------------------------------------------------------
+    // Kept out of the merge because the whole thing goes pale when you are hit,
+    // which is also why its parts carry brightness rather than colour: the
+    // sleeves stay a shade under the chest through the flash and out the other
+    // side. A chest wider than the waist and shoulder caps standing proud of
+    // both is most of what makes the silhouette read as a person from above —
+    // at this rake you are looking at the top of him more than the front.
     this.jacketMat = new THREE.MeshStandardMaterial({
       color: 0x5a5236,
       roughness: 0.92,
       metalness: 0.05,
-      flatShading: true
+      flatShading: true,
+      vertexColors: true
     });
-    const torso = new THREE.BoxGeometry(0.66, 0.82, 0.44).translate(0, 1.12, 0);
-    const arm = new THREE.BoxGeometry(0.17, 0.6, 0.17)
-      .rotateY(-Math.PI / 7)
-      .rotateX(Math.PI / 3.4)
-      .translate(-0.36, 1.12, -0.28);
-    const jacket = new THREE.Mesh(mergeGeometries([torso, arm], false), this.jacketMat);
-    torso.dispose();
-    arm.dispose();
+    const jacketParts = [
+      shade(new THREE.BoxGeometry(0.5, 0.34, 0.36).translate(0, 0.9, 0), 0.86),      // waist
+      shade(new THREE.BoxGeometry(0.62, 0.46, 0.42).translate(0, 1.28, 0), 1.0),     // chest
+      shade(new THREE.BoxGeometry(0.16, 0.17, 0.36).translate(-0.37, 1.42, 0), 1.12), // shoulder caps
+      shade(new THREE.BoxGeometry(0.16, 0.17, 0.36).translate(0.37, 1.42, 0), 1.12),
+      shade(new THREE.BoxGeometry(0.46, 0.12, 0.3).translate(0, 1.49, -0.07), 1.08),  // collar
+      // Trigger arm: down the side, elbow tucked back, hand at the grip.
+      shade(limb([0.35, 1.4, 0.0], [0.36, 1.13, 0.08], 0.155), 0.9),
+      shade(limb([0.36, 1.13, 0.08], [0.33, 1.06, -0.1], 0.14), 0.78),
+      // Support arm: across the chest to the fore-end.
+      shade(limb([-0.35, 1.4, 0.0], [-0.28, 1.14, -0.12], 0.155), 0.9),
+      shade(limb([-0.28, 1.14, -0.12], [0.19, 1.09, -0.44], 0.14), 0.78)
+    ];
+    const jacket = new THREE.Mesh(mergeGeometries(jacketParts, false), this.jacketMat);
+    for (const part of jacketParts) part.dispose();
     jacket.castShadow = true;
     this.rig.add(jacket);
 
+    // ---- kit ---------------------------------------------------------------
     // Everything matte and unmoving, in one piece. These were seven materials
     // sitting between roughness 0.8 and 1.0 with no metalness between them,
     // which on a figure this size at this range is one surface.
     const kitParts = [
-      // Boots.
-      tint(new THREE.BoxGeometry(0.28, 0.18, 0.36).translate(-0.19, 0.09, -0.04), 0x2a2419),
-      tint(new THREE.BoxGeometry(0.28, 0.18, 0.36).translate(0.19, 0.09, -0.04), 0x2a2419),
-      // Backpack and bedroll.
-      tint(new THREE.BoxGeometry(0.48, 0.55, 0.3).translate(0, 1.16, 0.34), 0x4a3f2c),
-      tint(new THREE.CylinderGeometry(0.11, 0.11, 0.5, 6).rotateZ(Math.PI / 2).translate(0, 1.44, 0.36), 0x6b5c3f),
+      // Belt and a pouch on the hip.
+      tint(new THREE.BoxGeometry(0.54, 0.09, 0.39).translate(0, 1.04, 0), 0x33291b),
+      tint(new THREE.BoxGeometry(0.15, 0.14, 0.13).translate(0.24, 0.99, -0.14), 0x4a3f2c),
+      // Pack, flap and bedroll. The flap and the roll are the top surfaces you
+      // actually see from the camera, so they carry the contrast.
+      tint(new THREE.BoxGeometry(0.44, 0.5, 0.26).translate(0, 1.19, 0.32), 0x4a3f2c),
+      tint(new THREE.BoxGeometry(0.47, 0.14, 0.29).translate(0, 1.4, 0.33), 0x5d4f36),
+      tint(new THREE.CylinderGeometry(0.1, 0.1, 0.48, 6).rotateZ(Math.PI / 2).translate(0, 1.51, 0.35), 0x6b5c3f),
+      tint(new THREE.BoxGeometry(0.15, 0.16, 0.14).translate(-0.24, 1.0, 0.16), 0x5a4a30),
+      // The straps that hold it on, crossing the chest.
+      tint(limb([-0.2, 1.46, 0.06], [-0.12, 1.05, -0.22], 0.06), 0x33291b),
+      tint(limb([0.2, 1.46, 0.06], [0.12, 1.05, -0.22], 0.06), 0x33291b),
       // Head, hood and a scarf pulled up. No glowing visor anywhere.
-      tint(new THREE.BoxGeometry(0.32, 0.34, 0.32).translate(0, 1.68, 0), 0x9c7c5e),
-      tint(new THREE.BoxGeometry(0.4, 0.26, 0.4).translate(0, 1.83, 0.02), 0x4d4630),
-      tint(new THREE.BoxGeometry(0.36, 0.14, 0.36).translate(0, 1.53, 0), 0x7a3b2c)
+      tint(new THREE.BoxGeometry(0.3, 0.32, 0.31).translate(0, 1.67, 0), 0x9c7c5e),
+      tint(new THREE.BoxGeometry(0.36, 0.15, 0.36).translate(0, 1.53, 0), 0x7a3b2c),
+      tint(new THREE.BoxGeometry(0.4, 0.28, 0.28).translate(0, 1.71, 0.09), 0x4d4630),
+      tint(new THREE.BoxGeometry(0.38, 0.13, 0.38).translate(0, 1.84, 0.01), 0x4d4630),
+      // A peak over the face. It is what stops the head reading as a cube.
+      tint(new THREE.BoxGeometry(0.34, 0.08, 0.16).translate(0, 1.79, -0.21), 0x3d381f)
     ];
     const kitMesh = new THREE.Mesh(mergeGeometries(kitParts, false), new THREE.MeshStandardMaterial({
       vertexColors: true,
@@ -270,12 +339,20 @@ export class Player {
     this.rig.add(kitMesh);
 
     // The strapped-on scrap plate, the only "armour" in the game, stays its own
-    // mesh: it is the one part of him that is meant to catch the light.
+    // mesh: it is the one part of him that is meant to catch the light. The
+    // pauldron on the off shoulder is on the same material and merges in free.
+    // Off-centre on purpose: a plate that squares up with the chest reads as
+    // issued kit, and nothing about this man is issued.
+    const plateParts = [
+      new THREE.BoxGeometry(0.3, 0.27, 0.09).rotateZ(0.06).translate(-0.11, 1.29, -0.23),
+      new THREE.BoxGeometry(0.21, 0.11, 0.34).translate(-0.37, 1.53, 0)
+    ];
     const plate = new THREE.Mesh(
-      new THREE.BoxGeometry(0.5, 0.34, 0.1),
+      mergeGeometries(plateParts, false),
       new THREE.MeshStandardMaterial({ color: HEX.steel, roughness: 0.7, metalness: 0.6, flatShading: true })
     );
-    plate.position.set(0, 1.2, -0.25);
+    for (const part of plateParts) part.dispose();
+    plate.castShadow = true;
     this.rig.add(plate);
   }
 
@@ -655,18 +732,22 @@ export class Player {
       this.group.quaternion.slerp(tempTargetQuat, delta * 15);
     }
 
-    // Walk cycle — legs swing while moving, settle when still.
+    // Walk cycle — legs swing from the hip while moving, settle when still.
+    // Standing still he breathes, because a figure frozen solid between fights
+    // reads as a paused game rather than a man catching his breath.
+    this.breathCycle += delta;
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
     if (speed > 0.6) {
       this.walkCycle += delta * (5.5 + speed * 0.55);
-      const swing = Math.sin(this.walkCycle) * 0.34;
+      const swing = Math.sin(this.walkCycle) * 0.38;
       this.leftLeg.rotation.x = swing;
       this.rightLeg.rotation.x = -swing;
       this.rig.position.y = Math.abs(Math.sin(this.walkCycle)) * 0.045;
     } else {
       this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, 0, delta * 10);
       this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, 0, delta * 10);
-      this.rig.position.y = THREE.MathUtils.lerp(this.rig.position.y, 0, delta * 10);
+      const breath = Math.sin(this.breathCycle * 1.9) * 0.013;
+      this.rig.position.y = THREE.MathUtils.lerp(this.rig.position.y, breath, delta * 10);
     }
 
     this.rig.rotation.z = THREE.MathUtils.lerp(this.rig.rotation.z, -this.velocity.x * 0.012, delta * 10);

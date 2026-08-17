@@ -116,6 +116,21 @@ const item = this.dmgPool.find((d) => !d.active) ?? this.dmgPool[0];
 karelik ömrü olan bir sayı ekranın öbür ucuna sıçrayıp baştan başlıyor, neredeyse
 sönmüş bir tanesi ise yerini koruyordu. Artık ömrünün en sonundaki seçiliyor.
 
+### 7. Karakterin botları yürürken yerde çakılı duruyordu
+
+**Yer:** `src/entities/Player.ts` — `buildSurvivor()`
+**Commit:** bu commit
+
+Botlar hareketsiz `kitMesh`'in içindeydi, bacaklar ise ayrı meshlerdi. Yürüyüş
+döngüsü bacakları döndürüyor, botlar yerinde kalıyordu. Üstüne bacak meshinin
+origin'i kalçada değil uyluğun ortasındaydı (`position.y = 0.38`, yükseklik
+0.72), yani bacak kalçadan değil ortasından sallanıyordu — alt uç ileri
+giderken üst uç geri gidiyordu.
+
+Bacak artık uyluk + baldır + bot olarak tek merged geometri ve origin'i kalça
+hizasında (`position.y = 0.74`). `rotation.x` gerçek bir adım açısı oluyor.
+Mesh sayısı değişmedi.
+
 ---
 
 ## Açık olanlar
