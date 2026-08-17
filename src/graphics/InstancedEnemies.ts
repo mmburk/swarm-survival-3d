@@ -4,6 +4,7 @@ import { EnemyType, PROFILES } from '../entities/Enemy';
 import type { Enemy } from '../entities/Enemy';
 import { HEX } from '../theme/Palette';
 import { tint } from './VertexTint';
+import { CAMERA_RIG } from './CameraRig';
 
 /**
  * Every zombie on the street, drawn in eight calls.
@@ -111,6 +112,18 @@ export class InstancedEnemies {
   private torso = new THREE.Object3D();
   private leftArm = new THREE.Object3D();
   private rightArm = new THREE.Object3D();
+
+  /**
+   * The health strip stands apart from the body it belongs to.
+   *
+   * It used to hang off the same group, which meant it turned with the zombie:
+   * ring sixteen of them round the player and five of the bars came out within
+   * a quarter of edge-on -- slivers a pixel wide -- and one faced away
+   * outright. Whether you could read how much was left in something depended on
+   * which way it happened to be looking. It is a readout, so it faces the
+   * camera and nothing else.
+   */
+  private barRoot = new THREE.Object3D();
   private barBack = new THREE.Object3D();
   private barFill = new THREE.Object3D();
 
@@ -162,16 +175,18 @@ export class InstancedEnemies {
     this.root.add(this.torso);
     this.torso.add(this.leftArm);
     this.torso.add(this.rightArm);
-    this.root.add(this.barBack);
-    this.root.add(this.barFill);
+    this.barRoot.add(this.barBack);
+    this.barRoot.add(this.barFill);
 
     this.torso.rotation.x = -0.22; // hunched
     this.leftArm.position.set(-0.38, 1.0, -0.38);
     this.rightArm.position.set(0.38, 1.0, -0.38);
-    this.barBack.position.set(0, 2.15, 0);
-    this.barBack.rotation.x = -Math.PI / 3.4;
-    this.barFill.position.set(0, 2.15, 0.012);
-    this.barFill.rotation.x = -Math.PI / 3.4;
+
+    // Yaw then tilt, which is what YXZ buys: in the default XYZ the tilt drags
+    // the yaw round with it and the strip ends up leaning across the screen.
+    this.barRoot.rotation.order = 'YXZ';
+    // Far side of the plate by a hair, so the fill reads as sitting on it.
+    this.barFill.position.z = 0.012;
   }
 
   private prepare(mesh: THREE.InstancedMesh, scene: THREE.Scene): void {
@@ -191,6 +206,10 @@ export class InstancedEnemies {
     let hpCount = 0;
     this.counts.fill(0);
 
+    // Square to the camera, worked out once: the rig does not move between one
+    // zombie and the next.
+    this.barRoot.rotation.set(CAMERA_RIG.facingTilt(), CAMERA_RIG.facingYaw(), 0);
+
     for (let i = 0; i < enemies.length; i++) {
       const e = enemies[i];
       if (!e.active) continue;
@@ -209,12 +228,6 @@ export class InstancedEnemies {
       this.torso.position.y = Math.abs(gait) * 0.05;
       this.leftArm.rotation.x = Math.PI / 2 - 0.2 + gait * 0.12;
       this.rightArm.rotation.x = Math.PI / 2 - 0.1 - gait * 0.12;
-
-      if (e.hpVisible) {
-        const ratio = e.hpRatio;
-        this.barFill.scale.x = ratio;
-        this.barFill.position.x = -(1.06 * (1 - ratio)) / 2;
-      }
 
       this.root.updateMatrixWorld(true);
 
@@ -237,6 +250,15 @@ export class InstancedEnemies {
       }
 
       if (e.hpVisible && hpCount < MAX_ENEMIES) {
+        // Rides above the body and takes its scale — a Butcher gets a Butcher-
+        // sized strip — but keeps the camera's heading rather than the body's.
+        const s = e.renderScale;
+        this.barRoot.position.set(e.position.x, e.position.y + 2.15 * s, e.position.z);
+        this.barRoot.scale.setScalar(s);
+        this.barFill.scale.x = e.hpRatio;
+        this.barFill.position.x = -(1.06 * (1 - e.hpRatio)) / 2;
+        this.barRoot.updateMatrixWorld(true);
+
         this.hpBack.setMatrixAt(hpCount, this.barBack.matrixWorld);
         this.hpFill.setMatrixAt(hpCount, this.barFill.matrixWorld);
         hpCount++;

@@ -111,6 +111,19 @@ export const CAMERA_RIG = {
   /** The yaw a flat, forward-facing mesh needs to sit square to the camera. */
   facingYaw(): number {
     return Math.atan2(this.offset.x, this.offset.z);
+  },
+
+  /**
+   * The other half of it: the tilt that lays the same mesh back to meet the
+   * rake. Working it out rather than picking a number by eye matters because
+   * the shelter rig is five degrees steeper than the field one, and a plane
+   * authored against one of them is wrong in the other.
+   *
+   * Apply the two in YXZ order — yaw, then tilt — or the tilt swings the yaw
+   * with it and the mesh ends up leaning sideways.
+   */
+  facingTilt(): number {
+    return -Math.asin(Math.max(-1, Math.min(1, this.pitchSin)));
   }
 };
 

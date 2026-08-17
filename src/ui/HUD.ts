@@ -396,8 +396,31 @@ export class HUD {
 
   // -------------------------------------------------------------- feedback
 
+  /**
+   * A free slot, or the one furthest through its life if all forty are busy.
+   *
+   * The fallback used to be slot zero flat, which in a shotgun frame meant
+   * hijacking whichever number happened to live there however freshly it had
+   * been raised — a figure a frame old would jump across the screen and start
+   * again while an almost-faded one sat there holding its place.
+   */
+  private takeDamageSlot(): DamageText {
+    let oldest = this.dmgPool[0];
+    let oldestProgress = -1;
+
+    for (const item of this.dmgPool) {
+      if (!item.active) return item;
+      const progress = item.life / item.maxLife;
+      if (progress > oldestProgress) {
+        oldestProgress = progress;
+        oldest = item;
+      }
+    }
+    return oldest;
+  }
+
   public spawnDamageNumber(worldPos: THREE.Vector3, damage: number, crit: boolean): void {
-    const item = this.dmgPool.find((d) => !d.active) ?? this.dmgPool[0];
+    const item = this.takeDamageSlot();
     item.pos.copy(worldPos);
     item.life = 0;
     item.maxLife = crit ? 0.62 : 0.45;
