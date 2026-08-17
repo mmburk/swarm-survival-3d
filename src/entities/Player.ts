@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { InputManager } from '../core/InputManager';
 import { ParticleSystem } from '../graphics/ParticleSystem';
 import { AudioManager } from '../core/AudioManager';
@@ -6,6 +7,7 @@ import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
 import { InstancedProps } from '../graphics/InstancedProps';
 import { CAMERA_RIG } from '../graphics/CameraRig';
+import { tint } from '../graphics/VertexTint';
 import { HEX } from '../theme/Palette';
 import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId, type WeaponStats } from '../config/Weapons';
 import type { Enemy } from './Enemy';
@@ -202,11 +204,16 @@ export class Player {
 
   // ---------------------------------------------------------------- visuals
 
-  /** A person in a work jacket and a pack. Faces -Z. */
+  /**
+   * A person in a work jacket and a pack. Faces -Z.
+   *
+   * Built from a dozen boxes, drawn as three meshes. Only the legs swing and
+   * only the jacket changes colour, so everything else — boots, plate, pack,
+   * bedroll, head, hood, scarf — is one merged shape with its colours baked
+   * into vertex colours, the same treatment the zombies got.
+   */
   private buildSurvivor(): void {
-    const boot = new THREE.MeshStandardMaterial({ color: 0x2a2419, roughness: 0.95 });
     const denim = new THREE.MeshStandardMaterial({ color: HEX.denim, roughness: 0.9 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0x9c7c5e, roughness: 0.8 });
 
     const legGeo = new THREE.BoxGeometry(0.24, 0.72, 0.26);
     this.leftLeg = new THREE.Mesh(legGeo, denim);
@@ -219,180 +226,141 @@ export class Player {
     this.rightLeg.castShadow = true;
     this.rig.add(this.rightLeg);
 
-    const bootGeo = new THREE.BoxGeometry(0.28, 0.18, 0.36);
-    const lb = new THREE.Mesh(bootGeo, boot);
-    lb.position.set(-0.19, 0.09, -0.04);
-    this.rig.add(lb);
-    const rb = new THREE.Mesh(bootGeo, boot);
-    rb.position.set(0.19, 0.09, -0.04);
-    this.rig.add(rb);
-
-    // Canvas work jacket.
+    // Canvas work jacket: the torso and the support arm holding the fore-end.
+    // Kept out of the merge because the whole thing goes pale when you are hit.
     this.jacketMat = new THREE.MeshStandardMaterial({
       color: 0x5a5236,
       roughness: 0.92,
       metalness: 0.05,
       flatShading: true
     });
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.82, 0.44), this.jacketMat);
-    torso.position.y = 1.12;
-    torso.castShadow = true;
-    this.rig.add(torso);
+    const torso = new THREE.BoxGeometry(0.66, 0.82, 0.44).translate(0, 1.12, 0);
+    const arm = new THREE.BoxGeometry(0.17, 0.6, 0.17)
+      .rotateY(-Math.PI / 7)
+      .rotateX(Math.PI / 3.4)
+      .translate(-0.36, 1.12, -0.28);
+    const jacket = new THREE.Mesh(mergeGeometries([torso, arm], false), this.jacketMat);
+    torso.dispose();
+    arm.dispose();
+    jacket.castShadow = true;
+    this.rig.add(jacket);
 
-    // Strapped-on scrap plate, the only "armour" in the game.
+    // Everything matte and unmoving, in one piece. These were seven materials
+    // sitting between roughness 0.8 and 1.0 with no metalness between them,
+    // which on a figure this size at this range is one surface.
+    const kitParts = [
+      // Boots.
+      tint(new THREE.BoxGeometry(0.28, 0.18, 0.36).translate(-0.19, 0.09, -0.04), 0x2a2419),
+      tint(new THREE.BoxGeometry(0.28, 0.18, 0.36).translate(0.19, 0.09, -0.04), 0x2a2419),
+      // Backpack and bedroll.
+      tint(new THREE.BoxGeometry(0.48, 0.55, 0.3).translate(0, 1.16, 0.34), 0x4a3f2c),
+      tint(new THREE.CylinderGeometry(0.11, 0.11, 0.5, 6).rotateZ(Math.PI / 2).translate(0, 1.44, 0.36), 0x6b5c3f),
+      // Head, hood and a scarf pulled up. No glowing visor anywhere.
+      tint(new THREE.BoxGeometry(0.32, 0.34, 0.32).translate(0, 1.68, 0), 0x9c7c5e),
+      tint(new THREE.BoxGeometry(0.4, 0.26, 0.4).translate(0, 1.83, 0.02), 0x4d4630),
+      tint(new THREE.BoxGeometry(0.36, 0.14, 0.36).translate(0, 1.53, 0), 0x7a3b2c)
+    ];
+    const kitMesh = new THREE.Mesh(mergeGeometries(kitParts, false), new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.95,
+      metalness: 0.0
+    }));
+    for (const part of kitParts) part.dispose();
+    kitMesh.castShadow = true;
+    this.rig.add(kitMesh);
+
+    // The strapped-on scrap plate, the only "armour" in the game, stays its own
+    // mesh: it is the one part of him that is meant to catch the light.
     const plate = new THREE.Mesh(
       new THREE.BoxGeometry(0.5, 0.34, 0.1),
       new THREE.MeshStandardMaterial({ color: HEX.steel, roughness: 0.7, metalness: 0.6, flatShading: true })
     );
     plate.position.set(0, 1.2, -0.25);
     this.rig.add(plate);
-
-    // Backpack.
-    const pack = new THREE.Mesh(
-      new THREE.BoxGeometry(0.48, 0.55, 0.3),
-      new THREE.MeshStandardMaterial({ color: 0x4a3f2c, roughness: 1.0 })
-    );
-    pack.position.set(0, 1.16, 0.34);
-    pack.castShadow = true;
-    this.rig.add(pack);
-
-    const bedroll = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.11, 0.11, 0.5, 6),
-      new THREE.MeshStandardMaterial({ color: 0x6b5c3f, roughness: 1.0 })
-    );
-    bedroll.rotation.z = Math.PI / 2;
-    bedroll.position.set(0, 1.44, 0.36);
-    this.rig.add(bedroll);
-
-    // Head, hood and a scarf pulled up. No glowing visor anywhere.
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.32), skin);
-    head.position.set(0, 1.68, 0);
-    head.castShadow = true;
-    this.rig.add(head);
-
-    const hood = new THREE.Mesh(
-      new THREE.BoxGeometry(0.4, 0.26, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x4d4630, roughness: 1.0, flatShading: true })
-    );
-    hood.position.set(0, 1.83, 0.02);
-    this.rig.add(hood);
-
-    const scarf = new THREE.Mesh(
-      new THREE.BoxGeometry(0.36, 0.14, 0.36),
-      new THREE.MeshStandardMaterial({ color: 0x7a3b2c, roughness: 1.0 })
-    );
-    scarf.position.set(0, 1.53, 0);
-    this.rig.add(scarf);
-
-    // Support arm holding the fore-end.
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.6, 0.17), this.jacketMat);
-    arm.position.set(-0.36, 1.12, -0.28);
-    arm.rotation.set(Math.PI / 3.4, -Math.PI / 7, 0);
-    this.rig.add(arm);
   }
 
-  /** One small procedural mesh per firearm, only the equipped one is visible. */
+  /**
+   * One small procedural mesh per firearm, only the equipped one is visible.
+   *
+   * Each gun was three to five separate meshes, none of which move against
+   * each other, so the parts are merged — but per material, not all into one.
+   * Gunmetal, wood and a gas bottle are three genuinely different surfaces and
+   * flattening them to an average makes every gun look like plastic.
+   */
   private buildWeaponRigs(): void {
     const gunmetal = new THREE.MeshStandardMaterial({ color: 0x24261f, roughness: 0.55, metalness: 0.7, flatShading: true });
     const wood = new THREE.MeshStandardMaterial({ color: 0x4a3220, roughness: 0.85, metalness: 0.05, flatShading: true });
     const tank = new THREE.MeshStandardMaterial({ color: 0x5c6a4a, roughness: 0.8, metalness: 0.4, flatShading: true });
 
-    const make = (id: WeaponId, build: (g: THREE.Group) => void) => {
+    const make = (id: WeaponId, groups: Array<[THREE.Material, THREE.BufferGeometry[]]>) => {
       const g = new THREE.Group();
       g.position.set(0.33, 1.1, 0);
-      build(g);
+
+      for (const [material, parts] of groups) {
+        if (parts.length === 1) {
+          g.add(new THREE.Mesh(parts[0], material));
+          continue;
+        }
+        const merged = mergeGeometries(parts, false);
+        for (const part of parts) part.dispose();
+        g.add(new THREE.Mesh(merged, material));
+      }
+
       g.visible = false;
       this.rig.add(g);
       this.weaponRigs.set(id, g);
     };
 
-    make('RANGER', (g) => {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.16, 1.15), gunmetal);
-      body.position.z = -0.55;
-      g.add(body);
-      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.19, 0.42), wood);
-      stock.position.z = 0.18;
-      g.add(stock);
-      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.3, 0.14), gunmetal);
-      mag.position.set(0, -0.2, -0.35);
-      mag.rotation.x = 0.16;
-      g.add(mag);
-      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.34, 8), gunmetal);
-      scope.rotation.x = Math.PI / 2;
-      scope.position.set(0, 0.14, -0.42);
-      g.add(scope);
-    });
+    make('RANGER', [
+      [gunmetal, [
+        new THREE.BoxGeometry(0.13, 0.16, 1.15).translate(0, 0, -0.55),
+        new THREE.BoxGeometry(0.09, 0.3, 0.14).rotateX(0.16).translate(0, -0.2, -0.35),
+        new THREE.CylinderGeometry(0.045, 0.045, 0.34, 8).rotateX(Math.PI / 2).translate(0, 0.14, -0.42)
+      ]],
+      [wood, [new THREE.BoxGeometry(0.11, 0.19, 0.42).translate(0, 0, 0.18)]]
+    ]);
 
-    make('BOOMSTICK', (g) => {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.17, 0.5), wood);
-      body.position.z = -0.18;
-      g.add(body);
-      const barrel = new THREE.CylinderGeometry(0.055, 0.055, 0.72, 8);
-      barrel.rotateX(-Math.PI / 2);
-      const lb = new THREE.Mesh(barrel, gunmetal);
-      lb.position.set(-0.055, 0.02, -0.6);
-      g.add(lb);
-      const rb = new THREE.Mesh(barrel, gunmetal);
-      rb.position.set(0.055, 0.02, -0.6);
-      g.add(rb);
-      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 0.16), wood);
-      grip.position.set(0, -0.16, 0.06);
-      grip.rotation.x = -0.3;
-      g.add(grip);
-    });
+    make('BOOMSTICK', [
+      [wood, [
+        new THREE.BoxGeometry(0.15, 0.17, 0.5).translate(0, 0, -0.18),
+        new THREE.BoxGeometry(0.1, 0.26, 0.16).rotateX(-0.3).translate(0, -0.16, 0.06)
+      ]],
+      [gunmetal, [
+        new THREE.CylinderGeometry(0.055, 0.055, 0.72, 8).rotateX(-Math.PI / 2).translate(-0.055, 0.02, -0.6),
+        new THREE.CylinderGeometry(0.055, 0.055, 0.72, 8).rotateX(-Math.PI / 2).translate(0.055, 0.02, -0.6)
+      ]]
+    ]);
 
-    make('WIDOWMAKER', (g) => {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.15, 0.72), wood);
-      body.position.z = -0.32;
-      g.add(body);
-      const barrel = new THREE.CylinderGeometry(0.035, 0.035, 1.5, 8);
-      barrel.rotateX(-Math.PI / 2);
-      const b = new THREE.Mesh(barrel, gunmetal);
-      b.position.set(0, 0.01, -1.0);
-      g.add(b);
-      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.46, 10), gunmetal);
-      scope.rotation.x = Math.PI / 2;
-      scope.position.set(0, 0.16, -0.42);
-      g.add(scope);
-      const bolt = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.05), gunmetal);
-      bolt.position.set(0.1, 0.06, -0.05);
-      g.add(bolt);
-      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.22, 0.5), wood);
-      stock.position.z = 0.22;
-      g.add(stock);
-    });
+    make('WIDOWMAKER', [
+      [wood, [
+        new THREE.BoxGeometry(0.11, 0.15, 0.72).translate(0, 0, -0.32),
+        new THREE.BoxGeometry(0.1, 0.22, 0.5).translate(0, 0, 0.22)
+      ]],
+      [gunmetal, [
+        new THREE.CylinderGeometry(0.035, 0.035, 1.5, 8).rotateX(-Math.PI / 2).translate(0, 0.01, -1.0),
+        new THREE.CylinderGeometry(0.055, 0.055, 0.46, 10).rotateX(Math.PI / 2).translate(0, 0.16, -0.42),
+        new THREE.BoxGeometry(0.16, 0.05, 0.05).translate(0.1, 0.06, -0.05)
+      ]]
+    ]);
 
-    make('STUTTER', (g) => {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.46), gunmetal);
-      body.position.z = -0.2;
-      g.add(body);
-      const barrel = new THREE.CylinderGeometry(0.03, 0.03, 0.34, 6);
-      barrel.rotateX(-Math.PI / 2);
-      const b = new THREE.Mesh(barrel, gunmetal);
-      b.position.set(0, 0.02, -0.55);
-      g.add(b);
-      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.36, 0.1), gunmetal);
-      mag.position.set(0, -0.24, -0.16);
-      g.add(mag);
-    });
+    make('STUTTER', [
+      [gunmetal, [
+        new THREE.BoxGeometry(0.12, 0.18, 0.46).translate(0, 0, -0.2),
+        new THREE.CylinderGeometry(0.03, 0.03, 0.34, 6).rotateX(-Math.PI / 2).translate(0, 0.02, -0.55),
+        new THREE.BoxGeometry(0.08, 0.36, 0.1).translate(0, -0.24, -0.16)
+      ]]
+    ]);
 
-    make('HARVESTER', (g) => {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.78), tank);
-      body.position.z = -0.36;
-      g.add(body);
-      const barrel = new THREE.CylinderGeometry(0.028, 0.028, 0.7, 6);
-      barrel.rotateX(-Math.PI / 2);
-      const b = new THREE.Mesh(barrel, gunmetal);
-      b.position.set(0, 0.02, -0.95);
-      g.add(b);
-      const bottle = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.46, 10), tank);
-      bottle.rotation.x = Math.PI / 2;
-      bottle.position.set(0, -0.16, 0.05);
-      g.add(bottle);
-      const hose = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.022, 6, 12), gunmetal);
-      hose.position.set(0, -0.05, -0.2);
-      g.add(hose);
-    });
+    make('HARVESTER', [
+      [tank, [
+        new THREE.BoxGeometry(0.14, 0.16, 0.78).translate(0, 0, -0.36),
+        new THREE.CylinderGeometry(0.11, 0.11, 0.46, 10).rotateX(Math.PI / 2).translate(0, -0.16, 0.05)
+      ]],
+      [gunmetal, [
+        new THREE.CylinderGeometry(0.028, 0.028, 0.7, 6).rotateX(-Math.PI / 2).translate(0, 0.02, -0.95),
+        new THREE.TorusGeometry(0.09, 0.022, 6, 12).translate(0, -0.05, -0.2)
+      ]]
+    ]);
   }
 
   // ---------------------------------------------------------------- loadout

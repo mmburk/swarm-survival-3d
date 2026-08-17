@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { EnemyType, PROFILES } from '../entities/Enemy';
 import type { Enemy } from '../entities/Enemy';
 import { HEX } from '../theme/Palette';
+import { tint } from './VertexTint';
 
 /**
  * Every zombie on the street, drawn in eight calls.
@@ -26,20 +27,6 @@ const MAX_ENEMIES = 340;
 
 const SOCKET_COLOR = 0x14120e;
 const JAW_COLOR = 0x6b1a1a;
-
-/** Paints a flat colour into a geometry's vertex-colour attribute. */
-function tint(geo: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
-  const c = new THREE.Color(hex);
-  const n = geo.attributes.position.count;
-  const colors = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    colors[i * 3] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  return geo;
-}
 
 /**
  * The merged, vertex-coloured body for one zombie type.
