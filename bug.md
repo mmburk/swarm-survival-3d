@@ -131,6 +131,50 @@ Bacak artık uyluk + baldır + bot olarak tek merged geometri ve origin'i kalça
 hizasında (`position.y = 0.74`). `rotation.x` gerçek bir adım açısı oluyor.
 Mesh sayısı değişmedi.
 
+### 9. Boon sandığı hurda arabanın içine bırakılabiliyordu
+
+**Yer:** `src/core/Engine.ts` — `dropSignal()`
+**Commit:** _bu commit_
+
+Sokak temizlenince sandık, oyuncudan kadraj yukarı doğru sabit bir mesafeye
+bırakılıyordu — sokakta ne olduğuna hiç bakmadan. Ama sokak yanmış sedanlarla
+dolu ve oyuncu bir engelden `engel.radius + player.radius` kadar dışarı
+itiliyor: bir sedan için **2.85**, sandığın tetik yarıçapı ise **2.3**. Yani
+sandık bir arabanın içine düşerse oyuncu halkaya asla değemiyor.
+
+Kapılar sandık alınana kadar kapalı durduğu için bu, koşunun **yerinde
+kilitlenmesi** demek: alınamayan bir sandık, açılmayan iki kapı.
+
+Ölçüm (oyuncu düz çizgide sandığa yürütülerek, 300 deneme): **4 başarısız**
+(%1.3). Sadece geometriye bakınca, arenaya düzgün dağıtılmış 4000 noktanın
+%0.15'inde halkanın içinde durulabilecek tek bir nokta bile yok, %1.45'inde
+halkanın %15'inden azı boşta.
+
+Kadraj noktası artık bir dilek: `canStandOn()` ile sınanıyor, tutmazsa oyuncunun
+etrafında 30°'lik adımlarla — önce küçük sapmalar, sonra büyükleri — ve gerekirse
+iki kat mesafede boş bir yer aranıyor. Hiçbiri olmazsa sandık oyuncunun bastığı
+yere bırakılıyor; orası tanımı gereği durulabilir bir yer. Aynı ölçüm sonrasında
+400 denemede **1 başarısız**, o da testin duvara sürten aptal yürüyüşünden:
+sandığın yeri durulabilir, arada kalan engelin etrafından dolaşmak gerekiyor.
+
+### 10. Sandığın "buraya bas" halkası yolun altında kalıyordu
+
+**Yer:** `src/entities/SignalDrop.ts`, `src/core/Engine.ts` — `dropSignal()`
+**Commit:** _bu commit_
+
+`SignalDrop` yere `y = 0`'da bırakılıyordu, ama zemin düz değil: `getHeightAt`
+±0.28 arası gezen bir noise. Sandık böylece arazinin yarısında gömülü, yarısında
+havada duruyordu. Asıl sorun halkada: yerdeki işaret `y = 0.06`'daydı, yani
+arenanın **%35'inde zeminin tamamen altında** kalıyordu — ve o halka, ekranda
+"buraya bas" diyen tek şey. Mekaniğin çalışmadığı hissi büyük ihtimalle buradan
+geliyordu.
+
+Sandık artık altındaki yolun yüksekliğine oturuyor (`placeSignal()` `out.y`'yi
+`terrain.getHeightAt` ile dolduruyor), halka da 0.22'ye kaldırıldı — zemin kendi
+genişliği boyunca ~0.1 yalpaladığı için ayak bileği hizası yetmiyor. Ölçüm: 400
+bırakmanın halka çevresinden alınan 3200 örneğinde **tek bir gömülme yok**
+(öncesinde beklenen ~%35).
+
 ---
 
 ## Açık olanlar

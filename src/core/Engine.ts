@@ -704,20 +704,63 @@ export class Engine {
     this.audio.playGateOpen();
   }
 
+  /**
+   * Somewhere the case can actually be set down.
+   *
+   * The framed spot — a few paces up the screen from the player — is a wish,
+   * not an answer. The street is full of burnt-out sedans, and the player is
+   * shoved out of one to a wider radius than the case's own trigger, so a case
+   * set down inside a wreck cannot be picked up at all. The gates stay shut
+   * until it is picked up, which turns that into a run that ends standing
+   * still. So the wish is checked, and a blocked one is swung around the
+   * player — small deviations first, so the shot keeps its composition
+   * whenever the street allows it.
+   */
+  private placeSignal(out: THREE.Vector3): void {
+    CAMERA_RIG.framePoint(0, 2.6, tmpFrame);
+    const aim = Math.atan2(tmpFrame.y, tmpFrame.x);
+    const reach = Math.hypot(tmpFrame.x, tmpFrame.y);
+
+    for (const dist of [reach, reach * 1.45, reach * 2.0]) {
+      // 0, +30, -30, +60, -60 ... out to a full half turn behind the player.
+      for (let i = 0; i < 12; i++) {
+        const swing = (Math.ceil(i / 2) * (i % 2 ? 1 : -1) * Math.PI) / 6;
+        const a = aim + swing;
+        out.set(
+          this.player.position.x + Math.cos(a) * dist,
+          0,
+          this.player.position.z + Math.sin(a) * dist
+        );
+        if (this.canStandOn(out)) {
+          out.y = this.terrain.getHeightAt(out.x, out.z);
+          return;
+        }
+      }
+    }
+
+    // A street with nowhere clear in it: under the player's own boots, which
+    // is by definition somewhere they can stand.
+    out.copy(this.player.position);
+    out.y = this.terrain.getHeightAt(out.x, out.z);
+  }
+
+  /** Whether the player could stand with their centre on this spot. */
+  private canStandOn(spot: THREE.Vector3): boolean {
+    if (Math.hypot(spot.x, spot.z) > ARENA_RADIUS - 3) return false;
+    for (const o of InstancedProps.obstacles) {
+      const dx = spot.x - o.x;
+      const dz = spot.z - o.z;
+      const clear = o.radius + this.player.radius + 0.3;
+      if (dx * dx + dz * dz < clear * clear) return false;
+    }
+    return true;
+  }
+
   /** Sets the promised case down a few paces up the street from the player. */
   private dropSignal(host: Caller | 'ANY'): void {
     const caller = host === 'ANY' ? null : host;
 
-    // Framed rather than dropped underfoot: far enough up the screen to be a
-    // thing you walk to, close enough that it is never a hike.
-    CAMERA_RIG.framePoint(0, 2.6, tmpFrame);
-    tmpSignal.set(this.player.position.x + tmpFrame.x, 0, this.player.position.z + tmpFrame.y);
-    const r = Math.hypot(tmpSignal.x, tmpSignal.z);
-    if (r > ARENA_RADIUS - 3) {
-      const s = (ARENA_RADIUS - 3) / r;
-      tmpSignal.x *= s;
-      tmpSignal.z *= s;
-    }
+    this.placeSignal(tmpSignal);
 
     this.signalDrop.spawn(tmpSignal, caller);
     this.audio.playGateOpen();

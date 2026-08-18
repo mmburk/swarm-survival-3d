@@ -93,9 +93,14 @@ export class SignalDrop {
       side: THREE.DoubleSide,
       depthWrite: false
     });
+    // Held well clear of the dirt rather than laid on it. The ground is noise,
+    // not a plane — it rolls by about a tenth of a unit across the ring's own
+    // width — so a mark painted at ankle height is a mark that sinks under the
+    // road on one side, and this ring is the only thing on screen that says
+    // *stand here*.
     const ring = new THREE.Mesh(new THREE.RingGeometry(this.radius - 0.22, this.radius, 34), this.ringMat);
     ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.06;
+    ring.position.y = 0.22;
     this.group.add(ring);
 
     this.lamp = new THREE.PointLight(HEX.amber, 30, 13, 2);
@@ -105,6 +110,7 @@ export class SignalDrop {
     scene.add(this.group);
   }
 
+  /** `pos.y` is the height of the road under it — the case sits on the dirt. */
   public spawn(pos: THREE.Vector3, caller: CallerArtId | null): void {
     this.caller = caller;
     this.position.copy(pos);
