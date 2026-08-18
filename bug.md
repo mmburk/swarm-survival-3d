@@ -134,7 +134,7 @@ Mesh sayısı değişmedi.
 ### 9. Boon sandığı hurda arabanın içine bırakılabiliyordu
 
 **Yer:** `src/core/Engine.ts` — `dropSignal()`
-**Commit:** _bu commit_
+**Commit:** `616c109`
 
 Sokak temizlenince sandık, oyuncudan kadraj yukarı doğru sabit bir mesafeye
 bırakılıyordu — sokakta ne olduğuna hiç bakmadan. Ama sokak yanmış sedanlarla
@@ -160,7 +160,7 @@ sandığın yeri durulabilir, arada kalan engelin etrafından dolaşmak gerekiyo
 ### 10. Sandığın "buraya bas" halkası yolun altında kalıyordu
 
 **Yer:** `src/entities/SignalDrop.ts`, `src/core/Engine.ts` — `dropSignal()`
-**Commit:** _bu commit_
+**Commit:** `616c109`
 
 `SignalDrop` yere `y = 0`'da bırakılıyordu, ama zemin düz değil: `getHeightAt`
 ±0.28 arası gezen bir noise. Sandık böylece arazinin yarısında gömülü, yarısında
