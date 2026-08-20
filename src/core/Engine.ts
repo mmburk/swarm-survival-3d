@@ -298,7 +298,11 @@ export class Engine {
 
         const next = this.sectors.current + 1;
         this.sectors.setup(next);
-        // Player first: a trader sector opens its gates inside buildSector, and
+        // Clutter first: the player is set down on a fixed spot and the gates
+        // are placed against the obstacle list, so both want the new street to
+        // already exist. This runs at the darkest frame of the fade.
+        this.props.rebuild();
+        // Player next: a trader sector opens its gates inside buildSector, and
         // they are placed relative to where the player is standing.
         this.placePlayerAtSectorStart();
         this.buildSector(next);
@@ -543,6 +547,7 @@ export class Engine {
       SaveSystem.recordRunStart();
 
       this.sectors.setup(1);
+      this.props.rebuild();
       this.placePlayerAtSectorStart();
       this.buildSector(1);
 

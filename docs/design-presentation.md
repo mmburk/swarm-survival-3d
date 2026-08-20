@@ -620,8 +620,14 @@ olur.*
    gidiyor. Ölüm bedeli eklendikten sonra bu madde **daha keskin** hâle geldi:
    çıkış noktalarının seyrekliği tek başına bir tasarım sorusu.
 6. **Sektörler kozmetik olarak farklı, mekanik olarak aynı.** Beş bölge farklı
-   ışık ve isim taşıyor ama arena şekli, prop dağılımı ve hedef aynı. Bölgeye
-   özel bir kural (ör. hastanede görüş kısıtlı, kordonda mayınlı bölge) yok.
+   ışık ve isim taşıyor ama arena şekli ve hedef aynı. Bölgeye özel bir kural
+   (ör. hastanede görüş kısıtlı, kordonda mayınlı bölge) yok.
+
+   *Prop dağılımı artık her sektörde yeniden atılıyor* — eskiden açılışta bir
+   kez atılıp bütün oturum boyunca donuyordu, yani aynı on dört enkaz aynı on
+   dört yerdeydi. Bu, sektörleri birbirinden ayırmanın ilk katmanıydı; ikinci
+   katman (bölgeye özel prop karışımı) ve üçüncüsü (arena şekli — metro gibi)
+   henüz yok.
 7. **AI derinliği düşük.** Steering + separation + bir kiting davranışı. Kuşatma,
    flanking, sesle çekilme gibi sürü davranışları yok. Bloater dışında taktik
    çeşitliliği düşük.
