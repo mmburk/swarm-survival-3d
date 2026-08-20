@@ -26,7 +26,11 @@ export interface RunSummary {
   sector: number;
   sectorName: string;
   kills: number;
-  scrapEarned: number;
+  /** Everything picked up tonight, before the door takes its cut. */
+  scrapCarried: number;
+  /** What actually reached the workbench. Equal to the carry only on a walk-back. */
+  scrapBanked: number;
+  scrapLost: number;
   duration: number;
   weapon: string;
   cause: string;
@@ -1116,10 +1120,14 @@ export class MenuSystem {
             <div style="font-family:var(--stencil); font-size:27px;">${summary.kills}</div>
           </div>
           <div>
-            <div class="ll-sub" style="margin:0;">Scrap kept</div>
+            <div class="ll-sub" style="margin:0;">Scrap banked</div>
             <div style="display:flex; align-items:center; justify-content:center; gap:8px; font-family:var(--stencil); font-size:27px; color:var(--amber);">
-              ${emblemSvg('scrap', 24)}${summary.scrapEarned}
+              ${emblemSvg('scrap', 24)}${summary.scrapBanked}
             </div>
+            ${summary.scrapLost > 0 ? `
+              <div style="font-family:var(--stencil); font-size:14px; color:${CSS.blood}; margin-top:2px;">
+                ${summary.scrapLost} left in the street
+              </div>` : ''}
           </div>
           <div>
             <div class="ll-sub" style="margin:0;">Time out</div>
@@ -1129,7 +1137,11 @@ export class MenuSystem {
 
         <div style="font-size:12.5px; color:var(--ash); margin-top:18px; line-height:1.6;">
           You carried <b style="color:var(--bone)">${summary.weapon}</b>.
-          Everything you salvaged is already on the workbench.
+          ${summary.scrapCarried === 0
+            ? 'You came back with nothing in your pockets either way.'
+            : summary.survived
+              ? `All ${summary.scrapCarried} of it came back through the door with you.`
+              : `You were carrying ${summary.scrapCarried}. Most of what was in your pockets is still out there.`}
         </div>
 
         <div style="font-size:10.5px; letter-spacing:2.4px; color:var(--steel); margin-top:12px; text-transform:uppercase;">

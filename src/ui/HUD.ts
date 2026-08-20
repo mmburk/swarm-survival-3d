@@ -44,6 +44,10 @@ export class HUD {
   private nightEl!: HTMLElement;
 
   private scrapEl!: HTMLElement;
+  private scrapLabelEl!: HTMLElement;
+  /** Last value written to the plate, so the shelter can poll without churn. */
+  private scrapShown: number = -1;
+  private scrapBanked: boolean = false;
   private killsEl!: HTMLElement;
   private streakEl!: HTMLElement;
 
@@ -282,7 +286,7 @@ export class HUD {
         <div style="display:flex; align-items:center; gap:9px;">
           ${emblemSvg('scrap', 26)}
           <div style="text-align:right;">
-            <div class="hud-label">Scrap</div>
+            <div id="scrap-label" class="hud-label">Carrying</div>
             <div id="scrap-val" style="font-family:var(--stencil); font-size:21px; color:var(--amber);">0</div>
           </div>
         </div>
@@ -390,6 +394,7 @@ export class HUD {
     this.nightEl = $('night-tier');
 
     this.scrapEl = $('scrap-val');
+    this.scrapLabelEl = $('scrap-label');
     this.killsEl = $('kills-val');
     this.streakEl = $('streak');
 
@@ -595,6 +600,21 @@ export class HUD {
   }
 
   /** Hides combat furniture while the player is in the shelter. */
+  /**
+   * The scrap plate means two different things in the two places it is shown:
+   * out on the street it is what is in the player's pockets and can still be
+   * lost, downstairs it is the pile on the workbench that cannot. Same number
+   * format, so the label is what has to carry the difference.
+   */
+  public setScrapReadout(value: number, banked: boolean): void {
+    if (value === this.scrapShown && banked === this.scrapBanked) return;
+    this.scrapShown = value;
+    this.scrapBanked = banked;
+    this.scrapEl.textContent = String(value);
+    this.scrapEl.style.color = banked ? CSS.bone : CSS.amber;
+    this.scrapLabelEl.textContent = banked ? 'Banked' : 'Carrying';
+  }
+
   public setShelterMode(inShelter: boolean): void {
     const combatOnly = ['vitals', 'minimap-card', 'weapon-card', 'sector-card', 'tally-card'];
     for (const id of combatOnly) {
@@ -665,7 +685,7 @@ export class HUD {
       (pip as HTMLElement).style.background = i < vitals.getUps ? CSS.amber : CSS.char;
     });
 
-    this.scrapEl.textContent = String(scrap);
+    this.setScrapReadout(scrap, false);
     this.killsEl.textContent = String(kills);
 
     this.altKey.className = cooldowns.alt > 0 ? 'abil cooling' : 'abil ready';

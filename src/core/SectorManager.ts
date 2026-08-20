@@ -306,14 +306,27 @@ export class SectorManager {
     this.gateB.activate(this.gatePosB, b.reward, true, b.caller, b.value);
   }
 
-  /** After the Behemoth: one gate home, one gate deeper with a voice on it. */
-  public openBossGates(anchor: THREE.Vector3): void {
+  /**
+   * After the Behemoth: one gate home, one gate deeper with a voice on it.
+   *
+   * `carried` is what the player has in their pockets right now, and it goes
+   * on the board in full. Every other plaque in the game pays exactly what it
+   * says; this one has to as well, or the choice it is asking for is being
+   * made blind.
+   */
+  public openBossGates(anchor: THREE.Vector3, carried: number): void {
     if (this.gatesOpen) return;
     this.gatesOpen = true;
     this.state = 'CHOOSING_GATE';
 
     this.placeGates(anchor);
-    this.offerA = { reward: 'HOME', caller: null, value: 'BANK THE RUN', amount: 0 };
+    const carry = Math.max(0, Math.round(carried));
+    this.offerA = {
+      reward: 'HOME',
+      caller: null,
+      value: carry > 0 ? `BANK ${carry} SCRAP` : 'BANK THE RUN',
+      amount: carry
+    };
     // The one door in the game that ignores the four-voice cap. Whatever picks
     // up after the Behemoth is not answering because it is on your band, and a
     // player who arrives here with four survivors behind them is the only one

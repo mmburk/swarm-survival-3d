@@ -33,6 +33,7 @@ import { HUD } from '../ui/HUD';
 import { MenuSystem } from '../ui/MenuSystem';
 import { BoonModal, generateBoons, applyBoon, CALLERS, type Boon, type Caller } from '../ui/BoonModal';
 import { pickFieldWorks } from '../config/FieldWorks';
+import { settleRun } from '../config/Progression';
 import { CodexModal } from '../ui/CodexModal';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { RadioDialogue } from '../ui/RadioDialogue';
@@ -578,7 +579,7 @@ export class Engine {
       this.hud.showBanner('THE BEHEMOTH', 'It has been growing since the cordon fell.', 3.6);
       this.sectorName = 'The Cordon';
     } else if (this.sectors.isTraderSector) {
-      this.trader.activate(SaveSystem.getScrap());
+      this.trader.activate(this.runScrap);
       this.hud.setSector(sector, info.name, 'Trade with Vic, then move on', nightLabel);
       this.hud.showBanner('THE UNDERPASS', 'Vic is still here. Vic is always still here.', 3.2);
       // Nothing to kill here, so the street counts as finished the moment it
@@ -629,7 +630,6 @@ export class Engine {
       case 'SCRAP': {
         const amount = offer.amount || Math.round((45 + this.sectors.current * 12) * this.sectors.night.scrapMult);
         this.runScrap += amount;
-        SaveSystem.addScrap(amount);
         this.audio.playScrap();
         this.hud.showToast(`Salvage yard: +${amount} scrap.`);
         break;
@@ -855,6 +855,16 @@ export class Engine {
     this.hud.setShelterMode(true);
     this.hud.hidePrompt();
 
+    // The only place in the game that writes salvage to the workbench. Walk
+    // back through the door and all of it goes in; go down out there and most
+    // of it stays out there, in the street, with everything else.
+    const settled = settleRun(this.runScrap, survived);
+    if (settled.banked > 0) SaveSystem.addScrap(settled.banked);
+
+    // The plate is still showing the carry, and the carry no longer exists.
+    // `update` does not run over a debrief, so it is switched over by hand.
+    this.hud.setScrapReadout(SaveSystem.getScrap(), true);
+
     SaveSystem.recordRunEnd(this.sectors.current, this.runKills, this.runScore, survived);
 
     // Snapshotted before the field is cleared, because the buff list lives on
@@ -880,7 +890,9 @@ export class Engine {
       sector: this.sectors.current,
       sectorName: this.sectorName,
       kills: this.runKills,
-      scrapEarned: this.runScrap,
+      scrapCarried: this.runScrap,
+      scrapBanked: settled.banked,
+      scrapLost: settled.lost,
       duration: (performance.now() - this.runStart) / 1000,
       weapon: this.player.weaponDef.name,
       seed: this.sectors.deck.seedLabel
@@ -1083,7 +1095,6 @@ export class Engine {
     if (this.cache.isTriggered && this.cache.addKill()) {
       const reward = Math.round(120 * this.sectors.night.scrapMult);
       this.runScrap += reward;
-      SaveSystem.addScrap(reward);
       this.audio.playScrap();
       this.hud.showToast(`Crate open — ${reward} scrap and a dressing.`);
       tmpDrop.set(this.cache.position.x, 0.3, this.cache.position.z + 1.4);
@@ -1121,7 +1132,6 @@ export class Engine {
 
     const bounty = Math.round(300 * this.sectors.night.scrapMult);
     this.runScrap += bounty;
-    SaveSystem.addScrap(bounty);
     SaveSystem.bumpTally('bossKills');
 
     this.hud.showBanner('THE BEHEMOTH IS DOWN', `+${bounty} scrap. Now choose.`, 4.0);
@@ -1129,7 +1139,7 @@ export class Engine {
 
   /** After the boss, one gate goes home and one goes deeper. */
   private openBossGates(): void {
-    this.sectors.openBossGates(this.player.position);
+    this.sectors.openBossGates(this.player.position, this.runScrap);
     this.hud.setObjective('One gate banks the run. The other has a voice on it.');
   }
 
@@ -1225,7 +1235,6 @@ export class Engine {
         const scavenger = 1 + SaveSystem.getRank('scavenger') * 0.15;
         const gained = Math.max(1, Math.round(p.value * scavenger * this.sectors.night.scrapMult));
         this.runScrap += gained;
-        SaveSystem.addScrap(gained);
         this.audio.playScrap();
       } else if (p.type === PickupType.BANDAGE) {
         this.player.heal(p.value);
@@ -1414,18 +1423,21 @@ export class Engine {
       this.trader.update(delta, this.player);
       const offer = this.trader.goodAt(this.player.position);
       if (offer) {
-        const affordable = SaveSystem.getScrap() >= offer.good.cost;
+        // Vic is paid out of what was picked up tonight. The workbench pile
+        // is downstairs and he is not going to walk you there.
+        const affordable = this.runScrap >= offer.good.cost;
         this.hud.showPrompt(
           offer.good.name,
           affordable ? `${offer.good.effect} — ${offer.good.cost} scrap` : `Not enough scrap (${offer.good.cost} needed)`
         );
         if (this.input.justInteracted && this.interactLock <= 0) {
           this.interactLock = 0.4;
-          if (affordable && SaveSystem.spendScrap(offer.good.cost)) {
+          if (affordable) {
+            this.runScrap -= offer.good.cost;
             offer.good.apply(this.player);
             SaveSystem.bumpTally('traderSpend', offer.good.cost);
             this.trader.markSold(offer.index);
-            this.trader.refreshTags(SaveSystem.getScrap());
+            this.trader.refreshTags(this.runScrap);
             this.audio.playPurchase();
             this.hud.showToast(`Traded for ${offer.good.name}.`);
           } else {
@@ -1565,6 +1577,9 @@ export class Engine {
         });
       }
 
+      // Downstairs the same plate shows the workbench pile, which anything
+      // bought at a station can move between frames.
+      this.hud.setScrapReadout(SaveSystem.getScrap(), true);
       this.updateShelter(delta);
     }
 
@@ -1581,7 +1596,7 @@ export class Engine {
         maxAdrenaline: this.player.maxAdrenaline,
         getUps: this.player.getUpsRemaining,
         maxGetUps: this.player.maxGetUps
-      }, SaveSystem.getScrap(), this.runKills, {
+      }, this.runScrap, this.runKills, {
         alt: this.player.altCooldown,
         shove: this.player.shoveCooldown,
         flareReady: this.player.adrenaline >= this.player.maxAdrenaline

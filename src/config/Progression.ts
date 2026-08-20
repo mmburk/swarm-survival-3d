@@ -106,3 +106,26 @@ export const NIGHT_TIERS: NightTier[] = [
   { level: 3, name: 'Long Night', desc: 'Something is driving them toward you.', enemyHealth: 1.8, enemySpeed: 1.2, enemyCount: 1.6, scrapMult: 2.2 },
   { level: 4, name: 'Last Light', desc: 'There is no morning at the end of this one.', enemyHealth: 2.3, enemySpeed: 1.3, enemyCount: 1.9, scrapMult: 3.0 }
 ];
+
+/**
+ * What a bad night costs.
+ *
+ * Scrap is *carried*, not banked. Everything picked up on the street stays in
+ * the player's pockets for the whole run — the workbench never sees a single
+ * piece of it until the run is over. Walking back through the door after the
+ * Behemoth hands over all of it; dying (or turning back from the pause menu)
+ * leaves everything but this share on the ground.
+ *
+ * The door after the Behemoth only means something because this number is
+ * less than one. It is the only thing standing between "go deeper" and a
+ * decision the player never has to think about.
+ */
+export const SCRAP_KEPT_ON_DEATH = 0.4;
+
+/** Splits a run's carry at the door. Rounded so the two halves always sum. */
+export function settleRun(carried: number, survived: boolean): { banked: number; lost: number } {
+  const safe = Math.max(0, Math.round(carried));
+  if (survived) return { banked: safe, lost: 0 };
+  const banked = Math.floor(safe * SCRAP_KEPT_ON_DEATH);
+  return { banked, lost: safe - banked };
+}

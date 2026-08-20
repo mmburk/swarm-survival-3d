@@ -64,7 +64,7 @@ export class CodexModal {
         <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-top:18px;">
           ${stat('Put down', String(sheet.kills))}
           ${stat('Score', String(sheet.score))}
-          ${stat('Scrap this run', String(sheet.scrapEarned))}
+          ${stat('Scrap on you', String(sheet.scrapEarned))}
           ${stat('Get-ups left', `${player.getUpsRemaining} / ${player.maxGetUps}`)}
         </div>
 

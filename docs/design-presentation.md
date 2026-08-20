@@ -239,7 +239,7 @@ Bu bir mimari karar: *işaret ile ödül asla birbirinden ayrılamaz.*
 | **MEDICAL POST** | "+15 MAX · PATCH UP" | +15 maks can, 55 iyileşme |
 | **ARMS CACHE** | "+12% DAMAGE" | ×1.12 hasar, ×0.9 ağır atış CD |
 | **VIC'S UNDERPASS** | "GOODS FOR SCRAP" | Sonraki sektör Vic olur |
-| **THE WAY BACK** | "BANK THE RUN" | Sadece boss sonrası. Koşu biter, sağ dönersin |
+| **THE WAY BACK** | "BANK 640 SCRAP" (cebindeki gerçek sayı) | Sadece boss sonrası. Cebindekinin **tamamı** tezgâha yazılır, koşu biter |
 
 **Dağılım:** %72 ihtimalle kapılardan biri **her zaman** bir RADIO CONTACT olur.
 Boonlar build'in omurgası olduğu için nadir olmamalılar. TRADE kapısı ancak
@@ -344,6 +344,29 @@ you.") — zorluk seçimi bile kurgunun içinden konuşuyor.
 ---
 
 ## 10. HAT: EKONOMİ HATTI
+
+### Cep ve tezgâh — scrap iki yerde durur
+
+Sokakta toplanan hiçbir şey anında kalıcı kayda yazılmaz. **Cep** (`runScrap`)
+gecenin tamamı boyunca oyuncunun üstünde durur; **tezgâh** (`SaveSystem.scrap`)
+yalnızca koşu bittiğinde, kapıda bir kez yazılır:
+
+| Koşu nasıl bitti | Tezgâha giden |
+|---|---|
+| THE WAY BACK'ten yürüyerek | cebin **%100**'ü |
+| Ölüm (veya duraklatma menüsünden dönme) | cebin **%40**'ı — gerisi sokakta kalır |
+
+Oran tek bir yerde: `SCRAP_KEPT_ON_DEATH` (`src/config/Progression.ts`), ayrımı
+yapan da tek bir fonksiyon: `settleRun()`. Bu sayı 1'den küçük olduğu için
+Behemoth'tan sonraki kapı gerçek bir karar: cebinde 640 varken daha derine
+inmek 384 scrap'i masaya koymak demek.
+
+**Vic de cepten ödenir**, tezgâhtan değil. Yani kalıcı birikimi olan bir oyuncu
+Vic'in tezgâhını her koşu bedavaya süpüremiyor; ne aldıysan bu gece
+topladığınla alıyorsun.
+
+**HUD'daki plaka iki farklı sayıdır ve hangisi olduğunu yazar:** sokakta
+"CARRYING" (kaybedilebilir), sığınakta "BANKED" (kaybedilemez).
 
 ### Scrap kaynakları
 - Düşman ölümü: 1–4 parça × Scavenger (1 + 0.15×rank) × gece çarpanı
@@ -579,14 +602,12 @@ olur.*
 
 ### Tasarım riskleri
 
-1. **Ölümün bedeli neredeyse yok.** Scrap toplandığı anda kalıcı kayda yazılıyor
-   (`SaveSystem.addScrap`). Yani "eve dön" kapısı aslında hiçbir şeyi
-   *kurtarmıyor* — koşuyu sadece bitiriyor. Hades'te ölünce Darkness kalır ama
-   *gerginlik* boonların kaybından gelir; burada boonlar da kaybediliyor ama
-   oyuncu bunu anlık olarak hissetmiyor çünkü kaybedecek biriken bir şey yok.
-   **Öneri seçenekleri:** (a) toplanan scrap'in bir kısmı ancak sağ dönünce
-   yazılsın, (b) derinlik çarpanı sadece dönüşte uygulansın, (c) "eve dön"
-   kapısına gerçek bir teklif (koşuya özel kalıcı ödül) eklensin.
+1. ~~**Ölümün bedeli neredeyse yok.**~~ **Kapandı** (§10, "Cep ve tezgâh").
+   Scrap artık toplandığı anda değil, kapıda yazılıyor; ölünce %60'ı sokakta
+   kalıyor. Boonların kaybına ölçülebilir bir kayıp eşlik ediyor ve "eve dön"
+   kapısı gerçekten bir şey kurtarıyor. **Açık kalan:** %40 oranı ölçülmedi —
+   playtest verisi olmadan seçilmiş bir sayı. Çok cömertse derinlik baskısı
+   zayıf kalır, çok sertse oyuncu boss'tan sonra hiç derine inmez.
 2. **Boon havuzu sığ.** 20 boon, 4 kademe. Hades'te build çeşitliliğini yaratan
    şey duo boon'lar, legendary'ler ve boon'un boon'u değiştirmesi. Burada
    boonlar birbirine dokunmuyor — hepsi bağımsız sayı çarpanı. **Build kimliği
@@ -595,7 +616,9 @@ olur.*
 4. **Field mod silah başına bir tane.** Aspect sisteminin verdiği "aynı silahı
    yeniden keşfetme" duygusu yarım kalıyor.
 5. **Bankaya yazma sadece 5 sektörde bir.** Boss'tan hemen sonra ölürsen 5
-   sektörlük çabanın (scrap hariç) hiçbir kapanışı olmuyor.
+   sektörlük çabanın hiçbir kapanışı olmuyor — ve artık cebindekinin %60'ı da
+   gidiyor. Ölüm bedeli eklendikten sonra bu madde **daha keskin** hâle geldi:
+   çıkış noktalarının seyrekliği tek başına bir tasarım sorusu.
 6. **Sektörler kozmetik olarak farklı, mekanik olarak aynı.** Beş bölge farklı
    ışık ve isim taşıyor ama arena şekli, prop dağılımı ve hedef aynı. Bölgeye
    özel bir kural (ör. hastanede görüş kısıtlı, kordonda mayınlı bölge) yok.
@@ -633,7 +656,7 @@ olur.*
 | # | İş | Neden |
 |---|---|---|
 | 1 | Telemetri + 10 kişilik playtest | Bundan sonraki her karar veri istiyor |
-| 2 | Ölüm bedelini yeniden tasarla (§19.1) | Koşunun gerilimi buna bağlı |
+| 2 | ~~Ölüm bedeli~~ — yapıldı; kalan iş %40 oranını playtest'le ayarlamak | Koşunun gerilimi buna bağlı |
 | 3 | Boonların birbirine dokunmasını sağla (duo/upgrade) | Build derinliğinde en yüksek getiri |
 | 4 | 2. ve 3. boss | Uzun koşu tekrarını kırar |
 | 5 | Silah başına 2. field mod | Yeniden oynanabilirlik |
@@ -696,5 +719,7 @@ Geçiş:       0.62 sn fade, dünya 0.31 sn'de değişir
 Boss:        900 can · faz 2 %50'de · slam 4.2→3.2 sn · 8 m / 38 hasar
 Fişek:       20 m çekim · tick (16+sek×2) · 5 sn sonra 12 m / (260+sek×30)
 Sandık:      18 sn'de 12 kill · +6 anlık düşman · 120 scrap
+Ölüm:        cebin %40'ı tezgâha yazılır, %60'ı sokakta kalır
+Dönüş:       cebin %100'ü
 Tam açılım:  5.335 scrap
 ```
