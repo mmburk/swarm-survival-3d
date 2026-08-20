@@ -209,6 +209,28 @@ için ince zombilerin içinden geçme riski doğar. Doğrusu sabit adımlı bir
 birikimli döngü, ama bu şu anki `update(delta)` sözleşmesini baştan yazmak
 demek.
 
+### 11. Bütün gürültü patlamaları aynı sesi çalıyor
+
+**Yer:** `src/core/AudioManager.ts` — `noiseBurst()`, `getNoise()`
+**Durum:** açık. Ses planının 1. fazında düzeltilecek.
+
+`getNoise()` 1.2 saniyelik tek bir gürültü tamponu üretip önbelleğe alıyor —
+buraya kadar doğru, amaç zaten her atışta yeniden rastgele sayı üretmemek. Ama
+`noiseBurst()` kaynağı hep `src.start(t0)` ile, yani **offset vermeden**
+başlatıyor. Dolayısıyla her patlama tamponun aynı ilk dilimini okuyor.
+
+Sonuç: Ranger'ın 0.115 saniyede bir attığı her mermi *birebir aynı örnek*,
+üstüne sadece farklı bir filtre zarfı biniyor. Silah seslerinin sentetik
+duyulmasının asıl sebebi bu — 656 satırda yalnızca iki `Math.random` olması
+değil, olanın da tek seferlik olması.
+
+Yan etki: tamponun 1.2 saniyesinin büyük kısmı hiç çalınmıyor. En uzun patlama
+1.3 sn (boss kükremesi), geri kalan her şey 0.75 sn'nin altında.
+
+Düzeltmesi tek satır — `src.start(t0, Math.random() * (1.2 - süre))` — ama
+tek başına yeterli değil; filtre ve ses seviyesine de atış başına küçük bir
+sapma gerekiyor. İkisi birlikte planlandı.
+
 ---
 
 ## Bug değil, ama bilinsin
