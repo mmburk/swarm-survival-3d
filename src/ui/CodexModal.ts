@@ -1,5 +1,6 @@
-import { injectTheme, CSS } from '../theme/Palette';
+import { injectTheme, CSS, TIER_COLOR } from '../theme/Palette';
 import type { Player } from '../entities/Player';
+import { CALLERS, heldSignals, pairingLeads } from './BoonModal';
 
 export interface RunSheet {
   sector: number;
@@ -40,7 +41,8 @@ export class CodexModal {
 
   public show(player: Player, sheet: RunSheet, onClose: () => void): void {
     this.onClose = onClose;
-    const buffs = player.getActiveBuffList();
+    const signals = heldSignals(player.heldBoons);
+    const leads = pairingLeads(player.heldBoons);
 
     const stat = (label: string, value: string) => `
       <div style="padding:10px 12px; background:rgba(0,0,0,0.25); border:1px solid var(--char);">
@@ -84,6 +86,9 @@ export class CodexModal {
                 <div class="ll-tag">${player.weapon.damage} dmg${player.weapon.pellets > 1 ? ` ×${player.weapon.pellets}` : ''}</div>
                 <div class="ll-tag">${(1 / player.weapon.cooldown).toFixed(1)}/s</div>
                 <div class="ll-tag">pierce ${player.weapon.pierce + player.bonusPierce}</div>
+                ${player.pierceGrowth > 0
+                  ? `<div class="ll-tag" style="border-color:${TIER_COLOR.BONDED}; color:${TIER_COLOR.BONDED};">+${Math.round(player.pierceGrowth * 100)}% per body</div>`
+                  : ''}
               </div>
             </div>
 
@@ -101,22 +106,55 @@ export class CodexModal {
           </div>
 
           <div>
-            <div class="ll-sub" style="margin:0 0 10px;">Who has been on the radio</div>
+            <div class="ll-sub" style="margin:0 0 10px;">What they gave you</div>
             ${
-              buffs.length === 0
+              signals.length === 0
                 ? `<div style="font-size:13px; color:var(--ash); font-style:italic; padding:18px 0;">
                      Nobody yet. Clear a sector and take a signal at the gate.
                    </div>`
                 : `<div style="display:flex; flex-direction:column; gap:8px;">
-                    ${buffs.map((b) => `
-                      <div style="display:flex; align-items:center; gap:13px; padding:11px 14px;
-                                  background:rgba(0,0,0,0.25); border:1px solid var(--char); border-left:3px solid ${b.color};">
-                        <div style="width:38px; height:38px; display:grid; place-content:center;
-                                    border:1px solid ${b.color}; color:${b.color};
-                                    font-family:var(--stencil); font-size:19px;">${b.icon}</div>
-                        <div>
-                          <div style="font-family:var(--stencil); font-size:16px; letter-spacing:1.6px; color:${b.color};">${b.name}</div>
-                          <div style="font-size:11.5px; color:var(--ash); margin-top:1px;">${b.count} offer${b.count === 1 ? '' : 's'} taken</div>
+                    ${signals.map((s) => {
+                      const ink = s.bonded ? TIER_COLOR.BONDED : CALLERS[s.caller].color;
+                      return `
+                      <div style="padding:10px 13px; background:rgba(0,0,0,0.25);
+                                  border:1px solid var(--char); border-left:3px solid ${ink};">
+                        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+                          <div style="font-family:var(--stencil); font-size:15px; letter-spacing:1.3px; color:var(--paper);">
+                            ${s.title}
+                          </div>
+                          <div style="font-size:9.5px; letter-spacing:1.8px; color:${ink}; white-space:nowrap;">
+                            ${s.bonded ? 'BONDED' : `${CALLERS[s.caller].name} · ${s.tier}`}
+                          </div>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--ash); margin-top:3px; line-height:1.45;">${s.text}</div>
+                      </div>`;
+                    }).join('')}
+                   </div>`
+            }
+
+            ${
+              leads.length === 0
+                ? ''
+                : `<div class="ll-sub" style="margin:18px 0 10px;">Half of something</div>
+                   <div style="display:flex; flex-direction:column; gap:8px;">
+                    ${leads.map((l) => `
+                      <div style="padding:10px 13px; background:rgba(0,0,0,${l.ready ? '0.3' : '0.16'});
+                                  border:1px ${l.ready ? 'solid' : 'dashed'} ${TIER_COLOR.BONDED}${l.ready ? '' : '55'};
+                                  border-left:3px solid ${TIER_COLOR.BONDED}${l.ready ? '' : '55'};">
+                        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+                          <div style="font-family:var(--stencil); font-size:15px; letter-spacing:1.3px; color:${TIER_COLOR.BONDED};">
+                            ${l.title}
+                          </div>
+                          ${l.ready
+                            ? `<div style="font-size:9.5px; letter-spacing:1.8px; color:${TIER_COLOR.BONDED}; white-space:nowrap;">READY</div>`
+                            : ''}
+                        </div>
+                        <div style="font-size:11.5px; color:var(--ash); margin-top:3px; line-height:1.45;">${l.text}</div>
+                        <div style="font-size:11px; color:var(--steel); margin-top:5px;">
+                          ${l.ready
+                            ? `Both halves are on the sheet. It is on the next handset you answer.`
+                            : `You have <b style="color:var(--bone);">${l.have.join(', ')}</b> — still needs
+                               <b style="color:${TIER_COLOR.BONDED};">${l.missing.join(', ')}</b>.`}
                         </div>
                       </div>
                     `).join('')}

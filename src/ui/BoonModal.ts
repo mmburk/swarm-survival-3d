@@ -389,6 +389,83 @@ function boonScale(boon: Boon): number {
   return boon.bonded ? 1 : TIER_SCALE[boon.tier];
 }
 
+/** One line on the run sheet: a favour the run is actually carrying. */
+export interface HeldSignal {
+  id: string;
+  title: string;
+  caller: Caller;
+  tier: Tier;
+  text: string;
+  bonded: boolean;
+}
+
+/**
+ * A bonded signal the run is part of the way to, and what is still missing.
+ *
+ * Without this the pairings would only ever be found by accident: nothing else
+ * in the game tells the player that two particular favours add up to a third.
+ * A lead is not a promise — the parent still has to be offered — but it turns
+ * "take the biggest number" into "take the one that finishes something".
+ */
+export interface PairingLead {
+  id: string;
+  title: string;
+  text: string;
+  have: string[];
+  missing: string[];
+  /**
+   * Both parents are on the sheet and it has not been taken yet — so it is
+   * sitting in the pool waiting for the player to walk through a door with a
+   * voice on it. Worth saying out loud: a run can hold both halves for three
+   * sectors without seeing the card, if it keeps taking salvage gates.
+   */
+  ready: boolean;
+}
+
+function titleOf(id: string): string {
+  return TEMPLATES.find((t) => t.id === id)?.title ?? PAIRINGS.find((p) => p.id === id)?.title ?? id;
+}
+
+/** Everything on the sheet, in the order it would have been picked up. */
+export function heldSignals(held: ReadonlyMap<string, Tier>): HeldSignal[] {
+  const out: HeldSignal[] = [];
+  for (const [id, tier] of held) {
+    const pairing = PAIRINGS.find((p) => p.id === id);
+    const template: BoonTemplate | undefined = pairing ?? TEMPLATES.find((t) => t.id === id);
+    if (!template) continue;
+    const boon: Boon = { ...template, tier, bonded: !!pairing };
+    out.push({
+      id,
+      title: template.title,
+      caller: template.caller,
+      tier,
+      text: boonText(boon),
+      bonded: !!pairing
+    });
+  }
+  return out;
+}
+
+/** Pairings the run has started: one parent held, or both and not yet taken. */
+export function pairingLeads(held: ReadonlyMap<string, Tier>): PairingLead[] {
+  const leads: PairingLead[] = [];
+  for (const p of PAIRINGS) {
+    if (held.has(p.id)) continue;
+    const have = p.requires.filter((r) => held.has(r));
+    const missing = p.requires.filter((r) => !held.has(r));
+    if (have.length === 0) continue;
+    leads.push({
+      id: p.id,
+      title: p.title,
+      text: p.describe(1),
+      have: have.map(titleOf),
+      missing: missing.map(titleOf),
+      ready: missing.length === 0
+    });
+  }
+  return leads;
+}
+
 export function boonText(boon: Boon): string {
   return boon.describe(boonScale(boon));
 }

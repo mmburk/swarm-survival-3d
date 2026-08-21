@@ -534,8 +534,11 @@ grenli, tek sert gölge, sıcak rim ışığı — Hades'in boyalı key art dili
 - **Toast'lar:** her ödül ve satın alma için tek satır teyit.
 - **Prompt sistemi:** yaklaşınca "Chained Crate — Break the lock: 12 kills in
   18s" gibi bağlamsal E-tuşu ipucu.
-- **Codex / Koşu Kâğıdı (TAB):** aktif boonlar, hangi çağırandan kaç tane,
-  koşu istatistikleri.
+- **Codex / Koşu Kâğıdı (TAB):** taşınan sinyallerin tamamı (ad, çağıran,
+  kademe ve etkisinin kartla aynı metni), koşu istatistikleri, ve **"Half of
+  Something"** bölümü: bir ebeveynini taşıdığın bağlı sinyaller, neyin eksik
+  olduğuyla birlikte — iki ebeveyni de tamamsa `READY` etiketiyle. Bağlı
+  sinyalleri kazayla değil bilerek bulunabilir yapan şey bu bölüm.
 - **Loading ekranları:** sektör adıyla, 0.7–0.9 sn — dünya değişimini gizleyen
   ve nefes aldıran perde.
 - **Kapı tabelaları:** her ödül tipi için ayrı el-boyaması amblem ve renk.
