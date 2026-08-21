@@ -217,5 +217,11 @@ export const TIER_COLOR: Record<string, string> = {
   SALVAGED: '#8b8878',
   SOLID: '#7f9a63',
   PRIME: '#d9a441',
-  RELIC: '#a8552b'
+  RELIC: '#a8552b',
+  /**
+   * Bonded signals. Deliberately the coldest thing on the card rack: every
+   * other tier warms up as it improves, and this one steps sideways instead,
+   * because it is not a better version of anything.
+   */
+  BONDED: '#8fa9b8'
 };

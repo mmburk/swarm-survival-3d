@@ -608,10 +608,16 @@ olur.*
    kapısı gerçekten bir şey kurtarıyor. **Açık kalan:** %40 oranı ölçülmedi —
    playtest verisi olmadan seçilmiş bir sayı. Çok cömertse derinlik baskısı
    zayıf kalır, çok sertse oyuncu boss'tan sonra hiç derine inmez.
-2. **Boon havuzu sığ.** 20 boon, 4 kademe. Hades'te build çeşitliliğini yaratan
-   şey duo boon'lar, legendary'ler ve boon'un boon'u değiştirmesi. Burada
-   boonlar birbirine dokunmuyor — hepsi bağımsız sayı çarpanı. **Build kimliği
-   sayısal, mekanik değil.** En yüksek getirili tek iyileştirme burada.
+2. **Boon havuzu sığ.** *Kısmen kapandı.* Üç yapısal değişiklik yapıldı:
+   (a) koşu artık ne taşıdığını hatırlıyor, (b) aynı boon iki kez teklif
+   edilmiyor — her çağıranın dördü sonlu bir set, (c) **bağlı sinyaller
+   (bonded)** eklendi: iki belirli boon elde varken açılan, sayı değil *kural*
+   değiştiren bir kart sınıfı. Altyapı hazır ve bir tanesi yazılı (*Through And
+   Through* — mermi her deldiği gövdeden %35 daha sert çıkıyor; ölçüldü:
+   24 → 32 → 43 → 58).
+
+   **Açık kalan:** şu an tek bir bağlı sinyal var. Hades'teki derinliği vermek
+   için 6-8 tane gerekiyor ve her biri gerçek bir mekanik demek, çarpan değil.
 3. **Tek boss.** 5, 10, 15. sektörlerde aynı Behemoth. Uzun koşu tekrara giriyor.
 4. **Field mod silah başına bir tane.** Aspect sisteminin verdiği "aynı silahı
    yeniden keşfetme" duygusu yarım kalıyor.
@@ -663,7 +669,7 @@ olur.*
 |---|---|---|
 | 1 | Telemetri + 10 kişilik playtest | Bundan sonraki her karar veri istiyor |
 | 2 | ~~Ölüm bedeli~~ — yapıldı; kalan iş %40 oranını playtest'le ayarlamak | Koşunun gerilimi buna bağlı |
-| 3 | Boonların birbirine dokunmasını sağla (duo/upgrade) | Build derinliğinde en yüksek getiri |
+| 3 | ~~Boonların birbirine dokunması~~ — altyapı ve ilk bağlı sinyal yapıldı; kalan iş 5-7 tane daha | Build derinliğinde en yüksek getiri |
 | 4 | 2. ve 3. boss | Uzun koşu tekrarını kırar |
 | 5 | Silah başına 2. field mod | Yeniden oynanabilirlik |
 | 6 | Bölgeye özel mekanik kural | Sektörleri kozmetikten çıkarır |

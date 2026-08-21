@@ -76,9 +76,34 @@ export interface Boon {
   describe: (k: number) => string;
   apply: (player: Player, k: number) => void;
   tier: Tier;
+  /**
+   * A bonded signal: two people who have already helped you working out, over
+   * the air, what they can do together. Fixed strength — it does not scale
+   * with tier, because what it changes is a rule rather than a number.
+   */
+  bonded?: boolean;
 }
 
 type BoonTemplate = Omit<Boon, 'tier'>;
+
+/**
+ * BONDED SIGNALS.
+ *
+ * The one thing twenty independent multipliers could never do: make the last
+ * favour you took change what the next one is worth. A bonded signal is only
+ * ever offered to a run that is already carrying both of its parents, so it is
+ * the reward for committing to a direction rather than taking the biggest
+ * number on each card.
+ *
+ * They change a rule, not a coefficient. That is the whole point of them —
+ * a run's identity has to be mechanical or it is just arithmetic.
+ */
+interface PairingTemplate extends BoonTemplate {
+  /** Both of these have to be on the run sheet already. */
+  requires: [string, string];
+  /** Shown on the card so the player can see where it came from. */
+  parents: string;
+}
 
 const TEMPLATES: BoonTemplate[] = [
   // ---- SARGE: straight lethality -----------------------------------------
@@ -241,6 +266,19 @@ const TEMPLATES: BoonTemplate[] = [
   }
 ];
 
+const PAIRINGS: PairingTemplate[] = [
+  {
+    id: 'through_and_through',
+    // Mae builds the round; the quiet one tells you where it goes.
+    caller: 'MAE',
+    title: 'Through And Through',
+    requires: ['hardened_core', 'exit_wound'],
+    parents: 'Hardened Cores + Exit Wound',
+    describe: () => 'Every body a round passes through makes it hit 35% harder than the last.',
+    apply: (p) => { p.pierceGrowth = 0.35; }
+  }
+];
+
 function rollTier(sectorNumber: number): Tier {
   // Better gear turns up deeper into the run.
   const bias = Math.min(0.3, sectorNumber * 0.03);
@@ -259,13 +297,51 @@ function rollTier(sectorNumber: number): Tier {
  * a god's symbol. The mixed draw below is the fallback for anything that hands
  * out a signal without a door in front of it.
  */
-export function generateBoons(sectorNumber: number, favouredCaller?: Caller, lockedCaller?: Caller): Boon[] {
+export function generateBoons(
+  sectorNumber: number,
+  favouredCaller?: Caller,
+  lockedCaller?: Caller,
+  held?: ReadonlySet<string>
+): Boon[] {
+  const taken = held ?? new Set<string>();
+
+  // A favour already on the sheet is never offered twice. It used to be, and
+  // taking it again simply multiplied the same number a second time — which is
+  // the least interesting thing a card can do. Each caller's four are now a
+  // finite set, and running that set down is what earns a bonded signal.
+  const fresh = TEMPLATES.filter((b) => !taken.has(b.id));
+
+  // Anything the run has now qualified for. These jump the queue: a bonded
+  // signal is rare enough that burying it under a random draw would mean most
+  // players never see one.
+  const earned: BoonTemplate[] = PAIRINGS.filter(
+    (p) => !taken.has(p.id) && p.requires.every((r) => taken.has(r))
+  );
+
+  const bond = (b: BoonTemplate): Boon => ({ ...b, tier: 'RELIC', bonded: true });
+
   if (lockedCaller) {
-    const theirs = TEMPLATES.filter((b) => b.caller === lockedCaller).sort(() => Math.random() - 0.5);
-    return theirs.slice(0, 3).map((b) => ({ ...b, tier: rollTier(sectorNumber) }));
+    const theirs = fresh.filter((b) => b.caller === lockedCaller).sort(() => Math.random() - 0.5);
+    const offers: Boon[] = earned.slice(0, 1).map(bond);
+
+    for (const b of theirs) {
+      if (offers.length >= 3) break;
+      offers.push({ ...b, tier: rollTier(sectorNumber) });
+    }
+
+    // Their four are spent. Rather than showing a short hand, the rest of the
+    // band covers — somebody else on the dial answers instead.
+    if (offers.length < 3) {
+      const others = fresh.filter((b) => b.caller !== lockedCaller).sort(() => Math.random() - 0.5);
+      for (const b of others) {
+        if (offers.length >= 3) break;
+        offers.push({ ...b, tier: rollTier(sectorNumber) });
+      }
+    }
+    return offers;
   }
 
-  const pool = [...TEMPLATES];
+  const pool = [...fresh];
 
   // Nudge one favoured-caller offer to the front when the player has a theme.
   if (favouredCaller && Math.random() < 0.5) {
@@ -293,17 +369,28 @@ export function generateBoons(sectorNumber: number, favouredCaller?: Caller, loc
     usedCallers.add(b.caller);
   }
 
-  return chosen.map((b) => ({ ...b, tier: rollTier(sectorNumber) }));
+  const offers: Boon[] = earned.slice(0, 1).map(bond);
+  for (const b of chosen) {
+    if (offers.length >= 3) break;
+    offers.push({ ...b, tier: rollTier(sectorNumber) });
+  }
+  return offers;
 }
 
 export function applyBoon(boon: Boon, player: Player): void {
-  const k = TIER_SCALE[boon.tier];
+  const k = boonScale(boon);
   boon.apply(player, k);
+  player.heldBoons.set(boon.id, boon.tier);
   player.addBuff(boon.caller, CALLERS[boon.caller].name, boon.caller[0], CALLERS[boon.caller].color);
 }
 
+/** Bonded signals change a rule, so there is no tier for them to scale with. */
+function boonScale(boon: Boon): number {
+  return boon.bonded ? 1 : TIER_SCALE[boon.tier];
+}
+
 export function boonText(boon: Boon): string {
-  return boon.describe(TIER_SCALE[boon.tier]);
+  return boon.describe(boonScale(boon));
 }
 
 export class BoonModal {
@@ -469,20 +556,24 @@ export class BoonModal {
 
     const cards = boons.map((b, i) => {
       const info = CALLERS[b.caller];
-      const tierColor = TIER_COLOR[b.tier];
+      const tierColor = b.bonded ? TIER_COLOR.BONDED : TIER_COLOR[b.tier];
+      const parents = b.bonded ? PAIRINGS.find((p) => p.id === b.id)?.parents : undefined;
       return `
-        <div class="sig-card" data-idx="${i}" style="border-left-color:${info.color}; animation-delay:${i * 60}ms;">
+        <div class="sig-card" data-idx="${i}" style="border-left-color:${tierColor}; animation-delay:${i * 60}ms;">
           <div class="sig-mark">${callerSigil(b.caller, 150, info.color)}</div>
-          <div class="sig-tier" style="color:${tierColor}; border-color:${tierColor};">${b.tier}</div>
+          <div class="sig-tier" style="color:${tierColor}; border-color:${tierColor};">${b.bonded ? 'BONDED' : b.tier}</div>
           ${
-            single
-              ? `<div class="sig-band">Offer ${i + 1} of ${boons.length}</div>`
-              : `<div class="sig-band">${info.band}</div>
-                 <div class="sig-caller" style="color:${info.color};">${info.name}</div>`
+            b.bonded
+              ? `<div class="sig-band" style="color:${tierColor};">Two of them worked this out</div>`
+              : single
+                ? `<div class="sig-band">Offer ${i + 1} of ${boons.length}</div>`
+                : `<div class="sig-band">${info.band}</div>
+                   <div class="sig-caller" style="color:${info.color};">${info.name}</div>`
           }
-          <div class="sig-title"${single ? ' style="margin-top:8px;"' : ''}>${b.title}</div>
+          <div class="sig-title"${single || b.bonded ? ' style="margin-top:8px;"' : ''}>${b.title}</div>
           <div class="sig-desc">${boonText(b)}</div>
-          ${single ? '' : `<div class="sig-sting">${info.sting}</div>`}
+          ${parents ? `<div class="sig-sting" style="color:${tierColor};">${parents}</div>` : ''}
+          ${single || b.bonded ? '' : `<div class="sig-sting">${info.sting}</div>`}
           <div class="sig-take">ANSWER</div>
         </div>
       `;

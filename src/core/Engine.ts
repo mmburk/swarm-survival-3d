@@ -797,7 +797,12 @@ export class Engine {
   /** `host` is whoever the gate promised; without one the draw is mixed. */
   private offerSignal(host?: Caller): void {
     this.uiPaused = true;
-    const offers = generateBoons(this.sectors.current, this.favouredCaller(), host);
+    const offers = generateBoons(
+      this.sectors.current,
+      this.favouredCaller(),
+      host,
+      new Set(this.player.heldBoons.keys())
+    );
     this.boons.show(offers, (boon: Boon) => {
       applyBoon(boon, this.player);
       // Taking it — not being offered it — is what puts a survivor in the run's
@@ -1202,6 +1207,11 @@ export class Engine {
         // A round only survives the hit if it has pierce left.
         if (b.pierceLeft > 0) {
           b.pierceLeft--;
+          // Through And Through: the round is worth more on the far side of a
+          // body than it was going in, so a queue of them is worth lining up.
+          if (this.player.pierceGrowth > 0) {
+            b.damage = Math.round(b.damage * (1 + this.player.pierceGrowth));
+          }
         } else {
           b.deactivate();
           break;

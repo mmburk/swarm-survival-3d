@@ -11,6 +11,7 @@ import { tint, shade } from '../graphics/VertexTint';
 import { HEX } from '../theme/Palette';
 import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId, type WeaponStats } from '../config/Weapons';
 import type { Enemy } from './Enemy';
+import type { Tier } from '../ui/BoonModal';
 
 const tempLook = new THREE.Vector3();
 const tempCamTarget = new THREE.Vector3();
@@ -96,6 +97,11 @@ export class Player {
   public healPotency: number = 1.0;
   /** Chance a killed enemy bursts, damaging its neighbours. */
   public burstChance: number = 0;
+  /**
+   * How much a round gains for every body it has already gone through. Zero
+   * unless a bonded signal turns pierce into something that builds.
+   */
+  public pierceGrowth: number = 0;
   /** Flat damage reduction fraction. */
   public toughness: number = 0;
 
@@ -111,6 +117,16 @@ export class Player {
 
   public getUpsRemaining: number = 1;
   public maxGetUps: number = 1;
+
+  /**
+   * Which signals the run is carrying, and at what tier.
+   *
+   * The run used to remember only *who* had answered, never what they gave, so
+   * the same favour could be handed over twice and nothing could ever be
+   * offered on the strength of what was already on the sheet. Bonded signals
+   * read this.
+   */
+  public readonly heldBoons: Map<string, Tier> = new Map();
 
   public onTakeDamage?: () => void;
   public onGetUp?: () => void;
@@ -509,7 +525,9 @@ export class Player {
     this.altCooldownMultiplier = 1.0;
     this.healPotency = 1.0 + opts.healBonus;
     this.burstChance = 0;
+    this.pierceGrowth = 0;
     this.toughness = 0;
+    this.heldBoons.clear();
 
     this.maxGetUps = 1 + opts.extraGetUps;
     this.getUpsRemaining = this.maxGetUps;
