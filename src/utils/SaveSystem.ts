@@ -33,7 +33,11 @@ export interface DisplaySettings {
 }
 
 export interface SaveData {
-  /** The single persistent currency. Kept on death — that is the whole point. */
+  /**
+   * The single persistent currency — the pile on the workbench, not what is in
+   * the player's pockets. A run's carry only lands here when the run ends, and
+   * dying leaves most of it in the street. See `settleRun`.
+   */
   scrap: number;
   meta: MetaRanks;
   unlockedWeapons: WeaponId[];
