@@ -514,6 +514,15 @@ Silah rafının hayvan hâli: **biri seninle gelir, geri kalanı kalır.** Fark�
 3. **Sığınakta görünüyorlar.** Seçilen hayvan yükleme kapağının olduğu köşedeki
    ağılda duruyor; oyuncu satın aldığı şeyin yanından geçebiliyor. Rook'un
    istisnası: odanın kendi köpeği, ağılı hiç kullanmıyor.
+4. **Sana geleni hedef alıyorlar.** Ölüler sırayla geldiği için (§4) "en yakın
+   ceset" artık "senin derdin olan ceset" demek değil — bekleme halkası
+   hayvanla senin aranda duruyor. Hedef seçiminde saldırı sırası olan cesede
+   5 metrelik bir avans veriliyor: filtre değil, ağırlık — kimse saldırmıyorsa
+   seçim yine düz "en yakın". Ölçüldü (30 sn, 16 gövde, 3 sıra, aynı tohum):
+   Rook'un ısırıklarının gerçekten saldıran birine gitme oranı %28 → %92,
+   oyuncudan 6 m'den uzakta geçirdiği süre %62 → %10. **Bedeli var:** artık
+   kavganın içinde durduğu için daha hızlı yıpranıyor (30 saniye sonra kalan
+   kondisyon %60 → %23). Hayvan işini yapıyor, ve işini yapmak yıpratıyor.
 
 **Odanın iki duvarı yok.** Kamera güneydoğu köşesinden bakıyor; doğu ve güney
 duvarları kamerayla zemin arasında kalacağı için **hiç inşa edilmemiş.** Sınır

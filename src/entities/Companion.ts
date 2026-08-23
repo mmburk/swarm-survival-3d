@@ -60,6 +60,20 @@ interface Parts {
 const tmpTarget = new THREE.Vector3();
 const tmpAway = new THREE.Vector3();
 
+/**
+ * How many metres of head start a body gets for actually coming at the player.
+ *
+ * The dead take turns (`Engine.updateTurns`): a few press, the rest hold a ring
+ * seven to thirteen metres out and circle it. That ring sits between the animal
+ * and nothing at all, so "nearest body" stopped meaning "the one that is your
+ * problem" — a dog heeling two metres off the player would leave the thing
+ * running at you to go and worry something that was standing still. Five metres
+ * is enough to reach past the near edge of the ring and not enough to send
+ * anything across the street: an attacker nine metres out beats a waiter at
+ * four, an attacker at twelve does not.
+ */
+const ENGAGED_HEAD_START = 5.0;
+
 /** XZ distance. Everything in this game is decided on the flat. */
 function flat(a: THREE.Vector3, b: THREE.Vector3): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
@@ -658,9 +672,11 @@ export class Companion {
   }
 
   /**
-   * Nearest live body to the animal, out of everything inside `radius` of
-   * `origin` — which is nearly always the player, because the radius is the
-   * leash and the leash is about how far the animal is willing to leave you.
+   * The body the animal should be dealing with, out of everything inside
+   * `radius` of `origin` — which is nearly always the player, because the
+   * radius is the leash and the leash is about how far the animal is willing
+   * to leave you. Nearest to the animal wins, except that one pressing the
+   * attack is worth `ENGAGED_HEAD_START` metres of it.
    *
    * The radius has to be measured here. `enemiesNear` is the grid, and the
    * grid is a broad phase: it hands back whole cells, six metres to a side, so
@@ -670,13 +686,16 @@ export class Companion {
    */
   private nearestTo(origin: THREE.Vector3, radius: number, world: CompanionWorld): Enemy | null {
     let best: Enemy | null = null;
-    let bestDist = Infinity;
+    let bestScore = Infinity;
     for (const e of world.enemiesNear(origin, radius)) {
       if (!e.active) continue;
       if (flat(e.position, origin) > radius) continue;
-      const d = flat(e.position, this.position);
-      if (d < bestDist) {
-        bestDist = d;
+      // Weighted, not filtered: on a street where nothing happens to be
+      // pressing, every body scores the same and this is the plain nearest
+      // again.
+      const score = flat(e.position, this.position) - (e.engaged ? ENGAGED_HEAD_START : 0);
+      if (score < bestScore) {
+        bestScore = score;
         best = e;
       }
     }
