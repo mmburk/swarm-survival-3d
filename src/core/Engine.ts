@@ -60,6 +60,13 @@ const UP = new THREE.Vector3(0, 1, 0);
 /** Play area is a circle so the player cannot hide in a fence corner. */
 const ARENA_RADIUS = 52;
 
+/** How long one of the dead gets to press before it is asked to give the lane up. */
+const TURN_LENGTH = 6.5;
+/** And how long it has to spend back in the ring before it can have another. */
+const TURN_REST = 3.5;
+/** How often the turns are dealt again. */
+const TURN_REFRESH = 0.45;
+
 /**
  * Flat distance test on the XZ plane.
  *
@@ -178,6 +185,11 @@ export class Engine {
   private runPennedKills: number = 0;
 
   private telegraphs: Array<{ pos: THREE.Vector3; type: EnemyType; timer: number }> = [];
+
+  /** Counts down to the next deal of attack turns. See `updateTurns`. */
+  private turnTimer: number = 0;
+  /** Scratch list for that deal, so dealing them allocates nothing. */
+  private turnOrder: Enemy[] = [];
 
   /**
    * The bullet pass owns its own broad-phase list. It walks the list while
@@ -1113,10 +1125,81 @@ export class Engine {
     this.telegraphs.push({ pos: tmpSpawn.clone(), type, timer: 0.45 });
   }
 
+  /**
+   * Decides which of the dead are allowed to press the attack.
+   *
+   * Everything else holds its ring and circles (see `Enemy.updateAI`), so a
+   * street arrives in relays instead of as one wall. Three rules keep the
+   * relay honest: the nearest bodies get the lanes, an attacker keeps its lane
+   * for a few metres' worth of grace so the set does not flicker every time
+   * two of them cross, and a turn expires — after which the same closeness
+   * that won the lane counts against it and it peels off to let the next one
+   * through.
+   *
+   * Bloaters are outside all of it. They are a ranged type that already keeps
+   * its own distance, and giving one a lane it does not want to walk down
+   * would only take the lane from something that does.
+   */
+  private updateTurns(active: Enemy[], delta: number): void {
+    for (const e of active) {
+      if (e.engaged) e.turnTimer += delta;
+      else if (e.restTimer > 0) e.restTimer = Math.max(0, e.restTimer - delta);
+    }
+
+    this.turnTimer -= delta;
+    if (this.turnTimer > 0) return;
+    this.turnTimer = TURN_REFRESH;
+
+    // Later streets let more of them in at once. This is the difficulty knob:
+    // the crowd is as big as it ever was, it is the front rank that grows.
+    const lanes = Math.min(9, 3 + Math.floor(this.sectors.current * 0.7));
+
+    this.turnOrder.length = 0;
+    for (const e of active) {
+      if (!e.active) continue;
+      if (e.type === EnemyType.BLOATER) {
+        e.engaged = true;
+        continue;
+      }
+      this.turnOrder.push(e);
+    }
+
+    const p = this.player.position;
+    const rank = (e: Enemy): number => {
+      const d = Math.hypot(e.position.x - p.x, e.position.z - p.z);
+      if (e.engaged) return e.turnTimer < TURN_LENGTH ? d - 3 : d + 40;
+      return e.restTimer > 0 ? d + 40 : d;
+    };
+
+    this.turnOrder.sort((a, b) => rank(a) - rank(b));
+
+    for (let i = 0; i < this.turnOrder.length; i++) {
+      const e = this.turnOrder[i];
+      const wanted = i < lanes;
+      if (wanted === e.engaged) continue;
+
+      e.engaged = wanted;
+      e.turnTimer = 0;
+      e.restTimer = wanted ? 0 : TURN_REST;
+    }
+  }
+
   private firePrimary(): void {
     if (this.player.primaryCooldown > 0) return;
 
+    // An empty gun still takes the cooldown, so a trigger held down on nothing
+    // clicks at the weapon's own cadence rather than once a frame. The shot
+    // that empties the magazine starts the reload itself and is heard as the
+    // magazine coming out; only pulling again on a gun already being fed is
+    // answered with the hammer.
     const w = this.player.weapon;
+    const wasReloading = this.player.isReloading;
+    if (!this.player.spendRound()) {
+      this.player.primaryCooldown = Math.max(0.18, w.cooldown);
+      if (wasReloading) this.audio.playDryFire();
+      return;
+    }
+
     this.player.primaryCooldown = w.cooldown * this.player.fireRateMultiplier;
 
     const muzzle = this.player.getMuzzlePos().clone();
@@ -1550,6 +1633,9 @@ export class Engine {
     if (this.input.justShoved) {
       if (!this.player.shove(active)) this.audio.playError();
     }
+    if (this.input.justReloaded) {
+      if (!this.player.startReload()) this.audio.playError();
+    }
     if (this.input.justFiredUlt) this.throwFlare();
 
     // Once the street is nearly empty, whatever is left stops playing keep-away.
@@ -1560,11 +1646,18 @@ export class Engine {
     // everything downstream of that — pathing, spitting, contact — follows.
     const lure = this.companion.lurePoint;
 
+    // Whose turn it is to come at you.
+    this.updateTurns(active, delta);
+
     // Enemies.
     for (const e of active) {
       if (!e.active) continue;
       e.pressAttack = mopUp;
       const drawnOff = lure && withinRadius(e.position, lure, LURE_RADIUS);
+      // Anything the animal has pulled off you goes straight for her. Holding
+      // a ring around a dog is not a thing a corpse does — and the whole point
+      // of the bait is that it commits them.
+      if (drawnOff) e.engaged = true;
       e.updateAI(
         delta,
         this.frame,
@@ -1793,7 +1886,11 @@ export class Engine {
       }, this.runScrap, this.runKills, {
         alt: this.player.altCooldown,
         shove: this.player.shoveCooldown,
-        flareReady: this.player.adrenaline >= this.player.maxAdrenaline
+        flareReady: this.player.adrenaline >= this.player.maxAdrenaline,
+        ammo: this.player.ammo,
+        magazine: this.player.weapon.magazine,
+        reloading: this.player.isReloading,
+        reloadProgress: this.player.reloadProgress
       });
 
       this.hud.drawMinimap(

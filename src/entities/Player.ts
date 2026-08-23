@@ -71,6 +71,13 @@ export class Player {
   public weapon: WeaponStats = resolveWeaponStats('RANGER', false);
   public weaponModActive: boolean = false;
 
+  /** Rounds left in the gun. Spent by the trigger, refilled by a reload. */
+  public ammo: number = 0;
+  /** Counts down while the gun is being fed. Zero means it is ready. */
+  public reloadTimer: number = 0;
+  /** What the current reload started at, so the HUD can draw a fraction of it. */
+  public reloadDuration: number = 0;
+
   // ---- vitals -------------------------------------------------------------
   public health: number = 100;
   public maxHealth: number = 100;
@@ -94,6 +101,7 @@ export class Player {
   public lifestealAmount: number = 0;
   public pickupRadius: number = 5.5;
   public altCooldownMultiplier: number = 1.0;
+  public reloadMultiplier: number = 1.0;
   public healPotency: number = 1.0;
   /** Chance a killed enemy bursts, damaging its neighbours. */
   public burstChance: number = 0;
@@ -469,6 +477,8 @@ export class Player {
     }
     this.primaryCooldown = 0;
     this.altCooldown = 0;
+    this.reloadTimer = 0;
+    this.ammo = this.weapon.magazine;
   }
 
   public get weaponDef() {
@@ -523,6 +533,7 @@ export class Player {
     this.lifestealAmount = 0;
     this.pickupRadius = 5.5 + opts.pickupBonus;
     this.altCooldownMultiplier = 1.0;
+    this.reloadMultiplier = 1.0;
     this.healPotency = 1.0 + opts.healBonus;
     this.burstChance = 0;
     this.pierceGrowth = 0;
@@ -539,6 +550,8 @@ export class Player {
     this.primaryCooldown = 0;
     this.altCooldown = 0;
     this.shoveCooldown = 0;
+    this.reloadTimer = 0;
+    this.ammo = this.weapon.magazine;
     this.activeBuffs.clear();
     this.jacketMat.color.setHex(0x5a5236);
   }
@@ -584,6 +597,53 @@ export class Player {
   }
 
   // ---------------------------------------------------------------- combat
+
+  public get isReloading(): boolean {
+    return this.reloadTimer > 0;
+  }
+
+  /** 0 at the moment the magazine came out, 1 when the gun is fed. */
+  public get reloadProgress(): number {
+    if (this.reloadDuration <= 0) return 1;
+    return 1 - this.reloadTimer / this.reloadDuration;
+  }
+
+  /**
+   * Feeds the gun.
+   *
+   * Refused, with a `false`, when there is nothing to gain by it — a full
+   * magazine or a reload already running — so the caller can decide whether
+   * that deserves a noise. The trigger calls this too, on the shot that
+   * empties the gun, which is why an automatic held down never needs the key.
+   */
+  public startReload(): boolean {
+    if (this.reloadTimer > 0) return false;
+    if (this.ammo >= this.weapon.magazine) return false;
+
+    this.reloadDuration = Math.max(0.25, this.weapon.reload * this.reloadMultiplier);
+    this.reloadTimer = this.reloadDuration;
+    this.audio.playReload();
+    return true;
+  }
+
+  /**
+   * Spends one round.
+   *
+   * Returns false when the gun cannot fire — empty, or mid-reload — and starts
+   * the reload itself if the magazine is dry, so the only way to stand there
+   * clicking on nothing is to interrupt one.
+   */
+  public spendRound(): boolean {
+    if (this.reloadTimer > 0) return false;
+    if (this.ammo <= 0) {
+      this.startReload();
+      return false;
+    }
+
+    this.ammo--;
+    if (this.ammo <= 0) this.startReload();
+    return true;
+  }
 
   public triggerRecoil(): void {
     this.recoilOffset = Math.min(0.5, this.weapon.recoil);
@@ -668,6 +728,16 @@ export class Player {
     if (this.primaryCooldown > 0) this.primaryCooldown -= delta;
     if (this.altCooldown > 0) this.altCooldown -= delta;
     if (this.shoveCooldown > 0) this.shoveCooldown = Math.max(0, this.shoveCooldown - delta);
+
+    if (this.reloadTimer > 0) {
+      this.reloadTimer -= delta;
+      if (this.reloadTimer <= 0) {
+        this.reloadTimer = 0;
+        this.ammo = this.weapon.magazine;
+        this.audio.playReloadDone();
+      }
+    }
+
     if (this.recoilOffset > 0) this.recoilOffset = THREE.MathUtils.lerp(this.recoilOffset, 0, delta * 16);
 
     // Hit flash — the jacket goes pale for a few frames instead of strobing red.

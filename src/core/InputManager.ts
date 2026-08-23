@@ -17,6 +17,7 @@ export class InputManager {
   public justDashed: boolean = false;
   public justFiredUlt: boolean = false;
   public justShoved: boolean = false;
+  public justReloaded: boolean = false;
   public justInteracted: boolean = false;
   public justToggledPause: boolean = false;
   public justMuted: boolean = false;
@@ -79,7 +80,8 @@ export class InputManager {
     if (code === 'Space') this.justDashed = true;
     if (code === 'KeyE') this.justInteracted = true;
     if (code === 'KeyQ') this.justFiredUlt = true;
-    if (code === 'KeyR') this.justShoved = true;
+    if (code === 'KeyF') this.justShoved = true;
+    if (code === 'KeyR') this.justReloaded = true;
     if (code === 'KeyM') this.justMuted = true;
 
     if (code === 'Tab') {
@@ -159,6 +161,7 @@ export class InputManager {
     this.justDashed = false;
     this.justFiredUlt = false;
     this.justShoved = false;
+    this.justReloaded = false;
     this.justInteracted = false;
     this.justToggledPause = false;
     this.justMuted = false;

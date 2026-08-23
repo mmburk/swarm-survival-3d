@@ -26,6 +26,10 @@ export interface WeaponStats {
   range: number;
   /** Enemies a single round passes through before dying. */
   pierce: number;
+  /** Rounds the gun holds before it has to be fed again. */
+  magazine: number;
+  /** Seconds spent feeding it. */
+  reload: number;
   /** Camera shake per shot. */
   trauma: number;
   /** Visual kick on the character rig. */
@@ -85,6 +89,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       bulletSpeed: 46,
       range: 34,
       pierce: 0,
+      magazine: 30,
+      reload: 2.1,
       trauma: 0.07,
       recoil: 0.12
     },
@@ -128,6 +134,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       bulletSpeed: 38,
       range: 16,
       pierce: 1,
+      magazine: 2,
+      reload: 1.2,
       trauma: 0.32,
       recoil: 0.45
     },
@@ -170,6 +178,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       bulletSpeed: 74,
       range: 62,
       pierce: 2,
+      magazine: 5,
+      reload: 2.5,
       trauma: 0.4,
       recoil: 0.34
     },
@@ -212,6 +222,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       bulletSpeed: 42,
       range: 24,
       pierce: 0,
+      magazine: 45,
+      reload: 1.8,
       trauma: 0.04,
       recoil: 0.07
     },
@@ -254,6 +266,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       bulletSpeed: 58,
       range: 40,
       pierce: 4,
+      magazine: 24,
+      reload: 2.2,
       trauma: 0.12,
       recoil: 0.18
     },

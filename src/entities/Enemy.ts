@@ -101,6 +101,32 @@ export class Enemy implements IPoolable {
    */
   public pressAttack: boolean = false;
 
+  /**
+   * Whether it is this one's turn to press the attack.
+   *
+   * A street of forty bodies all running the shortest line at the player is
+   * one wall of teeth arriving at once: nothing to read, nothing to step
+   * around, and the difference between five of them and thirty is only how
+   * fast the health bar goes. The engine hands turns out to a few at a time
+   * (`Engine.updateTurns`); everything else closes to its own ring and circles
+   * there, waiting for a gap. What the player sees is a crowd that keeps
+   * coming in relays rather than in one lump.
+   */
+  public engaged: boolean = false;
+  /** Seconds this turn has been running. Ticked by the engine. */
+  public turnTimer: number = 0;
+  /** Seconds it has to hang back before it can be given another turn. */
+  public restTimer: number = 0;
+
+  /** How far out it holds while it is waiting. Metres. */
+  public standoff: number = 9;
+
+  /** Which shoulder it comes round, and how wide the arc is. */
+  private flankSign: number = 1;
+  private flankBend: number = 0.5;
+  /** Which way round it circles while it waits. */
+  private orbitSign: number = 1;
+
   private attackTimer: number = 0;
   private hitFlashTimer: number = 0;
   private spawnTimer: number = 0;
@@ -134,6 +160,17 @@ export class Enemy implements IPoolable {
     this.swellTimer = 0;
     this.pressAttack = false;
     this.lurch = Math.random() * Math.PI * 2;
+
+    this.engaged = false;
+    this.turnTimer = 0;
+    this.restTimer = 0;
+    this.standoff = 7.5 + Math.random() * 5.5;
+    this.flankSign = Math.random() < 0.5 ? -1 : 1;
+    this.orbitSign = Math.random() < 0.5 ? -1 : 1;
+    // A sprinter's whole read is the straight line it picks; a shambler has
+    // all night, so it can afford to come the long way round.
+    this.flankBend = (type === EnemyType.SPRINTER ? 0.2 : type === EnemyType.BUTCHER ? 0.34 : 0.62)
+      * (0.7 + Math.random() * 0.6);
 
     this.maxHealth = Math.round(p.health * difficulty.health);
     this.health = this.maxHealth;
@@ -245,9 +282,13 @@ export class Enemy implements IPoolable {
 
     tempTarget.copy(playerPos);
 
+    const toPlayerX = playerPos.x - this.position.x;
+    const toPlayerZ = playerPos.z - this.position.z;
+    const distance = Math.hypot(toPlayerX, toPlayerZ) || 0.0001;
+
     // Bloaters hold a lane and spit bile from range.
     if (this.type === EnemyType.BLOATER) {
-      const d2 = this.position.distanceToSquared(playerPos);
+      const d2 = distance * distance;
       if (d2 < 180 && !this.pressAttack) {
         tempTarget.subVectors(this.position, playerPos).add(this.position);
       }
@@ -262,6 +303,41 @@ export class Enemy implements IPoolable {
 
     tempSteer.copy(tempTarget).sub(this.position).setY(0);
     if (tempSteer.lengthSq() > 0) tempSteer.normalize();
+
+    // Bloaters are the exception to both halves of this: they are a ranged
+    // type that already has its own idea of where to stand. The mop-up flag
+    // takes the waiting away but not the arc — at the end of a street nothing
+    // is allowed to stand off, but nothing has to run at you down a ruler
+    // either.
+    const closingIn = this.type !== EnemyType.BLOATER;
+
+    if (closingIn && !this.engaged && !this.pressAttack) {
+      // Waiting its turn. Closes to its own ring, then walks round it — near
+      // enough to be a threat and to be shot at, far enough to leave the
+      // player a line out.
+      const gap = distance - this.standoff;
+      const radial = Math.max(-1, Math.min(1, gap * 0.35));
+      const tangentX = -tempSteer.z * this.orbitSign;
+      const tangentZ = tempSteer.x * this.orbitSign;
+
+      tempSteer.x = tempSteer.x * radial + tangentX * 0.85;
+      tempSteer.z = tempSteer.z * radial + tangentZ * 0.85;
+      if (tempSteer.lengthSq() > 0) tempSteer.normalize();
+    } else if (closingIn) {
+      // Its turn: comes in on an arc rather than down the sightline. The bend
+      // is widest out at the edge of the ring and gone by the time it is on
+      // top of you, so the last few metres are still a straight charge.
+      const bend = this.flankSign * this.flankBend *
+        Math.max(0, Math.min(1, (distance - 3) / 12));
+      if (bend !== 0) {
+        const c = Math.cos(bend);
+        const sn = Math.sin(bend);
+        const sx = tempSteer.x * c - tempSteer.z * sn;
+        const sz = tempSteer.x * sn + tempSteer.z * c;
+        tempSteer.x = sx;
+        tempSteer.z = sz;
+      }
+    }
 
     // Crowd separation, staggered across frames to keep the cost down.
     if ((this.id + frameCount) % 3 === 0) {

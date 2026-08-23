@@ -13,7 +13,9 @@ export class LoadingScreen {
 
   private tips: string[] = [
     'A roll (SPACE) gives you a moment where nothing can touch you. Use it through a crowd, not away from one.',
-    'Shove (R) throws whatever is in front of you back and stuns it. It is the answer to a Burster.',
+    'Shove (F) throws whatever is in front of you back and stuns it. It is the answer to a Burster.',
+    'Reload (R) between fights, not during one. An empty gun feeds itself, but it picks the worst moment to do it.',
+    'They come at you in turns. The ones hanging back are not waiting politely — they are waiting for a gap.',
     'The flare (Q) pulls the whole street toward it before it goes off. Throw it away from you, not at your feet.',
     'Bursters swell before they blow. Shoot them at range or shove them off — never stand still next to one.',
     'Scrap stays with you when you die. A bad run still pays for the workbench.',

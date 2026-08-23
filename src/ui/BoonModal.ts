@@ -190,6 +190,13 @@ const TEMPLATES: BoonTemplate[] = [
     apply: (p, k) => { p.pickupRadius += 2.5 * k; p.healPotency += 0.25 * k; }
   },
   {
+    id: 'speedloader',
+    caller: 'MAE',
+    title: 'Speedloader',
+    describe: (k) => `Reloads finish ${Math.round(20 * k)}% sooner and the gun holds ${Math.round(2 + 2 * k)} more.`,
+    apply: (p, k) => { p.reloadMultiplier *= 1 - 0.20 * k; p.weapon.magazine += Math.round(2 + 2 * k); }
+  },
+  {
     id: 'scavenged_springs',
     caller: 'MAE',
     title: 'Scavenged Springs',

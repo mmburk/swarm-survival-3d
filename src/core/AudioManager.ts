@@ -598,6 +598,23 @@ export class AudioManager {
     this.thump(90, 34, 0.16, 0.2);
   }
 
+  /** Magazine out: a catch, then the box dropping away. */
+  public playReload(): void {
+    this.noiseBurst({ duration: 0.05, volume: 0.13, type: 'bandpass', startFreq: 2100, endFreq: 1400, q: 5 });
+    this.noiseBurst({ duration: 0.08, volume: 0.1, type: 'bandpass', startFreq: 900, endFreq: 420, q: 3, delay: 0.09 });
+  }
+
+  /** Fresh one home and the action closed — the sound you are listening for. */
+  public playReloadDone(): void {
+    this.noiseBurst({ duration: 0.07, volume: 0.15, type: 'bandpass', startFreq: 1200, endFreq: 2600, q: 4 });
+    this.thump(180, 90, 0.06, 0.09, 0.05);
+  }
+
+  /** Hammer on an empty chamber. */
+  public playDryFire(): void {
+    this.noiseBurst({ duration: 0.035, volume: 0.11, type: 'bandpass', startFreq: 3000, endFreq: 1800, q: 7 });
+  }
+
   public playGetUp(): void {
     this.thump(70, 190, 0.5, 0.24);
     this.noiseBurst({ duration: 0.42, volume: 0.1, type: 'bandpass', startFreq: 260, endFreq: 900, q: 2 });

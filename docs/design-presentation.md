@@ -60,7 +60,7 @@ riski var, dürüstçe anlatılıyor.)
 
 ## 2. HAT: ANLIK OYNANIŞ (moment-to-moment)
 
-### Fiil seti — 7 tuş, hepsi tek işlevli
+### Fiil seti — 8 tuş, hepsi tek işlevli
 
 | Girdi | Fiil | Kural |
 |---|---|---|
@@ -69,7 +69,8 @@ riski var, dürüstçe anlatılıyor.)
 | LMB | Ateş | Otomatik silahlarda basılı tut, diğerlerinde tek tık |
 | RMB | Ağır atış | Silaha özel, uzun cooldown (3.2–5.0 sn) |
 | SPACE | Yuvarlan | 0.24 sn, 21 birim/sn, **tam dokunulmazlık**, 34 stamina |
-| R | İtekle (shove) | 5.5 m, 5 sn cooldown, 12 hasar + sersemletme |
+| R | Doldur | Şarjör dolmadıysa; boşalan silah kendi kendine de doldurur |
+| F | İtekle (shove) | 5.5 m, 5 sn cooldown, 12 hasar + sersemletme |
 | Q | Fişek at | Adrenalin dolunca, ultimate yerine geçer |
 | E | Kullan | Kapı, sandık, Vic, sığınak istasyonları |
 | TAB | Koşu Kâğıdı | Aktif boonlar, istatistikler (oyun durur) |
@@ -99,6 +100,7 @@ riski var, dürüstçe anlatılıyor.)
 | Stamina | 100 | 38/sn otomatik | Yuvarlanma 34 (≈0.9 sn'de bir) |
 | Adrenalin | 100 | Kill başına 5.5 (≈19 kill) | Fişek (Q) |
 | "Get up" | 1 (+2 meta, +boon) | — | Ölümcül hasarda otomatik: %45 canla kalk |
+| Şarjör | Silaha göre 2–45 | Dolum (R) veya boşalınca otomatik | Tetik başına 1 mermi |
 
 ---
 
@@ -108,18 +110,24 @@ Hades'in Infernal Arms'ı. Koşu başına **bir tane** seçiyorsun, geri kalanı
 duvarda kalıyor. Her silahın ayrıca bir **ağır atışı** (Aspect'in ikinci yarısı)
 ve **bir field mod'u** (kalıcı, scrap'le açılır, sonra ücretsiz aç/kapa) var.
 
-| Silah | Model | Hasar × mermi | Atış aralığı | Menzil | Delme | Teorik DPS | Kilit |
-|---|---|---|---|---|---|---|---|
-| **The Ranger** | Dürbünlü karabina | 24 × 1 | 0.115 sn | 34 m | 0 | ~209 | Başlangıç |
-| **The Boomstick** | Kırpılmış çifte | 15 × 7 | 0.68 sn | 16 m | 1 | ~154 (tam isabet) | 150 |
-| **The Widowmaker** | Sürgülü av tüfeği | 105 × 1 | 0.85 sn | 62 m | 2 | ~124 (tek hedef) / ~370 (hat) | 260 |
-| **The Stutter** | Derme çatma makineli | 10 × 1 | 0.058 sn | 24 m | 0 | ~172 | 340 |
-| **The Harvester** | Basınçlı çivi tabancası | 58 × 1 | 0.34 sn | 40 m | 4 | ~171 (tek) / ~853 (5'li hat) | 480 |
+| Silah | Model | Hasar × mermi | Atış aralığı | Menzil | Delme | Şarjör / dolum | Teorik DPS | Kilit |
+|---|---|---|---|---|---|---|---|---|
+| **The Ranger** | Dürbünlü karabina | 24 × 1 | 0.115 sn | 34 m | 0 | 30 / 2.1 sn | ~209 | Başlangıç |
+| **The Boomstick** | Kırpılmış çifte | 15 × 7 | 0.68 sn | 16 m | 1 | 2 / 1.2 sn | ~154 (tam isabet) | 150 |
+| **The Widowmaker** | Sürgülü av tüfeği | 105 × 1 | 0.85 sn | 62 m | 2 | 5 / 2.5 sn | ~124 (tek hedef) / ~370 (hat) | 260 |
+| **The Stutter** | Derme çatma makineli | 10 × 1 | 0.058 sn | 24 m | 0 | 45 / 1.8 sn | ~172 | 340 |
+| **The Harvester** | Basınçlı çivi tabancası | 58 × 1 | 0.34 sn | 40 m | 4 | 24 / 2.2 sn | ~171 (tek) / ~853 (5'li hat) | 480 |
 
 **Tasarım niyeti:** ham DPS'ler bilerek birbirine yakın (154–209). Fark
 **nerede ve nasıl** kullanıldığında: Boomstick 16 metre içinde karar veriyor,
 Widowmaker sıra hâlinde gelen kalabalığı deliyor, Harvester kuyruk hâlindeki
 her şeyi tek çiviyle diziyor, Stutter isabeti hacimle telafi ediyor.
+
+Şarjör bu tablodaki DPS'lerin hiçbirini değiştirmiyor, **ne kadar süre**
+geçerli olduklarını değiştiriyor. Tetiği basılı tutarsan şarjör boşalma /
+dolum oranı: Ranger %62, Boomstick %54, Widowmaker %63, Stutter %59,
+Harvester %79. Yani Harvester sürekli ateş eden silah, Boomstick iki el atıp
+geri çekilen silah — ikisi de aynı DPS'e sahipken.
 
 ### Ağır atışlar (RMB)
 
@@ -160,6 +168,27 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
 
 - **Steering + separation.** Herkes oyuncuya yönelir; komşulardan itilme
   hesabı **3 karede bir** yapılır (id + frame % 3), maliyet böyle üçe bölünür.
+- **Sıra sistemi (attack turns).** Aynı anda yalnız birkaç ceset saldırıya
+  geçer: sektör 1'de 3, sektör 10'da 9 (`3 + sektör×0.7`, tavan 9). Sırası
+  gelmeyen kendi halkasına (7.5–13 m) kadar yaklaşıp orada **dolanır**.
+  Sıra 6.5 saniye sürer, dolan 3.5 saniye geride bekler, sonra tekrar
+  girebilir. Sıralar 0.45 saniyede bir dağıtılıyor ve en yakındakiler
+  alıyor — ayrıca saldırıdaki bir cesede 3 metrelik "kayyum payı" veriliyor
+  ki iki ceset her kesiştiğinde sıra takırdamasın. **Sebep:** kırk cesedin
+  hepsi aynı anda en kısa hattı koşarsa ortaya okunacak hiçbir şey çıkmıyor;
+  otuz düşmanla beş düşman arasındaki fark yalnızca can barının ne kadar hızlı
+  indiği oluyor. Sırayla gelen kalabalıkta hem hedef seçimi hem de aradan
+  çıkış yolu var. Kalabalığın **boyu** aynı, değişen şey ön saf.
+- **Yay çizerek yaklaşma.** Saldırıya geçen düşman nişan hattından değil,
+  kendi seçtiği omuzdan geliyor: yön vektörü mesafeyle sönümlenen bir açıyla
+  döndürülüyor (shambler ±0.62 rad'a kadar, butcher ±0.34, sprinter ±0.2), 3
+  metrede tamamen kapanıyor — yani son birkaç metre yine düz bir hücum.
+  Ölçüm: 6 metrenin ötesinde adımların oyuncuya bakan yönle örtüşmesi
+  shambler'da 0.87, sprinter'da 0.98 (1.0 = cetvel gibi düz).
+- **Sıranın istisnaları.** Bloater zaten menzilli ve kendi mesafesini koruyor,
+  hiç sıraya girmiyor. Sektör süpürülürken (`pressAttack`) bekleme kalkıyor
+  ama yay kalıyor. Hayvan yeme çektiği her şeyi de sıradan çıkarıp doğrudan
+  üstüne yolluyor — yemin bütün anlamı onları bağlaması.
 - **Weave (salınım).** Her düşmanın sinüs faz kayması var; sürü tek blok
   hâlinde hareket etmiyor. Sprinter hızlı ve dar salınıyor, shambler yavaş ve
   geniş.
@@ -410,7 +439,16 @@ Adrenalin dolunca (≈19 kill) atılır. **20 metreden sürüyü kendine çeker*
 **Takas bilinçli:** kalabalığı önce daha kötü hâle getirip sonra çözüyor.
 Yerleştirme becerisi isteyen tek yetenek.
 
-### İtekleme (R)
+### Dolum (R)
+Her silahın şarjörü var (2–45) ve tetik başına bir mermi gidiyor. Şarjör
+biterse silah **kendi kendine** doldurmaya başlıyor — yani boşta tık tık
+etmek diye bir durum yok, ama dolumun ne zaman başlayacağına karışmamış
+oluyorsun. R ile erken doldurmak bu yüzden bir karar: sokak sakinken 2
+saniyeyi vermek mi, yoksa dolu olmayan bir şarjörle bir sonraki dalgaya
+girmek mi. HUD'daki tek bar iki işi birden yapıyor: kalan mermi, sonra
+dolum ilerlemesi (kehribar renginde).
+
+### İtekleme (F)
 5.5 m, 5 sn cooldown. Önündekiler 26 kuvvetle uçar ve 1.4 sn sersemler;
 arkandakiler 10 kuvvetle itilir, 0.6 sn sersemler. **Yön önemli** — panikle
 basmak yerine dönüp basmak ödüllendiriliyor. Kuşatıldığında tek çıkış kartı.
@@ -558,7 +596,8 @@ grenli, tek sert gölge, sıcak rim ışığı — Hades'in boyalı key art dili
 ## 15. HAT: UI / UX HATTI
 
 - **HUD:** sağlık / stamina / adrenalin barları, get-up sayacı, scrap, kill,
-  sektör adı + hedef, silah adı, ağır atış ve shove cooldown'ları, gece etiketi.
+  sektör adı + hedef, silah adı, **şarjör sayacı ve dolum barı**, ağır atış ve
+  shove cooldown'ları, gece etiketi.
 - **Minimap:** kamera yaw'ına döndürülmüş (dünya ile minimap asla ayrışmaz),
   düşmanlar, kapılar, boss.
 - **Hasar sayıları:** dünyadan ekrana yansıtılan, crit'te farklı renk.
@@ -762,6 +801,11 @@ Oyuncu:      100 can (maks 160) · 8.2 hız (maks 10.4) · 0.85 yarıçap
 Arena:       52 birim yarıçaplı daire (köşeye saklanmayı engellemek için)
 Spawn:       oyuncudan 17–33 m, min 12 m ayrık, 0.45 sn telegraph
              0.85 sn'de 2 / ekranda <7 ise 4 · tavan 34 aktif
+Sıra:        aynı anda 3 + sektör×0.7 saldırgan (tavan 9)
+             sıra 6.5 sn · dinlenme 3.5 sn · dağıtım 0.45 sn'de bir
+             bekleyen halka 7.5–13 m · yay 3 m'de kapanıyor
+Şarjör:      Ranger 30/2.1 · Boomstick 2/1.2 · Widowmaker 5/2.5
+             Stutter 45/1.8 · Harvester 24/2.2 (mermi / saniye)
 Kapılar:     %72 en az bir SIGNAL · kapı A (−17,−19), kapı B (+17,−19)
 Geçiş:       0.62 sn fade, dünya 0.31 sn'de değişir
 Boss:        900 can · faz 2 %50'de · slam 4.2→3.2 sn · 8 m / 38 hasar

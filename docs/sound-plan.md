@@ -23,10 +23,11 @@ Tamamı WebAudio ile sentezleniyor; projede **tek bir ses dosyası yok.**
 | `noiseBurst()` | Paylaşılan gürültü tamponundan biçimlendirilmiş bir patlama — filtre tipi, başlangıç/bitiş frekansı, Q, süre, gecikme |
 | `thump()` | Altına binen alçak sinüs — atışa ağırlığını veren şey |
 
-Üstüne 14 canlı olay: `playGunshot` (4 karakter), `playImpact`, `playDodge`,
-`playShove`, `playGetUp`, `playFlare`, `playSwell`, `playBossRoar`, `playSlam`,
-`playScrap`, `playGateOpen`, `playSectorClear`, `playPurchase`, `playError`,
-`playPickup`, `playExplosion`, `playPlayerHurt`.
+Üstüne 17 canlı olay: `playGunshot` (4 karakter), `playImpact`, `playDodge`,
+`playShove`, `playReload`, `playReloadDone`, `playDryFire`, `playGetUp`,
+`playFlare`, `playSwell`, `playBossRoar`, `playSlam`, `playScrap`,
+`playGateOpen`, `playSectorClear`, `playPurchase`, `playError`, `playPickup`,
+`playExplosion`, `playPlayerHurt`.
 
 Arka planda iki osilatörlü bir uğultu: 90 Hz sinüs + 45 Hz üçgen → 250 Hz
 alçak geçiren → gain 0.06. Müzik değil, basınç.

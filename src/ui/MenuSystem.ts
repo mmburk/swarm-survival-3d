@@ -377,7 +377,8 @@ export class MenuSystem {
           <b style="color:var(--bone)">LMB</b> fire &nbsp;·&nbsp;
           <b style="color:var(--bone)">RMB</b> heavy<br>
           <b style="color:var(--bone)">SPACE</b> roll &nbsp;·&nbsp;
-          <b style="color:var(--bone)">R</b> shove &nbsp;·&nbsp;
+          <b style="color:var(--bone)">R</b> reload &nbsp;·&nbsp;
+          <b style="color:var(--bone)">F</b> shove &nbsp;·&nbsp;
           <b style="color:var(--bone)">Q</b> flare &nbsp;·&nbsp;
           <b style="color:var(--bone)">E</b> use &nbsp;·&nbsp;
           <b style="color:var(--bone)">TAB</b> run sheet
@@ -558,6 +559,7 @@ export class MenuSystem {
               <div class="ll-tag">${stats.damage} dmg${stats.pellets > 1 ? ` × ${stats.pellets}` : ''}</div>
               <div class="ll-tag">${shotsPerSecond} / sec</div>
               <div class="ll-tag">${Math.round(stats.range)}m</div>
+              <div class="ll-tag">${stats.magazine} loaded &nbsp;·&nbsp; ${stats.reload.toFixed(1)}s</div>
               ${stats.pierce > 0 ? `<div class="ll-tag">pierces ${stats.pierce}</div>` : ''}
             </div>
 

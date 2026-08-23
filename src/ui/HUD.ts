@@ -57,6 +57,10 @@ export class HUD {
   private weaponModel!: HTMLElement;
   private altKey!: HTMLElement;
   private shoveKey!: HTMLElement;
+  private ammoVal!: HTMLElement;
+  private ammoFill!: HTMLElement;
+  /** Last ammo line written, so the plate is only repainted when it changes. */
+  private ammoShown: string = '';
   private flareKey!: HTMLElement;
 
   private promptEl!: HTMLElement;
@@ -184,6 +188,9 @@ export class HUD {
         #stam-fill   { background: linear-gradient(180deg, #7d8a5c, #4b5436); }
         #flare-fill  { background: linear-gradient(180deg, #d9a441, #8a6826); }
         #boss-fill   { background: linear-gradient(180deg, #9b3030, #5e1616); }
+        #ammo-fill      { background: linear-gradient(180deg, #cdc6b0, #7d7863); }
+        #ammo-fill.low  { background: linear-gradient(180deg, #d05a2a, #8e2323); }
+        #ammo-fill.feed { background: linear-gradient(180deg, #d9a441, #8a6826); transition: width 0.06s linear; }
 
         .key-cap {
           display: inline-grid;
@@ -350,9 +357,17 @@ export class HUD {
         <div id="wpn-name" style="font-family:var(--stencil); font-size:21px; letter-spacing:2px; color:var(--paper); margin-top:2px;">THE RANGER</div>
         <div id="wpn-model" class="hud-label" style="margin-top:1px;">Scoped Service Carbine</div>
         <div style="height:1px; background:var(--char); margin:10px 0 9px;"></div>
+
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px;">
+          <div class="hud-label">Loaded &nbsp;·&nbsp; <span style="color:var(--bone)">R</span> reload</div>
+          <div id="ammo-val" style="font-family:var(--stencil); font-size:22px; letter-spacing:1.5px; color:var(--paper); line-height:1;">30 / 30</div>
+        </div>
+        <div class="hud-bar" style="width:100%; height:7px; margin-top:5px;"><div id="ammo-fill" class="hud-bar-fill"></div></div>
+
+        <div style="height:1px; background:var(--char); margin:10px 0 9px;"></div>
         <div style="display:flex; flex-direction:column; gap:6px;">
           <div id="abil-alt" class="abil ready"><span class="key-cap">RMB</span><span id="alt-label">Rifle Grenade</span></div>
-          <div id="abil-shove" class="abil ready"><span class="key-cap">R</span><span>Shove</span></div>
+          <div id="abil-shove" class="abil ready"><span class="key-cap">F</span><span>Shove</span></div>
           <div id="abil-flare" class="abil cooling"><span class="key-cap">Q</span><span>Road Flare</span></div>
         </div>
       </div>
@@ -425,6 +440,8 @@ export class HUD {
     this.weaponModel = $('wpn-model');
     this.altKey = $('abil-alt');
     this.shoveKey = $('abil-shove');
+    this.ammoVal = $('ammo-val');
+    this.ammoFill = $('ammo-fill');
     this.flareKey = $('abil-flare');
 
     this.promptEl = $('interact-prompt');
@@ -723,7 +740,15 @@ export class HUD {
     vitals: Vitals,
     scrap: number,
     kills: number,
-    cooldowns: { alt: number; shove: number; flareReady: boolean }
+    cooldowns: {
+      alt: number;
+      shove: number;
+      flareReady: boolean;
+      ammo: number;
+      magazine: number;
+      reloading: boolean;
+      reloadProgress: number;
+    }
   ): void {
     // Throttled: none of this needs to run at frame rate.
     this.uiTimer += delta;
@@ -750,6 +775,22 @@ export class HUD {
 
     this.setScrapReadout(scrap, false);
     this.killsEl.textContent = String(kills);
+
+    // The one bar does both jobs: rounds left, and then the reload filling it
+    // back up. Amber while it is being fed so the eye can tell them apart
+    // without reading the number.
+    const cap = Math.max(1, cooldowns.magazine);
+    const line = cooldowns.reloading ? 'RELOADING' : `${cooldowns.ammo} / ${cap}`;
+    if (line !== this.ammoShown) {
+      this.ammoShown = line;
+      this.ammoVal.textContent = line;
+      this.ammoVal.style.color = !cooldowns.reloading && cooldowns.ammo === 0 ? CSS.blood : CSS.paper;
+    }
+    const fill = cooldowns.reloading ? cooldowns.reloadProgress : cooldowns.ammo / cap;
+    this.ammoFill.style.width = `${Math.max(0, Math.min(1, fill)) * 100}%`;
+    this.ammoFill.className = cooldowns.reloading ? 'hud-bar-fill feed'
+      : cooldowns.ammo / cap <= 0.25 ? 'hud-bar-fill low'
+      : 'hud-bar-fill';
 
     this.altKey.className = cooldowns.alt > 0 ? 'abil cooling' : 'abil ready';
     this.shoveKey.className = cooldowns.shove > 0 ? 'abil cooling' : 'abil ready';
