@@ -219,6 +219,39 @@ arasında da kalabalığın içinde beklemek yerine oyuncunun yanına dönüyor.
 > gövde biçiyordu (20 saniyede 29 öldürme, ayının 8'ine karşı). Hücum artık
 > üçüncü gövdede duruyor; aynı testte 11.
 
+### 15. Bristle tasmasının dışındaki hedefe hücum ediyordu
+
+**Yer:** `src/entities/Companion.ts` — `roleCharge()`
+**Commit:** `a02ea09`
+
+14 numaralı düzeltme hücum hedefini "en uzaktaki ceset" yapmıştı — doğru karar,
+çünkü hücumun mesafeye ihtiyacı var. Ama aday listesi grid'den geliyor ve grid
+bir **broad phase**: 6 metrelik hücreleri bütün hâlde döndürüyor, yani liste
+istenen yarıçapın epey dışına taşıyor. "En uzaktakini seç" ile birleşince
+domuz tam da **taşan** cesedi seçiyor.
+
+Ölçüldü: tasması 14 m iken 17 metredeki tek gövdeye hücum etti — 1.5 saniyede
+13.5 metre, kavgaya sırtı dönük, üstüne bir de dönüş yolu. Hash çakışması
+durumunda mesafe için bir üst sınır da yok.
+
+Aday listesi artık oyuncuya olan mesafesiyle eleniyor. 2 numaralı bug'ın aynısı,
+sadece başka bir dosyada.
+
+### 16. Mouser 4 metrelik tehdit kontrolü 5.5 metreyi görüyordu
+
+**Yer:** `src/entities/Companion.ts` — `nearestTo()`
+**Commit:** `a02ea09`
+
+Aynı sebep, sessiz hâli. `nearestTo()` yarıçapı grid'e söyleyip sonucu
+ölçmeden kullanıyordu; hücre taşması yüzünden kedi 4 metrelik tehdit
+kontrolüyle 5.5 metredeki gövdeden kaçıyordu. Aynı fonksiyonu Rook, Honey
+ve Nan da hedef seçmek için kullanıyor — onlarda etkisi "tasmanın biraz
+dışına çıkmak" oluyordu.
+
+`nearestTo()` artık mesafeyi **origin'e göre** kendisi ölçüyor; sıralama
+hayvana olan mesafeye göre kalıyor (niyet buydu: tasma oyuncudan, seçim
+hayvandan).
+
 ---
 
 ## Açık olanlar
