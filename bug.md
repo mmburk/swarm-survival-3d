@@ -178,6 +178,7 @@ bırakmanın halka çevresinden alınan 3200 örneğinde **tek bir gömülme yok
 ### 12. Sixpence topladığı hurdayı asla teslim edemiyordu
 
 **Yer:** `src/core/Engine.ts` — `companionWorld.scrapNear()`
+**Commit:** `1f74459`
 
 Kuşun hurda araması "oyuncunun mıknatısına zaten girmiş olanı boş ver" filtresi
 kullanıyordu, ama mesafeyi **kuşun kendisinden** ölçüyordu. Yani bir hurdaya
@@ -190,6 +191,7 @@ Filtre artık mesafeyi oyuncudan ölçüyor — niyet zaten buydu.
 ### 13. Kuşun taşıdığı hurda uçuş yüksekliğinde asılı kalıyordu
 
 **Yer:** `src/entities/Companion.ts` — `roleFetch()`, `releaseCarry()`
+**Commit:** `1f74459`
 
 Taşınan `Pickup`'ın konumu her karede kuşun altına yazılıyordu, bırakırken de
 y'si olduğu yerde kalıyordu. `Engine` ise toplamayı **3B** mesafe testiyle
@@ -203,6 +205,7 @@ yolun yüksekliğine indiriyor. Aynı ölçüm: 5/5.
 ### 14. Bristle kalabalığın içinde durup hiç hücum etmiyordu
 
 **Yer:** `src/entities/Companion.ts` — `roleCharge()`
+**Commit:** `1f74459`
 
 Hücum hedefi "en yakın" ceset seçiliyor, sonra hedefe 3 metreden yakınsa hücum
 iptal ediliyordu. İkisi birlikte şu anlama geliyor: domuzun üstüne bir zombi
