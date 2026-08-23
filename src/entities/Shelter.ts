@@ -3,7 +3,7 @@ import { HEX } from '../theme/Palette';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
 import type { Player } from './Player';
 
-export type StationId = 'RACK' | 'BENCH' | 'RADIO' | 'BOARD' | 'DOOR' | 'DOG';
+export type StationId = 'RACK' | 'BENCH' | 'RADIO' | 'BOARD' | 'DOOR' | 'DOG' | 'PENS';
 
 export interface Station {
   id: StationId;
@@ -76,6 +76,18 @@ const DOG_FOLLOW_STOP = 2.4;
 const DOG_GREET_REACH = 2.6;
 
 /**
+ * The pens, in the corner where the loading hatch used to be.
+ *
+ * Whatever the player is taking out tonight is standing in here rather than in
+ * the yard, which is the only reason it can be looked at — the yard is on the
+ * other side of the boards and there is no camera angle that reaches it. Rook
+ * is the exception: he has the run of the room and never uses the pen.
+ */
+const PEN_GATE = new THREE.Vector3(11.4, 0, 9.6);
+/** Where the animal itself stands, a pace inside the rail. */
+const PEN_FLOOR = new THREE.Vector3(10.4, 0, 10.0);
+
+/**
  * THE SHELTER — a boarded-up basement under a hardware store.
  *
  * This is the hub the whole loop returns to: you pick a gun off the rack,
@@ -95,7 +107,8 @@ export class Shelter {
     { id: 'DOOR',  position: new THREE.Vector3(0, 0, -10.0),    radius: 2.8, label: 'Cellar Stairs', hint: 'Go out' },
     // Rook moves, so this position is only a starting point — `stationAt`
     // tracks the dog himself. The hint is rewritten as his mood changes.
-    { id: 'DOG',   position: DOG_BED.clone(),                   radius: 2.4, label: 'Rook',          hint: 'Say goodbye to the dog' }
+    { id: 'DOG',   position: DOG_BED.clone(),                   radius: 2.4, label: 'Rook',          hint: 'Say goodbye to the dog' },
+    { id: 'PENS',  position: PEN_GATE.clone(),                  radius: 2.5, label: 'The Pens',      hint: 'Decide what comes with you' }
   ];
 
   private furniture: Furniture[] = [];
@@ -130,6 +143,7 @@ export class Shelter {
     this.buildPinBoard();
     this.buildStairs();
     this.buildLivingSpace();
+    this.buildPens();
     this.buildDog();
 
     this.dogStation = this.stations.find((s) => s.id === 'DOG')!;
@@ -625,6 +639,72 @@ export class Shelter {
   }
 
   /**
+   * The pens — hurdles across the old loading hatch, straw down, a rail up.
+   *
+   * Nothing here is a container for seven animals; it is a holding pen for the
+   * one that is coming out tonight, and it is built so it reads as occupied
+   * whether or not anything is standing in it. The rail is at bird height and
+   * the trough is at goat height on purpose: the furniture is what tells the
+   * player this corner is for all of them.
+   */
+  private buildPens(): void {
+    const straw = new THREE.Mesh(
+      new THREE.BoxGeometry(4.6, 0.1, 3.6),
+      new THREE.MeshStandardMaterial({ color: 0x8a7a4c, roughness: 1.0, flatShading: true })
+    );
+    straw.position.set(PEN_FLOOR.x, 0.05, PEN_FLOOR.z);
+    straw.receiveShadow = true;
+    this.group.add(straw);
+
+    // Two hurdles making the corner, with a gap left where the player stands.
+    const rail = this.wood(0x5a4a30);
+    for (const [x, z, w, d] of [[10.2, 7.4, 5.6, 0.14], [13.0, 9.6, 0.14, 4.0]]) {
+      for (let bar = 0; bar < 3; bar++) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, d), rail);
+        plank.position.set(x, 0.45 + bar * 0.42, z);
+        plank.castShadow = true;
+        this.group.add(plank);
+      }
+    }
+    this.furniture.push({ x: 10.2, z: 7.4, radius: 0.7 });
+    this.furniture.push({ x: 13.0, z: 9.6, radius: 0.6 });
+
+    // A perch for whatever has wings, screwed into the corner post.
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.2, 8), rail);
+    post.position.set(12.4, 1.1, 7.6);
+    this.group.add(post);
+    const perch = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 8), rail);
+    perch.rotation.z = Math.PI / 2;
+    perch.position.set(11.3, 1.35, 7.6);
+    this.group.add(perch);
+
+    // Trough, feed sacks and a bucket. The clutter is the point.
+    const trough = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.34, 0.7), this.metal(0x565a4c));
+    trough.position.set(9.0, 0.17, 7.9);
+    this.group.add(trough);
+
+    for (let i = 0; i < 3; i++) {
+      const sack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, 0.5, 0.6),
+        this.wood([0x6b6248, 0x63593f, 0x715f42][i])
+      );
+      sack.position.set(12.6 + (i % 2) * 0.2, 0.25 + Math.floor(i / 2) * 0.5, 11.0 - i * 0.5);
+      sack.rotation.y = (Math.random() - 0.5) * 0.4;
+      this.group.add(sack);
+    }
+    this.furniture.push({ x: 12.7, z: 10.6, radius: 0.9 });
+
+    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.19, 0.34, 10), this.metal(0x6a6d5f));
+    bucket.position.set(9.0, 0.17, 11.0);
+    this.group.add(bucket);
+  }
+
+  /** Where the animal on tonight's list stands while it waits for you. */
+  public get penFloor(): THREE.Vector3 {
+    return PEN_FLOOR;
+  }
+
+  /**
    * Rook. He was somebody's dog before. Now he sleeps by the stove, comes to
    * the bottom of the stairs when he hears you on them, and will not go up.
    *
@@ -795,6 +875,23 @@ export class Shelter {
     this.dogIdleTimer = 0;
     this.syncDogHint();
     return this.dogMood;
+  }
+
+  /**
+   * Told from the pens that the list changed. Same two moods, set rather than
+   * toggled — choosing another animal off the card has to put Rook back on his
+   * bed, or the room would show two animals leaving with you and only one of
+   * them would actually be out there.
+   */
+  public setDogFollow(on: boolean): void {
+    if (this.dogMood === 'GREET') {
+      this.dogMoodAfterGreet = on ? 'FOLLOW' : 'STAY';
+    } else {
+      this.dogMood = on ? 'FOLLOW' : 'STAY';
+      this.dogMoodAfterGreet = this.dogMood;
+    }
+    this.dogAnchor.copy(DOG_BED);
+    this.syncDogHint();
   }
 
   private syncDogHint(): void {

@@ -438,12 +438,44 @@ hiçbir şey yok. 6 istasyon:
 | **Workbench** | Kalıcı yükseltmeler (Mirror of Night) |
 | **Radio Set** | Long Night kademesi seç |
 | **Pin Board** | Kayıtlar: koşu sayısı, ölüm, en derin sektör, toplam kill, en iyi skor |
+| **The Pens** | Bu gece hangi hayvan seninle geliyor; yenilerini besleyip sahiplen |
 | **Cellar Stairs** | Dışarı çık — koşu başlar |
-| **Rook (köpek)** | Menü değil. Sevebilirsin; peşinden gelmesini isteyebilirsin |
+| **Rook (köpek)** | Menü değil. Sevebilirsin; sevmek onu "bu gece gelen" yapar |
 
 **Rook** oyunun duygusal çapası: yatağı sobanın yanında, kendi mizacı var
 (`STAY` / `FOLLOW` / `GREET`), sen merdivenden indiğinde seni karşılamaya
-geliyor, sonra yatağına dönüyor. Hiçbir mekanik faydası yok. Bilerek.
+geliyor, sonra yatağına dönüyor. Artık dışarıda da bir işi var — ama onu
+sevmenin bedeli yok, ve listeyi açmadan da yapılabiliyor.
+
+### The Pens — yanına ne alıyorsun (7 hayvan)
+
+Silah rafının hayvan hâli: **biri seninle gelir, geri kalanı kalır.** Farkı,
+"nobody" seçeneğinin de bir buton olması — ve hiçbirinin ölmemesi.
+
+| Hayvan | Rol | Fiyat | Ne yapar |
+|---|---|---|---|
+| **Rook** — lurcher | Harries | 0 | En yakındakini kovalar; 16 hasar + sendeletme |
+| **Mouser** — kedi | Keeps you steady | 120 | Hiç dövüşmez; 4 sn darbe yemediysen sn'de 2 can |
+| **Sixpence** — saksağan | Lifts scrap | 190 | 16 m'ye kadar yerdeki hurdayı alıp eline getirir |
+| **Nan** — keçi | Pulls the street | 250 | 11 m yarıçapındaki ölüler sana değil **ona** yürür |
+| **Kite** — şahin | Stoops | 340 | En uzaktakine dalış; 40 hasar, yerdeki hiçbir şey ona değemez |
+| **Bristle** — yaban domuzu | Runs a line | 420 | 7 sn'de bir hat seçip koşar; 45 hasar, üçüncü gövdede durur |
+| **Honey** — ayı | Puts them down | 560 | 6 sn'de bir 4 m yarıçapında 75 hasar + yere serme |
+
+**Tasarım kuralları:**
+
+1. **İkinci bir silah değiller.** Hepsinin ham hasarı oyuncunun silahının onda
+   biri civarında. Sattıkları şey oyuncuda olmayan bir **fiil**: sendeleten
+   biri, kalabalığı üstünden alan biri, sen dövüşürken yoldan hurda toplayan
+   biri. Ölçüm (4. sektör, 30 sn, oyuncu ateş etmiyor): Rook 3, Kite 4,
+   Bristle 14, Honey 17 öldürme. Sıralama fiyat sıralamasıyla aynı.
+2. **Hiçbiri ölmüyor.** Ölülerle yeterince temas ederse yolda yere yığılıyor;
+   sokak temizlendiği anda kalkıyor. Kalıcı ölüm, her şeyini kaybetmeye dair
+   bir oyunda kimsenin istemediği tek zulüm olurdu — üstelik mekanik olarak da
+   her hayvanı "evde bırakılan şey"e çevirirdi.
+3. **Sığınakta görünüyorlar.** Seçilen hayvan yükleme kapağının olduğu köşedeki
+   ağılda duruyor; oyuncu satın aldığı şeyin yanından geçebiliyor. Rook'un
+   istisnası: odanın kendi köpeği, ağılı hiç kullanmıyor.
 
 **Odanın iki duvarı yok.** Kamera güneydoğu köşesinden bakıyor; doğu ve güney
 duvarları kamerayla zemin arasında kalacağı için **hiç inşa edilmemiş.** Sınır
@@ -593,7 +625,8 @@ gerekiyor. (Bkz. §18.)
 | Pact of Punishment | The Long Night (5 kademe) | Basitleştirilmiş: 4 eksen, 12 pakt değil |
 | Chamber → kapı seçimi | Sektör → kapı seçimi | Birebir |
 | Boss (Megaera vb.) | The Behemoth | Şu an **tek** boss — bkz. §19 |
-| Keepsakes / Duo boons / Companions | **Yok** | En büyük eksik |
+| Keepsakes / Duo boons | **Yok** | En büyük eksik |
+| Companions | The Pens (7 hayvan) | Hades'te yok — buradaki karşılığı kalıcı satın alma, koşu başına bir tane |
 | Anlatı ilerleyişi | **Yok** | İkinci en büyük eksik |
 
 ---

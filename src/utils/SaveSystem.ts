@@ -1,5 +1,6 @@
 import { META_DEFS, type MetaKey } from '../config/Progression';
 import { WEAPONS, type WeaponId } from '../config/Weapons';
+import { ANIMALS, type AnimalId } from '../config/Animals';
 import { ALL_CALLERS } from '../core/RewardDeck';
 import type { Caller } from '../ui/BoonModal';
 import { emptyTally, type Tally } from '../narrative/Prophecies';
@@ -52,6 +53,13 @@ export interface SaveData {
    * with one working radio set instead of a display case.
    */
   tuned: Caller | null;
+  /**
+   * What is in the pens. Rook is in here from the first night — he was already
+   * downstairs — and everything else is bought out of the yard for good.
+   */
+  penned: AnimalId[];
+  /** Who is coming with you. Null is nobody, which is a real choice. */
+  atHeel: AnimalId | null;
   narrative: NarrativeState;
   /** How the machine is asked to run. Not progression — it survives a wipe. */
   settings: DisplaySettings;
@@ -89,6 +97,8 @@ function defaultSave(): SaveData {
     lastWeapon: 'RANGER',
     nightLevel: 0,
     tuned: null,
+    penned: ['ROOK'],
+    atHeel: null,
     narrative: { seen: [], heard: {} },
     settings: { fpsCap: 0, showFps: false },
     claimed: [],
@@ -118,6 +128,15 @@ export class SaveSystem {
         if (Array.isArray(parsed.unlockedWeapons)) {
           const valid = parsed.unlockedWeapons.filter((w) => !!WEAPONS[w]);
           base.unlockedWeapons = Array.from(new Set<WeaponId>(['RANGER', ...valid]));
+        }
+        if (Array.isArray(parsed.penned)) {
+          const kept = parsed.penned.filter((a) => !!ANIMALS[a]);
+          base.penned = Array.from(new Set<AnimalId>(['ROOK', ...kept]));
+        }
+        // An animal that is no longer in the save cannot be at your heel — a
+        // wiped pen would otherwise send a ghost out with you.
+        if (parsed.atHeel && ANIMALS[parsed.atHeel] && base.penned.includes(parsed.atHeel)) {
+          base.atHeel = parsed.atHeel;
         }
         if (parsed.meta) {
           for (const d of META_DEFS) {
@@ -294,6 +313,38 @@ export class SaveSystem {
 
   public static setTuned(caller: Caller | null): void {
     this.load().tuned = caller;
+    this.save();
+  }
+
+  // ---- the pens -----------------------------------------------------------
+
+  public static isPenned(id: AnimalId): boolean {
+    return this.load().penned.includes(id);
+  }
+
+  public static pennedCount(): number {
+    return this.load().penned.length;
+  }
+
+  /** Buys an animal out of the yard. Permanent, like a weapon off the wall. */
+  public static takeIn(id: AnimalId): boolean {
+    const s = this.load();
+    if (s.penned.includes(id)) return false;
+    if (!this.spendScrap(ANIMALS[id].cost)) return false;
+    s.penned.push(id);
+    this.save();
+    return true;
+  }
+
+  /** Who walks out with you tonight. Null is a perfectly good answer. */
+  public static getAtHeel(): AnimalId | null {
+    const s = this.load();
+    return s.atHeel && s.penned.includes(s.atHeel) ? s.atHeel : null;
+  }
+
+  public static setAtHeel(id: AnimalId | null): void {
+    const s = this.load();
+    s.atHeel = id && s.penned.includes(id) ? id : null;
     this.save();
   }
 

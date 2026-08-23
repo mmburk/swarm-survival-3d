@@ -21,6 +21,7 @@ import { Projectile, ProjectileType } from '../entities/Projectile';
 import { Pickup, PickupType } from '../entities/Pickup';
 import { Flare } from '../entities/Flare';
 import { Shelter, type Station } from '../entities/Shelter';
+import { Companion, LURE_RADIUS, type CompanionWorld } from '../entities/Companion';
 import { Trader } from '../entities/Trader';
 import { SupplyCache } from '../entities/SupplyCache';
 import { SignalDrop } from '../entities/SignalDrop';
@@ -44,6 +45,7 @@ import { readyCount, type ProphecyContext, type ProphecyView } from '../narrativ
 import { SaveSystem } from '../utils/SaveSystem';
 import { HEX } from '../theme/Palette';
 import type { WeaponId } from '../config/Weapons';
+import { ANIMALS, type AnimalId } from '../config/Animals';
 
 type Mode = 'TITLE' | 'SHELTER' | 'RUN' | 'DEBRIEF';
 
@@ -85,6 +87,9 @@ export class Engine {
 
   private player!: Player;
   private boss!: BossEnemy;
+  /** Whatever came out of the pens. Empty-handed is a valid state. */
+  private companion!: Companion;
+  private companionWorld!: CompanionWorld;
 
   private enemies!: ObjectPool<Enemy>;
   private bullets!: ObjectPool<Projectile>;
@@ -163,6 +168,15 @@ export class Engine {
   private streak: number = 0;
   private streakTimer: number = 0;
 
+  /**
+   * Seconds since the player was last hit. Only the cat reads it, and she
+   * reads it every frame, which is why it is a counter here rather than a
+   * question asked of the player — nothing else in the game needs to know.
+   */
+  private calm: number = 0;
+  /** Bodies the animal put down tonight, banked to the board at the debrief. */
+  private runPennedKills: number = 0;
+
   private telegraphs: Array<{ pos: THREE.Vector3; type: EnemyType; timer: number }> = [];
 
   /**
@@ -172,6 +186,13 @@ export class Engine {
    * back onto this one.
    */
   private hitCandidates: Enemy[] = [];
+
+  /**
+   * And the same again for the animal. A slam walks its list while dealing
+   * damage, and a kill can rupture, which queries the grid — so the companion
+   * gets a buffer nothing else writes to rather than a slot in the ring.
+   */
+  private penCandidates: Enemy[] = [];
 
   constructor(container: HTMLElement) {
     this.audio = new AudioManager();
@@ -192,6 +213,8 @@ export class Engine {
 
       this.player = new Player(this.render.scene, this.input, this.particles, this.audio, this.terrain);
       this.boss = new BossEnemy(this.render.scene, this.particles, this.audio, this.terrain);
+      this.companion = new Companion(this.render.scene);
+      this.companionWorld = this.buildCompanionWorld();
 
       this.enemies = new ObjectPool<Enemy>(
         () => new Enemy(this.particles, this.audio, this.terrain), 180, 320);
@@ -261,10 +284,78 @@ export class Engine {
 
   // ------------------------------------------------------------------ wiring
 
+  /**
+   * The whole of what an animal is allowed to do to the world.
+   *
+   * Built once and closed over the engine, so the companion never holds a
+   * reference to a pool, the grid, or the save. Two of these are worth reading
+   * twice: `hurt` routes through `onEnemyKilled`, which means a kill by the dog
+   * pays scrap, feeds the streak and counts on the plate exactly like a kill by
+   * the gun; and `healPlayer` deliberately does *not* call `player.heal`,
+   * because that plays a pickup sound and the cat's trickle would fire it sixty
+   * times a second.
+   */
+  private buildCompanionWorld(): CompanionWorld {
+    return {
+      groundAt: (x, z) => this.terrain.getHeightAt(x, z),
+
+      enemiesNear: (pos, radius) => this.grid.query(pos, radius, this.penCandidates),
+
+      hurt: (enemy, damage, from, stun) => {
+        if (!enemy.active) return;
+        const killed = enemy.takeDamage(damage, from);
+        this.hud.spawnDamageNumber(enemy.position, damage, false);
+        if (stun > 0) enemy.stunTimer = Math.max(enemy.stunTimer, stun);
+        if (killed) {
+          this.runPennedKills++;
+          this.onEnemyKilled(enemy, from);
+        }
+      },
+
+      scrapNear: (pos, radius) => {
+        let best: Pickup | null = null;
+        let bestDist = radius * radius;
+        for (const p of this.drops.getActiveItems()) {
+          if (!p.active || p.type !== PickupType.SCRAP) continue;
+
+          // Anything already at the player's feet is on its way in without
+          // her. Measured from the player and not from the bird — measuring it
+          // from the bird meant every piece became invisible to her the moment
+          // she got close to it, and she spent the street swapping between two
+          // she was never allowed to reach. See bug.md.
+          const px = p.position.x - this.player.position.x;
+          const pz = p.position.z - this.player.position.z;
+          if (px * px + pz * pz < 12) continue;
+
+          const dx = p.position.x - pos.x;
+          const dz = p.position.z - pos.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > bestDist) continue;
+          bestDist = d2;
+          best = p;
+        }
+        return best;
+      },
+
+      healPlayer: (amount) => {
+        this.player.health = Math.min(this.player.maxHealth, this.player.health + amount);
+      },
+
+      calmSeconds: () => this.calm,
+
+      spark: (pos, count, colour, power, life) => {
+        this.particles.emitBurst(pos, count, colour, power, life);
+      },
+
+      say: (text) => this.hud.showToast(text)
+    };
+  }
+
   private wirePlayer(): void {
     this.player.onTakeDamage = () => {
       this.hud.flashDamage();
       this.cameraJuice.addTrauma(0.3);
+      this.calm = 0;
     };
 
     this.player.onGetUp = () => {
@@ -343,6 +434,7 @@ export class Engine {
       this.render.applyShelterLighting(this.terrain);
       this.props.setVisible(false);
       this.shelter.activate();
+      this.showPennedAnimal();
 
       this.player.resetPositionAndVelocity(new THREE.Vector3(0, 0, 8));
       CAMERA_RIG.useShelter();
@@ -419,6 +511,28 @@ export class Engine {
       : `${ready} cards on the board are finished.`);
   }
 
+  /**
+   * Puts tonight's animal where the player can see it before they commit.
+   *
+   * Rook is the exception in both directions: he lives in the room, so the
+   * pen stays empty and his own mood is set instead. Everything else is stood
+   * in the straw in the corner, and choosing it sends Rook back to his bed —
+   * two animals leaving with you is a promise the door cannot keep.
+   */
+  private showPennedAnimal(): void {
+    const heel = SaveSystem.getAtHeel();
+    this.shelter.setDogFollow(heel === 'ROOK');
+
+    if (!heel || heel === 'ROOK') {
+      this.companion.stand();
+      this.companion.setAnimal(heel);
+      return;
+    }
+
+    this.companion.setAnimal(heel);
+    this.companion.enterPen(this.shelter.penFloor);
+  }
+
   /** Everything the pin board is allowed to ask about, read fresh each time. */
   private boardContext(): ProphecyContext {
     const st = SaveSystem.getStats();
@@ -432,6 +546,7 @@ export class Engine {
       metaRanks: SaveSystem.totalMetaRanks(),
       weaponsUnlocked: SaveSystem.unlockedWeaponCount(),
       modsFitted: SaveSystem.fittedModCount(),
+      pennedOwned: SaveSystem.pennedCount(),
       heard: (caller) => SaveSystem.heardFrom(caller),
       logHeard: logProgress((id) => SaveSystem.hasHeardLine(id)).heard,
       claimed: (id) => SaveSystem.hasClaimed(id)
@@ -476,11 +591,25 @@ export class Engine {
         }, close);
         break;
 
+      case 'PENS':
+        this.menus.showPens((id: AnimalId | null) => {
+          // Applied on every click rather than on close: the corner of the
+          // room is the preview, so it has to change while the card is open.
+          this.showPennedAnimal();
+          this.audio.playPickup();
+          if (id) this.hud.showToast(`${ANIMALS[id].name} is coming with you.`);
+        }, close);
+        break;
+
       case 'DOG': {
         // Not a menu — just a small, warm thing, and the one order he takes.
+        // It is also the pens card in miniature: petting him into following is
+        // the same decision as picking him off the list, so it writes it there.
         this.uiPaused = false;
         this.interactLock = 1.2;
         const mood = this.shelter.petDog();
+        SaveSystem.setAtHeel(mood === 'FOLLOW' ? 'ROOK' : null);
+        this.showPennedAnimal();
         this.audio.playPickup();
         this.particles.emitBurst(this.shelter.dogPosition, 8, HEX.amber, 3, 0.24);
         this.hud.showToast(mood === 'FOLLOW'
@@ -504,9 +633,10 @@ export class Engine {
 
     this.sectors.setNight(SaveSystem.getNightLevel());
 
-    // Counted here rather than at the door, because his mood can still change
-    // right up until the stairs and it is the mood you leave on that matters.
-    if (this.shelter.dogMoodNow === 'FOLLOW') SaveSystem.bumpTally('dogRuns');
+    // Counted here rather than at the door, because the list can still change
+    // right up until the stairs and it is what you leave with that matters.
+    const heel = SaveSystem.getAtHeel();
+    if (heel === 'ROOK') SaveSystem.bumpTally('dogRuns');
 
     this.loading.show(`Sector 01 — ${sectorFor(1).name}`, () => {
       this.mode = 'RUN';
@@ -521,6 +651,8 @@ export class Engine {
       this.pendingWorks = false;
       this.worksFitted.length = 0;
       this.goingHome = false;
+      this.calm = 0;
+      this.runPennedKills = 0;
 
       // Everything the doors will offer tonight is dealt off one seeded bag,
       // opened here — including the frequency the set was left on downstairs,
@@ -565,6 +697,13 @@ export class Engine {
     this.player.resetPositionAndVelocity(new THREE.Vector3(0, 0, 16));
     CAMERA_RIG.useField();
     this.cameraJuice.snapTo(this.player.position);
+
+    // Whatever came out of the pens is set down beside you at the mouth of
+    // every street — on its feet, whatever the last one did to it.
+    const heel = SaveSystem.getAtHeel();
+    this.companion.setAnimal(heel);
+    if (heel) this.companion.enterField(this.player.position, (x, z) => this.terrain.getHeightAt(x, z));
+    else this.companion.stand();
   }
 
   /** Sets up the world for a sector: lighting, boss, trader, optional crate. */
@@ -686,6 +825,14 @@ export class Engine {
    * decisions competing for one held breath.
    */
   private onStreetDone(): void {
+    // Anything of yours lying in the road gets up now, while there is nobody
+    // left to stop it. This is the whole of the recovery rule.
+    if (this.companion.downed) {
+      this.hud.showToast(`${this.companion.name} is up again, and none the wiser.`);
+      this.particles.emitBurst(this.companion.position, 10, HEX.dirt, 4, 0.5);
+    }
+    this.companion.patchUp();
+
     if (this.pendingBoon) {
       const host = this.pendingBoon;
       this.pendingBoon = null;
@@ -877,6 +1024,10 @@ export class Engine {
 
     SaveSystem.recordRunEnd(this.sectors.current, this.runKills, this.runScore, survived);
 
+    // Banked once at the end rather than per kill: every bump writes the whole
+    // save to storage, and an animal in a good street kills often.
+    if (this.runPennedKills > 0) SaveSystem.bumpTally('pennedKills', this.runPennedKills);
+
     // Snapshotted before the field is cleared, because the buff list lives on
     // the player and the player is about to be reset for the shelter.
     this.lastRun = {
@@ -909,8 +1060,15 @@ export class Engine {
     }, () => this.enterShelter(false));
   }
 
-  /** Recycles every transient thing in the world. */
+  /**
+   * Recycles every transient thing in the world.
+   *
+   * The companion is stood down rather than recycled — it is not pooled, and
+   * whichever surface comes next (the shelter's pen, the next street) puts it
+   * back where it belongs itself.
+   */
   private clearField(): void {
+    this.companion.stand();
     this.enemies.recycleAllActive((e) => e.deactivate());
     this.bullets.recycleAllActive((b) => b.deactivate());
     this.drops.recycleAllActive((d) => d.deactivate());
@@ -1292,6 +1450,9 @@ export class Engine {
 
   private updateShelter(delta: number): void {
     this.shelter.update(delta, this.player.position);
+    // No world handed over: in the pen there is nothing to fight, fetch or
+    // pull, and the same update falls through to the idle walk.
+    this.companion.update(delta, this.player.position);
 
     if (this.uiPaused) return;
 
@@ -1394,14 +1555,20 @@ export class Engine {
     // Once the street is nearly empty, whatever is left stops playing keep-away.
     const mopUp = this.sectors.remainingSpawns() === 0 && active.length <= 4;
 
+    // Nan, if she is out. This is the entire bait mechanic: the dead within
+    // earshot of her are handed her position as the thing to walk at, and
+    // everything downstream of that — pathing, spitting, contact — follows.
+    const lure = this.companion.lurePoint;
+
     // Enemies.
     for (const e of active) {
       if (!e.active) continue;
       e.pressAttack = mopUp;
+      const drawnOff = lure && withinRadius(e.position, lure, LURE_RADIUS);
       e.updateAI(
         delta,
         this.frame,
-        this.player.position,
+        drawnOff ? lure : this.player.position,
         this.grid,
         (origin, dir) => {
           this.bullets.get(origin, dir, 17, ProjectileType.ENEMY_BILE, 14, { range: 40, radius: 0.5 });
@@ -1409,6 +1576,18 @@ export class Engine {
         (burster) => this.burstOpen(burster)
       );
     }
+
+    // Whatever came with you. Updated after the dead have moved, so it is
+    // chasing where they are rather than where they were last frame, and
+    // shoved out of the wrecks afterwards the same way the player is.
+    this.calm += delta;
+    this.companion.update(delta, this.player.position, this.companionWorld);
+    this.companion.avoid(InstancedProps.obstacles);
+    this.hud.setCompanion(
+      this.companion.mode === 'FIELD' ? this.companion.def?.id ?? null : null,
+      this.companion.conditionRatio,
+      this.companion.downed
+    );
 
     // Projectiles.
     for (const b of this.bullets.getActiveItems()) b.update(delta);

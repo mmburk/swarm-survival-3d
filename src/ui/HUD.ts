@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { injectTheme, CSS } from '../theme/Palette';
 import { CAMERA_RIG } from '../graphics/CameraRig';
 import { emblemSvg } from './art/Emblems';
+import { animalMark } from './art/Animals';
+import { ANIMALS, type AnimalId } from '../config/Animals';
 
 interface DamageText {
   el: HTMLElement;
@@ -68,6 +70,14 @@ export class HUD {
 
   private minimapCanvas!: HTMLCanvasElement;
   private minimapCtx!: CanvasRenderingContext2D;
+
+  private penEl!: HTMLElement;
+  private penMark!: HTMLElement;
+  private penName!: HTMLElement;
+  private penFill!: HTMLElement;
+  /** Which animal the plate is currently drawn for, so the mark is redrawn once. */
+  private penShown: AnimalId | null = null;
+  private penDowned: boolean = false;
 
   private dmgContainer!: HTMLElement;
   private dmgPool: DamageText[] = [];
@@ -316,6 +326,19 @@ export class HUD {
         <div class="hud-bar" style="height:8px;"><div id="flare-fill" class="hud-bar-fill" style="width:0%"></div></div>
       </div>
 
+      <!-- Whatever came with you -->
+      <div id="pen-card" class="hud-card" style="position:absolute; bottom:170px; left:290px; display:none; width:138px; padding:8px 10px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div id="pen-mark" style="flex:0 0 auto; opacity:0.9;"></div>
+          <div style="min-width:0; flex:1;">
+            <div id="pen-name" style="font-family:var(--stencil); font-size:14px; letter-spacing:1.6px; color:var(--paper); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">ROOK</div>
+            <div class="hud-bar" style="width:100%; height:6px; margin-top:4px;">
+              <div id="pen-fill" class="hud-bar-fill" style="background:linear-gradient(180deg,#7d8a5c,#4b5436);"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Minimap -->
       <div id="minimap-card" class="hud-card" style="position:absolute; bottom:18px; left:290px; padding:7px;">
         <canvas id="minimap" width="124" height="124" style="display:block; background:rgba(8,9,6,0.75);"></canvas>
@@ -412,6 +435,11 @@ export class HUD {
     this.cacheEl = $('cache-timer');
     this.vignette = $('vignette');
     this.crosshair = $('crosshair');
+
+    this.penEl = $('pen-card');
+    this.penMark = $('pen-mark');
+    this.penName = $('pen-name');
+    this.penFill = $('pen-fill');
 
     this.minimapCanvas = $('minimap') as HTMLCanvasElement;
     this.minimapCtx = this.minimapCanvas.getContext('2d')!;
@@ -591,6 +619,37 @@ export class HUD {
     if (show) this.bossFill.style.width = `${Math.max(0, (health / maxHealth) * 100)}%`;
   }
 
+  /**
+   * The small plate for whatever came out of the pens.
+   *
+   * Called every frame of a run, so it repaints only what moved: the stock
+   * mark is re-inked when the animal changes and never otherwise, and the
+   * down state is a colour swap rather than a rebuild.
+   */
+  public setCompanion(id: AnimalId | null, ratio: number = 1, downed: boolean = false): void {
+    if (id !== this.penShown) {
+      this.penShown = id;
+      this.penEl.style.display = id ? 'block' : 'none';
+      if (id) {
+        this.penMark.innerHTML = animalMark(id, 30, CSS.bone);
+        this.penName.textContent = ANIMALS[id].name.toUpperCase();
+      }
+    }
+    if (!id) return;
+
+    this.penFill.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+
+    if (downed !== this.penDowned) {
+      this.penDowned = downed;
+      this.penEl.style.borderColor = downed ? CSS.blood : 'rgba(42,45,34,0.95)';
+      this.penMark.style.opacity = downed ? '0.35' : '0.9';
+      this.penName.style.color = downed ? CSS.blood : CSS.paper;
+      this.penName.textContent = downed
+        ? `${ANIMALS[id].name.toUpperCase()} — DOWN`
+        : ANIMALS[id].name.toUpperCase();
+    }
+  }
+
   public setCacheTimer(show: boolean, kills = 0, required = 0, timeLeft = 0): void {
     this.cacheEl.style.display = show ? 'block' : 'none';
     if (show) {
@@ -624,6 +683,10 @@ export class HUD {
     if (inShelter) {
       this.setBossBar(false);
       this.setCacheTimer(false);
+      // Downstairs the animal is standing in the room; a plate telling you how
+      // it is doing while you can see it is noise.
+      this.penEl.style.display = 'none';
+      this.penShown = null;
     } else {
       this.hidePrompt();
     }

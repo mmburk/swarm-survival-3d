@@ -175,6 +175,47 @@ genişliği boyunca ~0.1 yalpaladığı için ayak bileği hizası yetmiyor. Öl
 bırakmanın halka çevresinden alınan 3200 örneğinde **tek bir gömülme yok**
 (öncesinde beklenen ~%35).
 
+### 12. Sixpence topladığı hurdayı asla teslim edemiyordu
+
+**Yer:** `src/core/Engine.ts` — `companionWorld.scrapNear()`
+
+Kuşun hurda araması "oyuncunun mıknatısına zaten girmiş olanı boş ver" filtresi
+kullanıyordu, ama mesafeyi **kuşun kendisinden** ölçüyordu. Yani bir hurdaya
+3 metreden fazla yaklaştığı anda o hurda aramadan düşüyor, kuş da bir sonraki
+en yakına dönüyordu. Sonuç: iki hurda arasında sonsuza kadar gidip gelen, 16
+saniyede tek parça toplayamayan bir kuş.
+
+Filtre artık mesafeyi oyuncudan ölçüyor — niyet zaten buydu.
+
+### 13. Kuşun taşıdığı hurda uçuş yüksekliğinde asılı kalıyordu
+
+**Yer:** `src/entities/Companion.ts` — `roleFetch()`, `releaseCarry()`
+
+Taşınan `Pickup`'ın konumu her karede kuşun altına yazılıyordu, bırakırken de
+y'si olduğu yerde kalıyordu. `Engine` ise toplamayı **3B** mesafe testiyle
+yapıyor (`distanceToSquared < 1.44`), dolayısıyla oyuncunun 1.6 metre üstünde
+asılı duran hurda "neredeyse toplandı" görünüp asla toplanmıyor, 22 saniyelik
+ömrü dolunca da yok oluyordu. Ölçüm: 5 parça, 16 saniye, toplanan 0.
+
+Bırakma tek bir yerden geçiyor artık (`releaseCarry`) ve hurdayı altındaki
+yolun yüksekliğine indiriyor. Aynı ölçüm: 5/5.
+
+### 14. Bristle kalabalığın içinde durup hiç hücum etmiyordu
+
+**Yer:** `src/entities/Companion.ts` — `roleCharge()`
+
+Hücum hedefi "en yakın" ceset seçiliyor, sonra hedefe 3 metreden yakınsa hücum
+iptal ediliyordu. İkisi birlikte şu anlama geliyor: domuzun üstüne bir zombi
+yaslandığı an hücum kalıcı olarak kilitleniyor — hedef hep çok yakın. 20
+saniyelik testte 1 öldürme.
+
+Hedef artık **en uzaktaki** ceset (bir hücumun mesafeye ihtiyacı var), hücumlar
+arasında da kalabalığın içinde beklemek yerine oyuncunun yanına dönüyor.
+
+> **Denge notu:** düzeltme fazla iyi çalıştı — kalabalık sokakta tek hücum on
+> gövde biçiyordu (20 saniyede 29 öldürme, ayının 8'ine karşı). Hücum artık
+> üçüncü gövdede duruyor; aynı testte 11.
+
 ---
 
 ## Açık olanlar

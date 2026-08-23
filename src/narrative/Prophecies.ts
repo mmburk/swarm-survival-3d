@@ -29,12 +29,22 @@ export interface Tally {
   fullBandRuns: number;
   /** Runs begun with Rook at your heel. */
   dogRuns: number;
+  /** Bodies put down by whatever came out of the pens, all time. */
+  pennedKills: number;
   /** Deepest single run that never took the sixth signal. */
   deepestClean: number;
 }
 
 export function emptyTally(): Tally {
-  return { bossKills: 0, traderSpend: 0, flaresLit: 0, fullBandRuns: 0, dogRuns: 0, deepestClean: 0 };
+  return {
+    bossKills: 0,
+    traderSpend: 0,
+    flaresLit: 0,
+    fullBandRuns: 0,
+    dogRuns: 0,
+    pennedKills: 0,
+    deepestClean: 0
+  };
 }
 
 export interface ProphecyContext {
@@ -48,6 +58,8 @@ export interface ProphecyContext {
   metaRanks: number;
   weaponsUnlocked: number;
   modsFitted: number;
+  /** How many animals are in the pens, Rook included. */
+  pennedOwned: number;
   /** Lines heard from one survivor, and across the whole band. */
   heard: (caller: Caller) => number;
   logHeard: number;
@@ -201,6 +213,26 @@ export const PROPHECIES: Prophecy[] = [
     target: 5,
     progress: (c) => c.tally.dogRuns,
     reward: 130
+  },
+  {
+    id: 'eli-pens',
+    caller: 'ELI',
+    title: 'Four In The Yard',
+    text: 'Four of them fed and standing. I know what the scrap is meant to be for. I also know what a yard with nothing living in it sounds like, and I would rather not hear it again.',
+    target: 4,
+    progress: (c) => c.pennedOwned,
+    reward: 220,
+    requires: 'eli-dog'
+  },
+  {
+    id: 'eli-teeth',
+    caller: 'ELI',
+    title: 'Somebody Else\'s Teeth',
+    text: 'A hundred and fifty of them put down by something out of the pens. Not by you. I want it on the record that they earned their keep, because somebody is going to ask one day.',
+    target: 150,
+    progress: (c) => c.tally.pennedKills,
+    reward: 280,
+    visible: (c) => c.tally.pennedKills >= 1
   },
 
   // ----------------------------------------------------------------- quiet

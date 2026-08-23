@@ -2,10 +2,12 @@ import { injectTheme, CSS } from '../theme/Palette';
 import { SaveSystem, FPS_CAPS } from '../utils/SaveSystem';
 import { META_DEFS, NIGHT_TIERS } from '../config/Progression';
 import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId } from '../config/Weapons';
+import { ANIMALS, ANIMAL_ORDER, type AnimalId } from '../config/Animals';
 import { CALLERS } from './BoonModal';
 import { emblemSvg, emblemChip } from './art/Emblems';
 import { callerPortrait, callerSigil, type CallerArtId } from './art/Portraits';
 import { weaponPlate, weaponThumb } from './art/Weapons2D';
+import { animalMark } from './art/Animals';
 import { heardLines, logProgress } from '../narrative/RadioLog';
 import { readBoard, type ProphecyContext, type ProphecyView } from '../narrative/Prophecies';
 import { ALL_CALLERS } from '../core/RewardDeck';
@@ -49,6 +51,8 @@ export class MenuSystem {
 
   /** Weapon currently highlighted on the rack, not yet confirmed. */
   private previewWeapon: WeaponId;
+  /** Animal currently being read about in the pens. */
+  private previewAnimal: AnimalId = 'ROOK';
 
   /**
    * Told by the engine that the display settings moved. The menu writes to the
@@ -684,6 +688,177 @@ export class MenuSystem {
         const key = btn.dataset.meta as (typeof META_DEFS)[number]['key'];
         if (SaveSystem.buyMetaRank(key)) this.showWorkbench(onClose);
       });
+    });
+
+    document.getElementById('btn-close')!.addEventListener('click', () => {
+      this.hide();
+      onClose();
+    });
+  }
+
+  // ------------------------------------------------------------------- pens
+
+  /**
+   * The pens card. Same contract as the weapon rack — one goes with you and
+   * the rest stay behind — with the difference that the rest are alive, which
+   * is why "nobody tonight" is a button on this card and not on that one.
+   *
+   * `onPick` fires on every change rather than only on close, because the
+   * shelter has a pen in the corner and whatever is chosen has to be standing
+   * in it by the time the card comes down.
+   */
+  public showPens(onPick: (id: AnimalId | null) => void, onClose: () => void): void {
+    this.previewAnimal = SaveSystem.getAtHeel() ?? ANIMAL_ORDER[0];
+    this.renderPens(onPick, onClose);
+  }
+
+  private renderPens(onPick: (id: AnimalId | null) => void, onClose: () => void): void {
+    const atHeel = SaveSystem.getAtHeel();
+    const scrap = SaveSystem.getScrap();
+
+    const list = ANIMAL_ORDER.map((id) => {
+      const a = ANIMALS[id];
+      const owned = SaveSystem.isPenned(id);
+      const active = id === this.previewAnimal;
+      return `
+        <div class="wpn-item ${active ? 'active' : ''} ${owned ? '' : 'locked'}" data-pen="${id}">
+          <div class="wpn-thumb">${animalMark(id, 46, active ? CSS.rust : owned ? CSS.bone : CSS.steel)}</div>
+          <div style="min-width:0; flex:1;">
+            <div class="mn-name" style="font-size:15px;">${a.name}</div>
+            <div class="mn-note" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              ${owned ? a.roleName : 'Still in the yard'}
+            </div>
+            ${
+              owned
+                ? atHeel === id ? `<div class="mn-note" style="color:var(--rust); margin-top:2px;">COMING WITH YOU</div>` : ''
+                : `<div style="margin-top:3px;">${emblemChip('scrap', a.cost, 14, scrap < a.cost ? CSS.blood : undefined)}</div>`
+            }
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const a = ANIMALS[this.previewAnimal];
+    const owned = SaveSystem.isPenned(this.previewAnimal);
+    const chosen = atHeel === this.previewAnimal;
+
+    const bar = (label: string, value: number) => `
+      <div class="stat-line">
+        <div class="stat-key">${label}</div>
+        <div class="stat-track"><div class="stat-val" style="width:${Math.round(Math.min(1, value) * 100)}%"></div></div>
+        <div class="stat-num">${Math.round(Math.min(1, value) * 10)}</div>
+      </div>
+    `;
+
+    // Two of the seven do no damage at all, and the card has to say so rather
+    // than draw them an empty bar and let the player wonder what broke.
+    const fights = a.strike.damage > 0;
+
+    this.present(`
+      <div class="ll-panel ll-pinned mn-shell ll-scroll" style="width:900px;">
+        <div class="mn-head">
+          <div>
+            <div class="ll-title" style="font-size:30px;">The Pens</div>
+            <div class="ll-sub">One of them comes with you. They all get fed either way.</div>
+          </div>
+          ${this.scrapHeader()}
+        </div>
+
+        <div class="wpn-grid">
+          <div style="display:flex; flex-direction:column; gap:7px;">
+            ${list}
+            <div class="wpn-item ${atHeel === null ? 'active' : ''}" data-pen="" style="margin-top:4px;">
+              <div class="wpn-thumb" style="width:46px; height:46px;"></div>
+              <div style="flex:1;">
+                <div class="mn-name" style="font-size:15px;">Nobody</div>
+                <div class="mn-note">Go out on your own</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column;">
+            <div class="wpn-plate ${owned ? '' : 'locked'}" style="display:flex; justify-content:center; padding:22px;">
+              ${owned ? '' : `<div class="wpn-stamp">NOT FED YET</div>`}
+              ${chosen ? `<div class="wpn-stamp" style="color:${CSS.rust}; border-color:${CSS.rust};">AT YOUR HEEL</div>` : ''}
+              ${animalMark(this.previewAnimal, 210, owned ? CSS.bone : CSS.steel)}
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:12px;">
+              <div class="ll-title" style="font-size:26px;">${a.name}</div>
+              <div class="ll-sub" style="margin:0;">${a.species}</div>
+            </div>
+
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+              <div class="ll-tag" style="color:var(--rust); border-color:var(--rust);">${a.roleName}</div>
+              ${fights ? `<div class="ll-tag">${a.strike.damage} a hit</div>` : `<div class="ll-tag">Never fights</div>`}
+              ${fights ? `<div class="ll-tag">every ${a.strike.cooldown.toFixed(1)}s</div>` : ''}
+              ${a.flies ? `<div class="ll-tag">Off the ground</div>` : ''}
+            </div>
+
+            <div style="font-size:13.5px; line-height:1.6; color:var(--bone); margin-top:10px;">${a.desc}</div>
+            <div style="font-size:12px; font-style:italic; color:var(--ash); margin-top:8px;">${a.flavor}</div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 22px; margin-top:14px;">
+              ${bar('Grit', a.grit / 320)}
+              ${bar('Pace', a.speed / 15)}
+              ${bar('Bite', a.strike.damage / 75)}
+              ${bar('Range', a.leash / 20)}
+            </div>
+
+            <div style="font-size:12px; color:var(--ash); margin-top:14px; line-height:1.6;">
+              Nothing out of the pens dies out there. Enough contact with the dead and it goes
+              down in the road — and it is back on its feet the moment the street is clear.
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:18px;">
+              ${
+                !owned
+                  ? `<button id="btn-pen-buy" class="ll-btn" ${scrap < a.cost ? 'disabled' : ''}>
+                       Feed ${a.name} — ${a.cost} scrap
+                     </button>`
+                  : chosen
+                    ? `<button id="btn-pen-drop" class="ll-btn-ghost" style="flex:1;">Leave ${a.name} here tonight</button>`
+                    : `<button id="btn-pen-take" class="ll-btn">Take ${a.name}</button>`
+              }
+              <button id="btn-close" class="ll-btn-ghost" style="white-space:nowrap;">BACK</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    this.root.querySelectorAll<HTMLElement>('[data-pen]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const id = el.dataset.pen as AnimalId | '';
+        if (!id) {
+          // The "nobody" row is a choice, not a preview.
+          SaveSystem.setAtHeel(null);
+          onPick(null);
+        } else {
+          this.previewAnimal = id;
+        }
+        this.renderPens(onPick, onClose);
+      });
+    });
+
+    document.getElementById('btn-pen-buy')?.addEventListener('click', () => {
+      if (!SaveSystem.takeIn(this.previewAnimal)) return;
+      // Anything you have just fed is obviously the thing you came in for.
+      SaveSystem.setAtHeel(this.previewAnimal);
+      onPick(this.previewAnimal);
+      this.renderPens(onPick, onClose);
+    });
+
+    document.getElementById('btn-pen-take')?.addEventListener('click', () => {
+      SaveSystem.setAtHeel(this.previewAnimal);
+      onPick(this.previewAnimal);
+      this.renderPens(onPick, onClose);
+    });
+
+    document.getElementById('btn-pen-drop')?.addEventListener('click', () => {
+      SaveSystem.setAtHeel(null);
+      onPick(null);
+      this.renderPens(onPick, onClose);
     });
 
     document.getElementById('btn-close')!.addEventListener('click', () => {
