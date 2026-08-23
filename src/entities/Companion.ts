@@ -571,10 +571,17 @@ export class Companion {
     // still reach rather than the nearest. Choosing the nearest meant that a
     // shambler leaning on him blocked the charge outright: it was always too
     // close to run at, and he stood there being eaten. See bug.md.
+    //
+    // The leash is measured rather than trusted, and here it matters more than
+    // anywhere else in this file: the grid is a broad phase, so the list runs
+    // past the leash, and picking the *furthest* body in it is picking exactly
+    // the one that overran. He charged bodies four metres outside his own
+    // leash — away from the fight, with his back to it. See bug.md.
     let mark: Enemy | null = null;
     let markDist = 0;
     for (const e of world.enemiesNear(playerPos, def.leash)) {
       if (!e.active) continue;
+      if (flat(e.position, playerPos) > def.leash) continue;
       const d = flat(e.position, this.position);
       if (d > markDist) {
         markDist = d;
@@ -650,12 +657,23 @@ export class Companion {
     held.position.y = ground + 0.3;
   }
 
-  /** Nearest live body to a point, inside a radius. */
+  /**
+   * Nearest live body to the animal, out of everything inside `radius` of
+   * `origin` — which is nearly always the player, because the radius is the
+   * leash and the leash is about how far the animal is willing to leave you.
+   *
+   * The radius has to be measured here. `enemiesNear` is the grid, and the
+   * grid is a broad phase: it hands back whole cells, six metres to a side, so
+   * a body well outside the leash comes back in the list. Unmeasured, the cat
+   * flinched from things she could not see and the dog left the player's side
+   * for a body outside his. See bug.md.
+   */
   private nearestTo(origin: THREE.Vector3, radius: number, world: CompanionWorld): Enemy | null {
     let best: Enemy | null = null;
     let bestDist = Infinity;
     for (const e of world.enemiesNear(origin, radius)) {
       if (!e.active) continue;
+      if (flat(e.position, origin) > radius) continue;
       const d = flat(e.position, this.position);
       if (d < bestDist) {
         bestDist = d;
