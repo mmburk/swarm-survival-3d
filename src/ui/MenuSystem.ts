@@ -767,11 +767,15 @@ export class MenuSystem {
         <div class="wpn-grid">
           <div style="display:flex; flex-direction:column; gap:7px;">
             ${list}
-            <div class="wpn-item ${atHeel === null ? 'active' : ''}" data-pen="" style="margin-top:4px;">
+            <!-- Not given the active class: on this list active means "the one
+                 you are reading about", and the choice itself is carried by the
+                 tag, the same way it is on the animals. -->
+            <div class="wpn-item" data-pen="" style="margin-top:4px;">
               <div class="wpn-thumb" style="width:46px; height:46px;"></div>
               <div style="flex:1;">
                 <div class="mn-name" style="font-size:15px;">Nobody</div>
                 <div class="mn-note">Go out on your own</div>
+                ${atHeel === null ? `<div class="mn-note" style="color:var(--rust); margin-top:2px;">NOBODY TONIGHT</div>` : ''}
               </div>
             </div>
           </div>
