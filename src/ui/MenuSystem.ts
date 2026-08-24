@@ -3,6 +3,7 @@ import { SaveSystem, FPS_CAPS } from '../utils/SaveSystem';
 import { META_DEFS, NIGHT_TIERS } from '../config/Progression';
 import { WEAPONS, WEAPON_ORDER, resolveWeaponStats, type WeaponId } from '../config/Weapons';
 import { ANIMALS, ANIMAL_ORDER, type AnimalId } from '../config/Animals';
+import { MARKS, MARK_ORDER } from '../config/Marks';
 import { CALLERS } from './BoonModal';
 import { emblemSvg, emblemChip } from './art/Emblems';
 import { callerPortrait, callerSigil, type CallerArtId } from './art/Portraits';
@@ -1174,6 +1175,20 @@ export class MenuSystem {
       `;
     }).join('');
 
+    // The layer that rides on the bodies above. Painted from the same table
+    // the game plays from, so the board can never describe a rule that is not
+    // the rule — and in the marked's own colour, which is the only way the
+    // player connects the card to the thing on the street.
+    const marked = MARK_ORDER.map((id) => {
+      const m = MARKS[id];
+      return `
+        <div style="padding:9px 12px; background:rgba(0,0,0,0.2); border:1px solid var(--char);">
+          <div class="mn-name" style="font-size:14px; color:#9fc4dd;">${m.name}</div>
+          <div class="mn-note">${m.desc}</div>
+        </div>
+      `;
+    }).join('');
+
     const bestiary = [
       ['Shambler', 'Slow, weak, endless. It is the count that kills you.'],
       ['Sprinter', 'Fresh turns still run. Deal with these first.'],
@@ -1216,6 +1231,10 @@ export class MenuSystem {
         <div class="ll-rule"></div>
         <div class="ll-sub" style="margin:0 0 10px;">What is out there</div>
         <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:7px;">${bestiary}</div>
+
+        <div class="ll-rule"></div>
+        <div class="ll-sub" style="margin:0 0 10px;">And the ones with something the matter with them</div>
+        <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:7px;">${marked}</div>
 
         <div style="display:flex; gap:10px; margin-top:20px;">
           <button id="btn-close" class="ll-btn">Back To The Shelter</button>

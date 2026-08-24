@@ -111,6 +111,10 @@ export class Flare implements IPoolable {
       const e = enemies[i];
       if (!e.active) continue;
 
+      // No light to walk towards and nothing left on it that burns. The one
+      // body on the street the flare has no answer for.
+      if (e.mark === 'UNBURNT') continue;
+
       const dx = this.position.x - e.position.x;
       const dz = this.position.z - e.position.z;
       const d2 = dx * dx + dz * dz;
@@ -124,7 +128,7 @@ export class Flare implements IPoolable {
 
       // Burned only inside the flame ring.
       if (doTick && d2 <= lureSq) {
-        if (e.takeDamage(this.damagePerTick, e.position)) onKill(e);
+        if (e.takeDamage(this.damagePerTick, e.position, true)) onKill(e);
       }
     }
 
@@ -136,11 +140,11 @@ export class Flare implements IPoolable {
       const blastSq = 12.0 * 12.0;
       for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
-        if (!e.active) continue;
+        if (!e.active || e.mark === 'UNBURNT') continue;
         const dx = this.position.x - e.position.x;
         const dz = this.position.z - e.position.z;
         if (dx * dx + dz * dz <= blastSq) {
-          if (e.takeDamage(this.detonationDamage, this.position)) onKill(e);
+          if (e.takeDamage(this.detonationDamage, this.position, true)) onKill(e);
         }
       }
       this.deactivate();

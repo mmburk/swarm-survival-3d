@@ -18,6 +18,8 @@ export class LoadingScreen {
     'They come at you in turns. The ones hanging back are not waiting politely — they are waiting for a gap.',
     'A Screamer stands further out than anything else and takes a second to fill its lungs. That second is the whole of your answer to it.',
     'A Clinger commits to its lunge. Roll and it goes past you; stand still and it does not.',
+    'Some of them come out wrong, and they all come out the same cold colour. What kind of wrong it is, you find out. The pin board keeps a list.',
+    'A vest only covers the front of a man. Whatever it is facing is the side you cannot get through.',
     'Whatever came out of the pens will take a Clinger off you. It is the one thing down there the gun cannot do.',
     'The street remembers gunfire. Empty a magazine into nothing and something out there will come and say so.',
     'The flare (Q) pulls the whole street toward it before it goes off. Throw it away from you, not at your feet.',

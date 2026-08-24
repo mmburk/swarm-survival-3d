@@ -7,6 +7,7 @@ import { SpatialHashGrid } from '../utils/SpatialHashGrid';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
 import { InstancedProps } from '../graphics/InstancedProps';
 import { HEX } from '../theme/Palette';
+import { VEST_SOAK, FRENZY_SPEED, FRENZY_DURATION, MARK_SCRAP_BONUS, MARK_SCORE_MULTIPLIER, type MarkId } from '../config/Marks';
 
 export const EnemyType = {
   /** The baseline dead. Slow, weak, and there are always more. */
@@ -118,6 +119,15 @@ export class Enemy implements IPoolable {
    * scores it far above anything else when it picks a target — an animal that
    * ignores the thing holding you is not a companion, it is scenery.
    */
+  /**
+   * The rule riding this body, if any. See `config/Marks`. Read by the
+   * renderer for the tint, by the flare for whether it burns, and by the
+   * engine when it pays out.
+   */
+  public mark: MarkId | null = null;
+  /** Counts down after each hit while a wound-up one is still angry. */
+  private frenzyTimer: number = 0;
+
   public isLunging: boolean = false;
   public lungeTimer: number = 0;
   public grabbing: boolean = false;
@@ -193,7 +203,12 @@ export class Enemy implements IPoolable {
   /**
    * @param difficulty Health/speed scaling from the selected Long Night tier.
    */
-  public reset(spawnPos: THREE.Vector3, type: EnemyType = EnemyType.SHAMBLER, difficulty = { health: 1, speed: 1 }): void {
+  public reset(
+    spawnPos: THREE.Vector3,
+    type: EnemyType = EnemyType.SHAMBLER,
+    difficulty = { health: 1, speed: 1 },
+    mark: MarkId | null = null
+  ): void {
     const p = PROFILES[type] ?? PROFILES.SHAMBLER;
 
     this.type = type;
@@ -235,6 +250,18 @@ export class Enemy implements IPoolable {
     this.scrapValue = p.scrap;
     this.baseScale = p.scale;
 
+    // Marked bodies are worth going after rather than worth avoiding — the
+    // whole layer is meant to be a decision, and a decision needs a payout.
+    // No health bonus: the mark is the difference. Hades' elites are quicker
+    // as well as thicker, and quicker is a thing we cannot do until the dead
+    // have wind-ups of their own.
+    this.mark = mark;
+    this.frenzyTimer = 0;
+    if (mark) {
+      this.scrapValue += MARK_SCRAP_BONUS;
+      this.scoreValue = Math.round(this.scoreValue * MARK_SCORE_MULTIPLIER);
+    }
+
     this.flashing = false;
     this.hot = false;
     this.hpVisible = false;
@@ -247,10 +274,37 @@ export class Enemy implements IPoolable {
     this.active = true;
   }
 
-  public takeDamage(damage: number, hitPoint: THREE.Vector3): boolean {
+  /**
+   * @param armourPiercing Set by rounds that go through bodies and by blasts.
+   *   A plate stops a bullet; it does not stop a nail that has already been
+   *   through two people, and it does nothing at all about a grenade.
+   */
+  public takeDamage(damage: number, hitPoint: THREE.Vector3, armourPiercing: boolean = false): boolean {
     if (!this.active) return false;
 
-    this.health -= damage;
+    let dealt = damage;
+
+    // The plate is on the front of it, and a body on this street faces
+    // whatever it is walking at. So it is armoured against the player right up
+    // until it is not looking at them — shoved and reeling, or off after the
+    // goat — which is the second answer to it after heavy rounds.
+    if (this.mark === 'VEST' && !armourPiercing && hitPoint) {
+      const facingX = -Math.sin(this.yaw);
+      const facingZ = -Math.cos(this.yaw);
+      const dx = hitPoint.x - this.position.x;
+      const dz = hitPoint.z - this.position.z;
+      const len = Math.hypot(dx, dz);
+      // The plate covers the front and stops a little short of the shoulders,
+      // so getting past it means genuinely being off to one side of whatever
+      // it is looking at — not merely not being dead in front of it.
+      if (len < 0.0001 || (dx / len) * facingX + (dz / len) * facingZ > 0.2) {
+        dealt = Math.max(1, dealt - VEST_SOAK);
+      }
+    }
+
+    if (this.mark === 'FRENZY') this.frenzyTimer = FRENZY_DURATION;
+
+    this.health -= dealt;
     this.hitFlashTimer = 0.07;
     this.flashing = true;
 
@@ -543,9 +597,12 @@ export class Enemy implements IPoolable {
     this.velocity.x += (tempSteer.x + wx) * accel * delta;
     this.velocity.z += (tempSteer.z + wz) * accel * delta;
 
+    if (this.frenzyTimer > 0) this.frenzyTimer -= delta;
+    const topSpeed = this.moveSpeed * (this.frenzyTimer > 0 ? FRENZY_SPEED : 1);
+
     const speedSq = this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z;
-    if (speedSq > this.moveSpeed * this.moveSpeed) {
-      const s = this.moveSpeed / Math.sqrt(speedSq);
+    if (speedSq > topSpeed * topSpeed) {
+      const s = topSpeed / Math.sqrt(speedSq);
       this.velocity.x *= s;
       this.velocity.z *= s;
     }
@@ -580,6 +637,7 @@ export class Enemy implements IPoolable {
     this.isScreaming = false;
     this.isLunging = false;
     this.grabbing = false;
+    this.mark = null;
     this.position.set(0, -9999, 0);
   }
 }

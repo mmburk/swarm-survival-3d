@@ -208,6 +208,28 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
   2.5 unutuyor, 120'de bir Screamer geliyor. Harvester saniyede 0.3 üretiyor —
   yani **hiç çağırmıyor**, kartındaki "the quiet ones do not call the herd"
   sözü ilk kez doğru.
+- **İşaretliler (the Marked).** Sekizinci tip yerine, yedi gövdenin üstüne
+  binen bir kural katmanı — L4D2'nin "uncommon common"ları, 7DTD'nin
+  feral/radiated'ı ve Hades'in elit nitelikleri aynı şekle varmış:
+  *kural kalabalığın üstünde durur, hangi gövdeye binebileceği kısıtlıdır, ve
+  görünür.* Dördü de aynı soğuk renkte çiziliyor (`MARKED` tint) — 34 gövdenin
+  ekranında dört ayrı renk okunamaz; renk "bunda bir tuhaflık var" diyor,
+  tuhaflığın ne olduğunu davranış gösteriyor.
+
+  | İşaret | Ne yapıyor | Kimde olmaz, neden |
+  |---|---|---|
+  | **Vested** | Öne gelen mermiden 9 hasar yiyor. Delici mermi, patlama ve **baktığı yönün dışından** gelen her şey plakayı tanımıyor | Butcher (duvarı kalınlaştırmak duvarı iyileştirmiyor), Screamer (kurulma içinde öldürülebilir kalmalı) |
+  | **Wound Up** | Hasar aldıkça 2 saniye ×1.55 hızlanıyor | Sprinter (7.4 zaten 8.2'ye kıl payı), Clinger (yakalayanın hızlı olmasına gerek yok) |
+  | **Swollen** | Öldüğü yerde patlıyor (Burster'ın patlaması) | Burster (zaten yapıyor) |
+  | **Unburnt** | Fişek onu ne çekiyor ne yakıyor | — |
+
+  **Tavan, oran değil:** sektör 3'ten önce hiç yok, sonra `min(3, 1+sektör/3)`.
+  %20'lik bir oran 34 gövdede 7 elit demek olurdu — Hades'in tüm odasından
+  fazla, ve katman "tuhaf olan" değil "yeni normal" diye okunmaya başlardı.
+  İşaretli gövde sıra sıralamasında 2 m avans alıyor (sahnede olmayan işaret
+  harcanmış işarettir), 2 hurda ve ×1.6 puan ödüyor. **Can bonusu yok** — fark
+  kuralın kendisi. Her işaretin ilki bir kez toast'la tanıtılıyor, sonrası
+  oyuncunun işi.
 - **Kapan (Clinger).** Kalabalık oyununun eksik dişlisi: oyuncuyu bir saniye
   durdurmak, kalabalığın kendisini silaha çeviren tek şey. Sırası olan bir
   Clinger 3.6 m'ye girince 0.35 saniyelik bir hamleye giriyor — **hamle
@@ -834,6 +856,9 @@ Oyuncu:      100 can (maks 160) · 8.2 hız (maks 10.4) · 0.85 yarıçap
 Arena:       52 birim yarıçaplı daire (köşeye saklanmayı engellemek için)
 Spawn:       oyuncudan 17–33 m, min 12 m ayrık, 0.45 sn telegraph
              0.85 sn'de 2 / ekranda <7 ise 4 · tavan 34 aktif
+İşaretli:    sektör 3'ten önce yok · tavan min(3, 1+sektör/3)
+             spawn'da %35 şans (tavan doluysa 0) · +2 hurda · ×1.6 puan
+             Vested plaka 9 · Wound Up ×1.55 / 2 sn
 Kapan:       55 can · 1.9 m menzil · 0.35 sn hamle · 1.5 sn tutuş
              sn'de 13 hasar · 6 sn bekleme · aynı anda tek tutuş
 Çığlıkçı:    25 can · 15 m duruş · 1.2 sn kurulma · 9 sn bekleme

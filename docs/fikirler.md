@@ -26,6 +26,8 @@ Uzun araştırmalar kendi dosyalarında:
 
 | 7 | **Kapan (Clinger)** — yedinci tip. 0.35 sn hamle, tutarsa 1.5 sn hareket kilidi. Yuvarlanarak önleniyor, **F** ile kırılıyor, **hayvan** üstünden alıyor. Oyuncuya `drain()` ve `isHeld`, hayvana `penRescues` sayacı + Eli'nin yeni kehaneti geldi | `6b92de8` | Ateş etmek serbest kalıyor — silahı da alan tutuş karar değil, ara sahne olurdu |
 
+| 8 | **İşaretliler** — `config/Marks.ts`. Dört kural (Vested / Wound Up / Swollen / Unburnt), tipe göre yasaklar, sektör 3'ten sonra tavanlı. Tek soğuk renk, pin board'da kartları, ilkinde toast | *(aşağıda)* | Vested yön tabanlı: omzunu geçersen plaka bitiyor. Delici ve patlama zaten tanımıyor |
+
 ---
 
 ## SIRADA
@@ -66,11 +68,24 @@ Bilinen pürüzler:
 altısı dolu; boş kalan tek şey "alan reddi"nin tam hâli (Bloater yarım
 karşılıyor). Yeni tip yerine artık **İşaretliler katmanı** daha çok getirir.
 
-### İşaretliler *(katman)*
-[Plan yazılı](enemy-ai-plan.md) — Yelekli, Çığlıkçı-nitelik, Öfkeli, Şişkin.
-**Revizyon:** Yelekli hasar azaltma değil **yön** tabanlı olsun (L4D2'nin Riot
-Infected'ı gibi: önden zırhlı, arkadan çıplak). `yaw` alanımız zaten var,
-bedavaya geliyor. Tavan: sektör 3'ten önce yok, aynı anda en fazla 3.
+### İşaretlilerin dengesi *(oynayıp bakılacak)*
+Sayılar `config/Marks.ts` tepesinde: `VEST_SOAK` (9), `FRENZY_SPEED` (1.55),
+`FRENZY_DURATION` (2 sn), `MARK_SCRAP_BONUS` (2), `MARK_SCORE_MULTIPLIER`
+(1.6). Tavan ve şans `Engine.markBudget()` / `markFor()` içinde (%35).
+
+**Plandan sapma:** dördüncü işaret "Çığlıkçı-nitelik" olacaktı ama Çığlıkçı
+tam tip oldu, o yüzden yerine **Unburnt** kondu (L4D2'nin Hazmat'ı). Sebep:
+fişeğin (Q) oyunda hiçbir karşı oyunu yoktu — artık var.
+
+Bilinen pürüzler:
+- **Vested'ın açısı 0.2 eşiğinde**, yani ~70°'den sonrası çıplak. Ölçüldü:
+  0/45/70° → 15 hasar, 90/110/135/180° → 24. Oynarken plaka fazla kolay
+  aşılıyorsa eşik 0'a, fazla zorsa 0.4'e çekilir.
+- **Hayvanlar plakayı tanıyor** (delici değiller). Rook 16 → 7 hasar. Ayı 75
+  ve domuz 45 hâlâ iş görüyor. Bilinçli ama sinir bozucu olabilir.
+- **Can bonusu yok.** Hades elitleri hem kalın hem hızlı; hızlı olan kısım
+  bizde Faz 1'e (windup) bağlı. Faz 1 gelince işaretlilere `windup × 0.6`
+  eklenecek — asıl "elit" hissi orada.
 
 ### AI planının fazları
 Öneri sırası **3 → 4 → 1 → 2 → 5**:

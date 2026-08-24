@@ -34,6 +34,7 @@ import { HUD } from '../ui/HUD';
 import { MenuSystem } from '../ui/MenuSystem';
 import { BoonModal, generateBoons, applyBoon, CALLERS, type Boon, type Caller } from '../ui/BoonModal';
 import { pickFieldWorks } from '../config/FieldWorks';
+import { pickMark, MARKS } from '../config/Marks';
 import { settleRun } from '../config/Progression';
 import { CodexModal } from '../ui/CodexModal';
 import { LoadingScreen } from '../ui/LoadingScreen';
@@ -236,6 +237,13 @@ export class Engine {
   private readonly grabOffset = new THREE.Vector3();
   /** Scratch list for that deal, so dealing them allocates nothing. */
   private turnOrder: Enemy[] = [];
+
+  /**
+   * Marks the player has already been introduced to this run. The layer is
+   * only worth having if it is legible, and a body that is quietly harder
+   * teaches nothing — so the first of each kind says what it is, once.
+   */
+  private marksSeen: Set<string> = new Set();
 
   /**
    * The bullet pass owns its own broad-phase list. It walks the list while
@@ -702,6 +710,7 @@ export class Engine {
 
     this.loading.show(`Sector 01 — ${sectorFor(1).name}`, () => {
       this.mode = 'RUN';
+      this.marksSeen.clear();
       this.runKills = 0;
       this.runScore = 0;
       this.runScrap = 0;
@@ -1232,7 +1241,10 @@ export class Engine {
 
     const p = this.player.position;
     const rank = (e: Enemy): number => {
-      const d = Math.hypot(e.position.x - p.x, e.position.z - p.z);
+      // A mark that spends the street circling out of reach is a mark that was
+      // never spent. Two metres of edge is enough to keep them in the front
+      // rank without letting one shoulder past a body that is already on you.
+      const d = Math.hypot(e.position.x - p.x, e.position.z - p.z) - (e.mark ? 2 : 0);
       if (e.engaged) return e.turnTimer < TURN_LENGTH ? d - 3 : d + 40;
       return e.restTimer > 0 ? d + 40 : d;
     };
@@ -1294,6 +1306,39 @@ export class Engine {
    * to fight, not part of the budget. Capped at one at a time so a long
    * firefight cannot stack them.
    */
+  /**
+   * How many marked bodies the street is allowed to be carrying at once.
+   *
+   * A cap and not a rate, which is the whole difference between this and the
+   * games it is borrowed from. Hades gates its elites behind depth three and
+   * never has more than eight bodies in a room to begin with; a fifth of our
+   * thirty-four would be seven of them, more than a whole Hades room, and the
+   * layer would stop reading as *that one is wrong* and start reading as the
+   * new normal.
+   */
+  private markBudget(): number {
+    const sector = this.sectors.current;
+    if (sector < 3) return 0;
+    return Math.min(3, 1 + Math.floor(sector / 3));
+  }
+
+  private markedAlive(): number {
+    let n = 0;
+    for (const e of this.enemies.getActiveItems()) {
+      if (e.active && e.mark) n++;
+    }
+    return n;
+  }
+
+  /** Draws a mark for a body about to walk in, or null far more often. */
+  private markFor(type: EnemyType): ReturnType<typeof pickMark> {
+    if (this.markedAlive() >= this.markBudget()) return null;
+    // Under budget but not every time, so they arrive scattered through the
+    // street rather than as the first three bodies out of the gate.
+    if (Math.random() > 0.35) return null;
+    return pickMark(type);
+  }
+
   private spendNoise(amount: number): void {
     if (this.sectors.state !== 'COMBAT') return;
     this.noise += amount;
@@ -1505,6 +1550,11 @@ export class Engine {
     this.streak++;
     this.streakTimer = 2.4;
 
+    // A swollen one is carrying the same gas a Burster walks over to you, and
+    // it goes off wherever it happened to be standing when it stopped. Reuses
+    // the Burster's own blast, including the part where it can catch you.
+    if (enemy.mark === 'SWOLLEN') this.burstOpen(enemy);
+
     const mult = Math.min(8, 1 + Math.floor(this.streak / 4));
     this.runScore += enemy.scoreValue * mult;
     this.runKills++;
@@ -1529,7 +1579,7 @@ export class Engine {
       for (const other of caught) {
         if (other === enemy || !other.active) continue;
         if (!withinRadius(other.position, enemy.position, 4.5)) continue;
-        if (other.takeDamage(45, enemy.position)) this.onEnemyKilled(other);
+        if (other.takeDamage(45, enemy.position, true)) this.onEnemyKilled(other);
       }
     }
 
@@ -1630,7 +1680,8 @@ export class Engine {
         }
 
         b.hitIds.add(e.id);
-        const killed = e.takeDamage(b.damage, b.position);
+        // A round already through one body ignores the plate on the next.
+        const killed = e.takeDamage(b.damage, b.position, b.pierceLeft > 0);
         this.hud.spawnDamageNumber(e.position, b.damage, isCrit);
 
         if (killed) this.onEnemyKilled(e, b.position);
@@ -1710,7 +1761,7 @@ export class Engine {
     for (const e of caught) {
       if (!e.active) continue;
       if (!withinRadius(e.position, centre, radius)) continue;
-      if (e.takeDamage(b.damage, centre)) this.onEnemyKilled(e, centre);
+      if (e.takeDamage(b.damage, centre, true)) this.onEnemyKilled(e, centre);
     }
 
     if (this.boss.active && ArcadePhysics.checkSphereOverlap(centre, radius, this.boss.position, this.boss.radius)) {
@@ -1771,7 +1822,16 @@ export class Engine {
       const t = this.telegraphs[i];
       t.timer -= delta;
       if (t.timer > 0) continue;
-      this.enemies.get(t.pos, t.type, this.sectors.difficulty);
+      const spawned = this.enemies.get(t.pos, t.type, this.sectors.difficulty, this.markFor(t.type));
+      if (spawned?.mark) {
+        // A second ring, in bone rather than blood, so the tell starts before
+        // the body is even upright.
+        this.particles.emitTelegraphRing(t.pos, 0.4, HEX.bone);
+        if (!this.marksSeen.has(spawned.mark)) {
+          this.marksSeen.add(spawned.mark);
+          this.hud.showToast(`${MARKS[spawned.mark].name} — there is something the matter with that one.`);
+        }
+      }
       this.particles.emitBurst(t.pos, 8, HEX.dirt, 4, 0.3);
       this.telegraphs.splice(i, 1);
     }
@@ -2016,7 +2076,7 @@ export class Engine {
     for (const other of caught) {
       if (!other.active || other === burster) continue;
       if (!withinRadius(other.position, pos, 5.5)) continue;
-      if (other.takeDamage(110, pos)) this.onEnemyKilled(other, pos);
+      if (other.takeDamage(110, pos, true)) this.onEnemyKilled(other, pos);
     }
   }
 

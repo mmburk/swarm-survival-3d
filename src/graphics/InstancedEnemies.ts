@@ -95,6 +95,15 @@ const TYPES: EnemyType[] = [
 const FLASH = new THREE.Color(2.6, 2.4, 2.2);
 /** A Burster's gas building — the tell that it is about to go. */
 const HOT = new THREE.Color(2.2, 2.0, 0.8);
+/**
+ * The marked, all four of them, in one colour.
+ *
+ * Cold and slightly wrong, and deliberately nowhere near `HOT`: a body about
+ * to go off and a body with a rule on it must never be confused at fifteen
+ * metres. What kind of wrong it is, the street shows you — four tints on
+ * thirty-four bodies would be a palette nobody could read.
+ */
+const MARKED = new THREE.Color(1.15, 1.4, 1.75);
 const PLAIN = new THREE.Color(1, 1, 1);
 
 /** Type to slot in the parallel arrays below, so no lookup allocates. */
@@ -251,7 +260,7 @@ export class InstancedEnemies {
       body.setMatrixAt(slot, this.torso.matrixWorld);
       this.counts[typeSlot] = slot + 1;
 
-      const flash = e.flashing ? FLASH : e.hot ? HOT : PLAIN;
+      const flash = e.flashing ? FLASH : e.hot ? HOT : e.mark ? MARKED : PLAIN;
       body.setColorAt(slot, flash);
 
       if (armCount + 2 <= MAX_ENEMIES * 2) {
