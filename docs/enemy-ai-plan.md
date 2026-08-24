@@ -360,3 +360,142 @@ değiştiriyor, yani dengeyi baştan ölçmek gerekiyor.
 
 **Önerilen sıra:** 3 → 4 → 1 → 2 → 5. Ucuz olanlar önce, çünkü Faz 1'in dengesi
 ölçülürken zaten yerlerinde olsunlar.
+
+---
+
+## 11. ÇEŞİTLİLİK — HADES BUNU NASIL ÇÖZÜYOR
+
+Yukarıda "onların baskısı çeşitlilikten, bizimki hacimden" dedim. Bu doğru ama
+eksik: Hades'in çeşitliliği **düşman sayısından gelmiyor.** Tartarus'un temel
+kadrosu bir avuç tip. Çeşitlilik, o kadronun üstüne binen bir katman.
+
+### 11.1 Elit varyantlar
+
+`EnemySets.lua` her biyomda temel tipi ve `*Elite` sürümünü yan yana tutuyor
+(`Swarmer` / `SwarmerElite`, `HeavyMelee` / `HeavyMeleeElite`). Elit, ayrı bir
+düşman değil — aynı gövdenin değiştirilmiş hâli:
+
+| Alan | Ne oluyor |
+|---|---|
+| `HealthBuffer` | Ek can (SwarmerElite 50, LightRangedElite 120) |
+| `IsElite`, `EliteIcon` | İşaretleme |
+| `Outline` | Sarı (255,255,0), kalınlaştırılmış |
+| `GeneratorData.DifficultyRating` | İki–üç katı |
+| `PreAttackDuration` | **Düşürülüyor** — LightRangedElite'te 0.5 → 0.25 |
+| `RequiredMinBiomeDepth` | Genelde 3 |
+
+Buradaki asıl ders can değil, **`PreAttackDuration`**: elit sadece daha kalın
+değil, **daha hızlı karar veriyor.** Aynı hareketi yapıyor, sana daha az zaman
+bırakıyor. Ve derinlik 3'ten önce hiç görünmüyor.
+
+### 11.2 Elit nitelikleri — asıl çarpan
+
+`EnemySets.lua` içinde havuzlar:
+
+```lua
+AllEliteAttributes      = { "Blink", "HeavyArmor", "ExtraDamage" }
+RangedOnlyEliteAttributes = { "Homing" }
+ShadeOnlyEliteAttributes  = { "MultiEgg" }
+```
+
+Her biri gerçek bir mekanik:
+
+| Nitelik | Ne yapıyor |
+|---|---|
+| `HeavyArmor` | `HealthMultiplier = 1.5` (varyantlarda 2.0–4.0). `Frenzy` ve `Vacuuming` ile birlikte gelemez |
+| `ExtraDamage` | Mermi hasarı `ChangeValue = 2.0, ChangeType = Multiply` |
+| `Blink` | `TeleportationIntervalMin = 5.5, Max = 9.0`; `PreTeleportWait = 0.5` ile ışınlanır |
+| `Homing` | Mermi hedefi takip eder, `MaxAdjustRate = math.rad(90)` |
+| `MultiEgg` | `AddEnemyOnDeathWeapons` — ölünce düşman doğurur |
+
+Üç yapısal kural var ve üçü de bize aynen uyuyor:
+
+1. **Havuzlar tipe göre kısıtlı.** Takip eden mermi sadece menzilli düşmanda
+   anlamlı, o yüzden `RangedOnly`.
+2. **Karşılıklı yasaklar var.** `HeavyArmor` `Frenzy`'yi engelliyor, `Blink`
+   `Beams`'i. Yani kombinasyonlar serbest bırakılmamış.
+3. **Görsel dil sistemin parçası.** Sarı kontur + ikon. Nitelik görünmüyorsa
+   nitelik yok demektir.
+
+---
+
+## 12. BİZİM ÇEŞİTLİLİĞİMİZ — "İŞARETLİLER"
+
+Beş tipimiz var ve altıncı bir tip yazmak en pahalı yol: yeni gövde geometrisi,
+yeni profil, yeni denge. Hades'in cevabı daha ucuz — **aynı beş gövdenin üstüne
+binen bir nitelik katmanı.** Beş tip × dört nitelik, altı satırlık veriyle.
+
+### 12.1 Bedava olan kısım
+
+`InstancedEnemies` zaten örnek başına bir renk çarpanı yazıyor
+([InstancedEnemies.ts:239](../src/graphics/InstancedEnemies.ts:239)):
+
+```ts
+const flash = e.flashing ? FLASH : e.hot ? HOT : PLAIN;
+body.setColorAt(slot, flash);
+```
+
+Yani işaretli bir gövdenin görsel dili **bu üçlüye eklenecek bir renk sabiti.**
+Hades'in sarı konturunun bizdeki karşılığı bu, ve maliyeti sıfıra yakın. Bu
+mimari kararı geçen sefer verdiğimiz için şimdi bedavaya geliyor.
+
+### 12.2 Önerilen dört nitelik
+
+Seçim kriteri: **bizim sistemlerimizle konuşsun.** Hades'ten mekanik kopyalamak
+değil, aynı yerden — "temel gövdenin üstüne binen kural" — kendi oyunumuzun
+kurallarına dokunan dört şey seçmek.
+
+| Nitelik | Ne yapıyor | Neye dokunuyor |
+|---|---|---|
+| **Yeleklı** (`HeavyArmor` karşılığı) | Her isabetten sabit bir miktar düşer (çıkarım: 8). Delici mermi ve patlama tam hasar verir | Silah seçimini anlamlı yapar — Harvester'ın delmesi, Ranger'ın el bombası |
+| **Çığlıkçı** | Öldüğünde halkada bekleyen 3 gövdeye anında sıra verir | **Sıra sisteminin kendisi.** Öldürme sırasını bir karara çevirir |
+| **Öfkeli** (`Frenzy` karşılığı) | Hasar aldıkça hızlanır (2 sn boyunca ×1.5), yığılmaz | Vur-kaç yerine bitirmeyi ödüllendirir |
+| **Şişkin** | Ölünce patlar — mevcut `burstOpen()` aynen kullanılır ([Engine.ts:1789](../src/core/Engine.ts:1789)) | Kalabalıkta nerede durduğun |
+
+Yasaklar (Hades'in `Frenzy`/`HeavyArmor` çakışmasının bizdeki hâli):
+
+- **Butcher + Yelekli yok.** 210 can + isabet başına −8, Boomstick'le dakikalar
+  sürer. Duvarı daha kalın yapmak duvarı daha iyi yapmaz.
+- **Burster + Şişkin yok.** Zaten patlıyor.
+- **Bloater + Çığlıkçı yok.** Halkanın dışında duran bir gövdenin ölümü
+  halkayı çağırmasın; iki sistem birbirini iptal ediyor.
+- **Sprinter + Öfkeli yok.** 7.4 hız zaten oyuncunun 8.2'sine kıl payı; ×1.5
+  yakalanamaz demek.
+
+### 12.3 Ölçek — Hades'ten ayrıldığımız yer
+
+Hades'in odasında 8 gövde var, biz 34'e kadar çıkıyoruz. **Yüzde ile
+dağıtırsak felaket olur:** %20 işaretli = aynı anda 7 elit, ki bu Hades'in
+tüm odasından fazla.
+
+O yüzden oran değil, **tavan**:
+
+```
+işaretli tavanı = min(3, 1 + floor(sektör / 3))    // sektör 3'te 2, 6'da 3
+sektör < 3      = hiç yok                          // RequiredMinBiomeDepth = 3
+```
+
+Ve bir ek: işaretli gövde sıra sıralamasında küçük bir avans alsın (çıkarım:
+2 m). Yirmi saniye halkada dolanan bir elit, harcanmış bir elittir — Hades'te
+elit hep sahnededir çünkü sahnede zaten 8 kişi var. Bizde sahneye çıkarmak
+ayrı bir iş.
+
+### 12.4 Nerede duruyor
+
+Bu, 4. fazın (tipe göre sıra bütçesi) doğal devamı ve 1. faza bağlı değil —
+`PreAttackDuration` karşılığımız olmadığı için elitin "daha hızlı karar verme"
+kısmı şimdilik yapılamıyor. Faz 1 gelince işaretlilere `windup × 0.6`
+eklenebilir; Hades'in elitten aldığı asıl şey odur.
+
+| İş | Maliyet | Not |
+|---|---|---|
+| Nitelik alanı + renk + tavan + yasaklar | Düşük | Tek dosya + iki dokunuş |
+| Dört niteliğin mekaniği | Orta | Çığlıkçı ve Şişkin mevcut koda bağlanıyor |
+| Codex'te görünmesi | Düşük | Zaten tip listesi var |
+
+**Risk:** dört nitelik dört yeni okuma yükü demek, ve bu oyunun ekranında zaten
+34 gövde var. Tek renkle dördünü ayırt etmek mümkün değil — ya nitelik başına
+ayrı bir renk (dördü de aynı anda sahnede olabildiği için karışır), ya da
+**işaretlilerin hepsi tek renk** ve farkı davranışından okunur. İkincisini
+öneriyorum: sarı bir gövde "bunda bir tuhaflık var" demek, tuhaflığın ne
+olduğunu oyun sana gösterir.
