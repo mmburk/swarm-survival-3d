@@ -118,6 +118,15 @@ export class Player {
   // ---- state --------------------------------------------------------------
   public damageIFrameTimer: number = 0;
   public isInvulnerable: boolean = false;
+  /**
+   * Seconds left of something having hold of you.
+   *
+   * Only movement and the roll are taken away — you can still turn, aim and
+   * fire, because a hold that took the gun as well would not be a decision,
+   * it would be a cutscene with a health bar. What it costs is the one thing
+   * the street was survivable with: going somewhere else.
+   */
+  public heldTimer: number = 0;
   public shoveCooldown: number = 0;
   public primaryCooldown: number = 0;
   public altCooldown: number = 0;
@@ -481,6 +490,23 @@ export class Player {
     this.ammo = this.weapon.magazine;
   }
 
+  public get isHeld(): boolean {
+    return this.heldTimer > 0;
+  }
+
+  /** Something got hold. Refused while rolling — that is what the roll is for. */
+  public seize(duration: number): boolean {
+    if (this.isDodging || this.heldTimer > 0 || this.health <= 0) return false;
+    this.heldTimer = duration;
+    this.velocity.set(0, 0, 0);
+    this.audio.playPlayerHurt();
+    return true;
+  }
+
+  public breakFree(): void {
+    this.heldTimer = 0;
+  }
+
   public get weaponDef() {
     return WEAPONS[this.weaponId];
   }
@@ -547,6 +573,7 @@ export class Player {
     this.isInvulnerable = false;
     this.isDodging = false;
     this.dodgeTimer = 0;
+    this.heldTimer = 0;
     this.primaryCooldown = 0;
     this.altCooldown = 0;
     this.shoveCooldown = 0;
@@ -576,6 +603,7 @@ export class Player {
     this.velocity.set(0, 0, 0);
     this.isDodging = false;
     this.dodgeTimer = 0;
+    this.heldTimer = 0;
     this.group.position.copy(this.position);
   }
 
@@ -694,21 +722,57 @@ export class Player {
     return true;
   }
 
+  /**
+   * The second wind, if there is one left. True when it caught you.
+   *
+   * Shared by the two ways health leaves: a hit, and the steady drain of
+   * something having hold of you. A get-up that only one of them could reach
+   * would be a get-up the player cannot count on.
+   */
+  private tryGetUp(): boolean {
+    if (this.getUpsRemaining <= 0) return false;
+
+    this.getUpsRemaining--;
+    this.health = Math.floor(this.maxHealth * 0.45);
+    this.damageIFrameTimer = 2.2;
+    this.isInvulnerable = true;
+    this.heldTimer = 0;
+    this.audio.playGetUp();
+    this.particles.emitExplosion(this.position, 8.0, HEX.amber);
+    this.onGetUp?.();
+    return true;
+  }
+
+  /**
+   * Health going out by the second rather than by the hit.
+   *
+   * Deliberately outside the i-frame window: those exist so a crowd cannot
+   * stack six contact hits into one frame, and a hold is already one thing at
+   * a time. No hurt sound and no blood for the same reason — at sixty frames
+   * a second it would be a siren. What sells it is the vignette the HUD
+   * pulses and the health bar going down while you cannot walk away.
+   */
+  public drain(amount: number): void {
+    if (this.health <= 0 || this.isInvulnerable) return;
+
+    const reduced = amount * (1 - this.toughness);
+    if (this.health - reduced > 0) {
+      this.health -= reduced;
+      return;
+    }
+
+    if (this.tryGetUp()) return;
+    this.health = 0;
+    this.onTakeDamage?.();
+    this.onDied?.();
+  }
+
   public takeDamage(damage: number): void {
     if (this.isInvulnerable || this.isDodging || this.damageIFrameTimer > 0 || this.health <= 0) return;
 
     const reduced = Math.max(1, Math.round(damage * (1 - this.toughness)));
 
-    if (this.health - reduced <= 0 && this.getUpsRemaining > 0) {
-      this.getUpsRemaining--;
-      this.health = Math.floor(this.maxHealth * 0.45);
-      this.damageIFrameTimer = 2.2;
-      this.isInvulnerable = true;
-      this.audio.playGetUp();
-      this.particles.emitExplosion(this.position, 8.0, HEX.amber);
-      this.onGetUp?.();
-      return;
-    }
+    if (this.health - reduced <= 0 && this.tryGetUp()) return;
 
     this.health = Math.max(0, this.health - reduced);
     this.damageIFrameTimer = 0.45;
@@ -728,6 +792,12 @@ export class Player {
     if (this.primaryCooldown > 0) this.primaryCooldown -= delta;
     if (this.altCooldown > 0) this.altCooldown -= delta;
     if (this.shoveCooldown > 0) this.shoveCooldown = Math.max(0, this.shoveCooldown - delta);
+
+    if (this.heldTimer > 0) {
+      this.heldTimer = Math.max(0, this.heldTimer - delta);
+      this.velocity.x *= 0.6;
+      this.velocity.z *= 0.6;
+    }
 
     if (this.reloadTimer > 0) {
       this.reloadTimer -= delta;
@@ -763,12 +833,13 @@ export class Player {
     // "up" always walks away from the camera even when the rig is swung round
     // to a corner (the shelter). On open ground the rig is dead-on and this is
     // an identity.
-    const move = allowMove ? this.input.getMoveVector() : { x: 0, y: 0 };
+    const canMove = allowMove && this.heldTimer <= 0;
+    const move = canMove ? this.input.getMoveVector() : { x: 0, y: 0 };
     CAMERA_RIG.toWorld(move.x, move.y, tempMove);
     const moveX = tempMove.x;
     const moveZ = tempMove.y;
 
-    if (allowMove && this.input.justDashed && this.stamina >= 34 && !this.isDodging) {
+    if (canMove && this.input.justDashed && this.stamina >= 34 && !this.isDodging) {
       this.isDodging = true;
       this.dodgeTimer = 0.24;
       this.stamina -= 34;

@@ -100,6 +100,11 @@ const SCREAM_LANE_DURATION = 5.0;
 const NOISE_THRESHOLD = 120;
 const NOISE_DECAY = 2.5;
 
+/** How long a Clinger holds on if nothing takes it off you. */
+const GRAB_DURATION = 1.5;
+/** And what it costs a second while it has you. */
+const GRAB_DAMAGE_PER_SECOND = 13;
+
 /**
  * Flat distance test on the XZ plane.
  *
@@ -225,6 +230,10 @@ export class Engine {
   private screamLanes: number = 0;
   /** How much gunfire this street has heard lately. See `NOISE_THRESHOLD`. */
   private noise: number = 0;
+
+  /** Whatever currently has hold of the player, and where it took hold from. */
+  private grabber: Enemy | null = null;
+  private readonly grabOffset = new THREE.Vector3();
   /** Scratch list for that deal, so dealing them allocates nothing. */
   private turnOrder: Enemy[] = [];
 
@@ -352,6 +361,10 @@ export class Engine {
 
       hurt: (enemy, damage, from, stun) => {
         if (!enemy.active) return;
+        // The one thing in this game the pens do that the gun cannot. Any
+        // animal that can land a strike can do it — the cat, who never strikes
+        // anything, cannot, which is exactly right for her.
+        if (enemy.grabbing) this.releaseGrab('animal');
         const killed = enemy.takeDamage(damage, from);
         this.hud.spawnDamageNumber(enemy.position, damage, false);
         if (stun > 0) enemy.stunTimer = Math.max(enemy.stunTimer, stun);
@@ -1130,6 +1143,7 @@ export class Engine {
     // one after it.
     this.noise = 0;
     this.screamLanes = 0;
+    this.releaseGrab('spent');
 
     this.boss.deactivate();
     this.trader.deactivate();
@@ -1295,6 +1309,65 @@ export class Engine {
 
     this.spawnFromEdge(EnemyType.SCREAMER);
     this.hud.showToast('Something out there heard all that.');
+  }
+
+  /**
+   * A Clinger's lunge landed.
+   *
+   * Refused if the player is rolling or if something already has them: two of
+   * these on you at once would not be twice as interesting, it would be the
+   * end of the run with nothing to do about it. One at a time, and the street
+   * behind it is what makes that enough.
+   */
+  private tryGrab(clinger: Enemy): boolean {
+    if (this.grabber || !this.player.seize(GRAB_DURATION)) return false;
+
+    this.grabber = clinger;
+    // Held at arm's length on the line it came in on, so it neither snaps to
+    // the player's front nor stands inside them.
+    this.grabOffset.copy(clinger.position).sub(this.player.position).setY(0);
+    if (this.grabOffset.lengthSq() < 0.01) this.grabOffset.set(0, 0, -1);
+    this.grabOffset.setLength(this.player.radius + clinger.radius * 0.75);
+
+    this.cameraJuice.addTrauma(0.4);
+    this.particles.emitBurst(this.player.position, 9, HEX.gore, 6, 0.35);
+    this.hud.showToast(this.player.shoveCooldown > 0
+      ? 'It has you — and the boot is not back yet.'
+      : 'It has you — F to get it off.');
+    return true;
+  }
+
+  /**
+   * Let go, one way or another.
+   *
+   * Three ways out and the difference between them is the whole point of the
+   * type: shove it off (fast, but the boot is on a five second cooldown),
+   * shoot it off (you can still fire while held, it just takes the seconds
+   * you do not have), or have the animal take it off you — which is the first
+   * thing in this game the pens do that the gun cannot.
+   */
+  private releaseGrab(how: 'shoved' | 'killed' | 'animal' | 'spent'): void {
+    const held = this.grabber;
+    this.grabber = null;
+    this.player.breakFree();
+    if (!held) return;
+
+    held.grabbing = false;
+    if (how === 'spent') return;
+
+    if (held.active) {
+      held.stunTimer = Math.max(held.stunTimer, how === 'shoved' ? 1.4 : 0.9);
+      held.velocity.x = this.grabOffset.x * 5.5;
+      held.velocity.z = this.grabOffset.z * 5.5;
+    }
+    // At the player rather than at the body: a killed one has already been
+    // recycled out to nowhere, and the beat belongs to being let go anyway.
+    this.particles.emitBurst(this.player.position, 8, HEX.smoke, 6, 0.3);
+
+    if (how === 'animal') {
+      this.hud.showToast(`${this.companion.name} took it off you.`);
+      SaveSystem.bumpTally('penRescues');
+    }
   }
 
   private firePrimary(): void {
@@ -1581,6 +1654,9 @@ export class Engine {
     const near = this.grid.query(this.player.position, this.player.radius + 2.6);
     for (const e of near) {
       if (!e.active) continue;
+      // Whatever has hold is billed by the second in the run loop instead, and
+      // must not be pushed off the player by the crowd separation.
+      if (e.grabbing) continue;
 
       ArcadePhysics.resolveSoftOverlap(
         e.position, e.velocity, this.player.position, e.radius, this.player.radius, 11.0);
@@ -1748,7 +1824,8 @@ export class Engine {
     if (wantsFire) this.firePrimary();
     if (this.input.isRightMouseDown) this.fireAlt();
     if (this.input.justShoved) {
-      if (!this.player.shove(active)) this.audio.playError();
+      if (this.player.shove(active)) this.releaseGrab('shoved');
+      else this.audio.playError();
     }
     if (this.input.justReloaded) {
       if (!this.player.startReload()) this.audio.playError();
@@ -1787,8 +1864,26 @@ export class Engine {
           this.bullets.get(origin, dir, 17, ProjectileType.ENEMY_BILE, 14, { range: 40, radius: 0.5 });
         },
         (burster) => this.burstOpen(burster),
-        (screamer) => this.onScream(screamer)
+        (screamer) => this.onScream(screamer),
+        (clinger) => this.tryGrab(clinger)
       );
+    }
+
+    // Whatever has hold of the player is kept there by hand: it does not steer
+    // and the ordinary crowd push would only shake it loose. This runs after
+    // the enemy pass so nothing has moved it since.
+    this.hud.setHeld(this.player.isHeld);
+    if (this.grabber) {
+      const held = this.grabber;
+      if (!held.active || !held.grabbing) {
+        this.releaseGrab(held.active ? 'spent' : 'killed');
+      } else if (!this.player.isHeld) {
+        this.releaseGrab('spent');
+      } else {
+        held.position.copy(this.player.position).add(this.grabOffset);
+        held.position.y = this.terrain.getHeightAt(held.position.x, held.position.z);
+        this.player.drain(GRAB_DAMAGE_PER_SECOND * delta);
+      }
     }
 
     // Whatever came with you. Updated after the dead have moved, so it is

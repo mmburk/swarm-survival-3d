@@ -1181,6 +1181,7 @@ export class MenuSystem {
       ['Butcher', 'Two hundred pounds of nothing left. Do not let it corner you.'],
       ['Burster', 'Swells up next to you and goes off. Shove it away or shoot it early.'],
       ['Screamer', 'Hangs back where you cannot be bothered to go, draws breath, and hands the whole waiting crowd your position. Kill it while it is filling its lungs. Loud guns bring more of them.'],
+      ['Clinger', 'Throws itself at you and holds on. It barely hurts — what it costs is the seconds, standing still, with the rest of the street walking in. Roll through the lunge, boot it off with F, or let the animal take it.'],
       ['The Behemoth', 'Slams where you are standing. Keep moving and it never lands.']
     ].map(([n, d]) => `
       <div style="padding:9px 12px; background:rgba(0,0,0,0.2); border:1px solid var(--char);">

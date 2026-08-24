@@ -20,7 +20,9 @@ export const EnemyType = {
   /** Gas-bloated. Comes close, swells, and goes off. */
   BURSTER: 'BURSTER',
   /** Keeps its distance and calls the street down on you. */
-  SCREAMER: 'SCREAMER'
+  SCREAMER: 'SCREAMER',
+  /** Gets hold of you and does not let go. */
+  CLINGER: 'CLINGER'
 } as const;
 
 export type EnemyType = typeof EnemyType[keyof typeof EnemyType];
@@ -45,8 +47,18 @@ export const PROFILES: Record<EnemyType, Profile> = {
   BURSTER: { health: 40, speed: 4.6, radius: 0.95, contact: 22, score: 230, scrap: 2, scale: 1.0, flesh: 0x8f9152, cloth: 0x4a4a2c },
   // Thin, and worth more than it can do to you by itself. Everything a
   // Screamer costs the player arrives afterwards.
-  SCREAMER: { health: 25, speed: 3.4, radius: 0.78, contact: 8, score: 260, scrap: 3, scale: 0.92, flesh: 0xb0a894, cloth: 0x6a5f52 }
+  SCREAMER: { health: 25, speed: 3.4, radius: 0.78, contact: 8, score: 260, scrap: 3, scale: 0.92, flesh: 0xb0a894, cloth: 0x6a5f52 },
+  // Low contact damage on purpose: what a Clinger costs you is the seconds,
+  // not the bite. Everything else on the street is what actually hurts.
+  CLINGER: { health: 55, speed: 5.2, radius: 0.8, contact: 6, score: 240, scrap: 2, scale: 0.95, flesh: 0x8a7a63, cloth: 0x453a30 }
 };
+
+/** How close a Clinger has to get before it throws itself at you. */
+export const GRAB_RANGE = 1.9;
+/** The lunge before the hold lands. Rolling through this is the free answer. */
+export const GRAB_WINDUP = 0.35;
+/** And how long before the same one can try again. */
+const GRAB_COOLDOWN = 6.0;
 
 /** How far out a Screamer tries to stand. Inside every weapon's range but one. */
 const SCREAM_STANDOFF = 15.0;
@@ -97,6 +109,19 @@ export class Enemy implements IPoolable {
   public screamTimer: number = 0;
   /** Seconds until it is allowed to try again. */
   private screamCooldown: number = 0;
+
+  /**
+   * A Clinger's lunge, and then its hold.
+   *
+   * `grabbing` is read from two other files: the engine glues the body to the
+   * player and stops the ordinary contact pass touching it, and the companion
+   * scores it far above anything else when it picks a target — an animal that
+   * ignores the thing holding you is not a companion, it is scenery.
+   */
+  public isLunging: boolean = false;
+  public lungeTimer: number = 0;
+  public grabbing: boolean = false;
+  private grabCooldown: number = 0;
 
   // ---- what the renderer reads --------------------------------------------
 
@@ -183,6 +208,10 @@ export class Enemy implements IPoolable {
     this.screamTimer = 0;
     // Staggered so two that walk in together do not shout together.
     this.screamCooldown = 1.5 + Math.random() * 2.5;
+    this.isLunging = false;
+    this.lungeTimer = 0;
+    this.grabbing = false;
+    this.grabCooldown = 0;
     this.pressAttack = false;
     this.lurch = Math.random() * Math.PI * 2;
 
@@ -247,8 +276,11 @@ export class Enemy implements IPoolable {
       this.active = false;
       this.hpVisible = false;
       this.flashing = false;
-      // Shot mid-breath. Nothing comes of it — that is the whole trade.
+      // Shot mid-breath, or mid-lunge. Nothing comes of either — that is the
+      // whole trade both types are offering.
       this.isScreaming = false;
+      this.isLunging = false;
+      this.grabbing = false;
       return true;
     }
     return false;
@@ -261,7 +293,9 @@ export class Enemy implements IPoolable {
     grid: SpatialHashGrid<Enemy>,
     onSpit: (origin: THREE.Vector3, dir: THREE.Vector3) => void,
     onBurst?: (enemy: Enemy) => void,
-    onScream?: (enemy: Enemy) => void
+    onScream?: (enemy: Enemy) => void,
+    /** Return true if the hold took. Refused if something already has them. */
+    onGrab?: (enemy: Enemy) => boolean
   ): void {
     if (!this.active) return;
 
@@ -304,6 +338,61 @@ export class Enemy implements IPoolable {
           this.deactivate();
           return;
         }
+        return;
+      }
+    }
+
+    // A Clinger closes like anything else and then throws itself at you.
+    //
+    // Held, it is doing nothing — no damage of its own worth the name. What it
+    // is doing is standing you still in the middle of a street that was only
+    // survivable because you were moving, which is the whole reason a crowd
+    // game needs one of these.
+    if (this.type === EnemyType.CLINGER) {
+      if (this.grabCooldown > 0) this.grabCooldown -= delta;
+
+      // Latched. The engine owns where the body is now and when it lets go.
+      if (this.grabbing) {
+        this.velocity.set(0, 0, 0);
+        this.gait = 0;
+        this.yaw = Math.atan2(this.position.x - playerPos.x, this.position.z - playerPos.z);
+        return;
+      }
+
+      if (this.isLunging) {
+        this.lungeTimer -= delta;
+        // Committed: it keeps the line it picked, so stepping out of the way
+        // works and standing still does not.
+        this.position.x += this.velocity.x * delta;
+        this.position.z += this.velocity.z * delta;
+        this.position.y = this.terrain.getHeightAt(this.position.x, this.position.z);
+        this.yaw = Math.atan2(this.position.x - playerPos.x, this.position.z - playerPos.z);
+        this.hot = true;
+
+        if (this.lungeTimer <= 0) {
+          this.isLunging = false;
+          this.hot = false;
+          // Close enough on arrival, and nothing else already has them.
+          if (this.position.distanceTo(playerPos) <= GRAB_RANGE && onGrab?.(this)) {
+            this.grabbing = true;
+          } else {
+            this.grabCooldown = GRAB_COOLDOWN * 0.5;
+          }
+        }
+        return;
+      }
+
+      if (this.grabCooldown <= 0 && this.engaged &&
+          this.position.distanceTo(playerPos) <= GRAB_RANGE * 1.9) {
+        this.isLunging = true;
+        this.lungeTimer = GRAB_WINDUP;
+        this.grabCooldown = GRAB_COOLDOWN;
+        // Thrown at where they are, not tracked to where they will be.
+        tempSteer.copy(playerPos).sub(this.position).setY(0);
+        if (tempSteer.lengthSq() > 0) tempSteer.normalize();
+        this.velocity.x = tempSteer.x * 13;
+        this.velocity.z = tempSteer.z * 13;
+        this.audio.playSwell();
         return;
       }
     }
@@ -489,6 +578,8 @@ export class Enemy implements IPoolable {
     this.flashing = false;
     this.hot = false;
     this.isScreaming = false;
+    this.isLunging = false;
+    this.grabbing = false;
     this.position.set(0, -9999, 0);
   }
 }

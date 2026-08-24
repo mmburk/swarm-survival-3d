@@ -7,7 +7,7 @@ import { tint } from './VertexTint';
 import { CAMERA_RIG } from './CameraRig';
 
 /**
- * Every zombie on the street, drawn in nine calls.
+ * Every zombie on the street, drawn in ten calls.
  *
  * Each one used to be a small scene graph of its own: a group holding a body
  * group, which held the merged torso mesh and two arms, plus two health-bar
@@ -41,19 +41,25 @@ function bodyGeometryFor(type: EnemyType): THREE.BufferGeometry {
   const p = PROFILES[type] ?? PROFILES.SHAMBLER;
   const parts: THREE.BufferGeometry[] = [];
 
+  // A Clinger is crouched over its own knees with its head thrown forward,
+  // which is the only shape on the street that reads as *coming for you*
+  // rather than *walking at you*. Everything above the legs drops and leans.
+  const stoop = type === EnemyType.CLINGER ? 0.26 : 0;
+  const lean = type === EnemyType.CLINGER ? -0.16 : 0;
+
   const leftLeg = new THREE.BoxGeometry(0.21, 0.62, 0.21).translate(-0.17, 0.31, 0.04);
   const rightLeg = new THREE.BoxGeometry(0.21, 0.62, 0.21).translate(0.17, 0.31, 0.04);
-  const torso = new THREE.BoxGeometry(0.62, 0.8, 0.42).translate(0, 0.98, 0);
+  const torso = new THREE.BoxGeometry(0.62, 0.8, 0.42).translate(0, 0.98 - stoop, lean * 0.5);
   parts.push(tint(leftLeg, p.cloth), tint(rightLeg, p.cloth), tint(torso, p.cloth));
 
   // Exposed ribs through the torn shirt front.
-  const wound = new THREE.BoxGeometry(0.3, 0.34, 0.06).translate(0.04, 0.96, -0.22);
+  const wound = new THREE.BoxGeometry(0.3, 0.34, 0.06).translate(0.04, 0.96 - stoop, -0.22 + lean * 0.5);
   // Head lolls to one side; the tilt is baked in.
-  const head = new THREE.BoxGeometry(0.36, 0.38, 0.36).rotateZ(0.14).translate(0, 1.55, -0.06);
+  const head = new THREE.BoxGeometry(0.36, 0.38, 0.36).rotateZ(0.14).translate(0, 1.55 - stoop, -0.06 + lean);
   parts.push(tint(wound, p.flesh), tint(head, p.flesh));
 
-  const leftSocket = new THREE.BoxGeometry(0.09, 0.07, 0.05).translate(-0.09, 1.59, -0.25);
-  const rightSocket = new THREE.BoxGeometry(0.09, 0.07, 0.05).translate(0.09, 1.59, -0.25);
+  const leftSocket = new THREE.BoxGeometry(0.09, 0.07, 0.05).translate(-0.09, 1.59 - stoop, -0.25 + lean);
+  const rightSocket = new THREE.BoxGeometry(0.09, 0.07, 0.05).translate(0.09, 1.59 - stoop, -0.25 + lean);
   parts.push(tint(leftSocket, SOCKET_COLOR), tint(rightSocket, SOCKET_COLOR));
 
   // A Screamer is read at fifteen metres or not at all, and at fifteen metres
@@ -61,7 +67,7 @@ function bodyGeometryFor(type: EnemyType): THREE.BufferGeometry {
   // hanging, twice the drop of anything else on the street.
   const jaw = type === EnemyType.SCREAMER
     ? new THREE.BoxGeometry(0.24, 0.26, 0.14).translate(0, 1.3, -0.21)
-    : new THREE.BoxGeometry(0.2, 0.1, 0.12).translate(0, 1.42, -0.2);
+    : new THREE.BoxGeometry(0.2, 0.1, 0.12).translate(0, 1.42 - stoop, -0.2 + lean);
   parts.push(tint(jaw, JAW_COLOR));
 
   // useGroups = false: grouping would keep one draw call per material and
@@ -77,7 +83,8 @@ const TYPES: EnemyType[] = [
   EnemyType.BLOATER,
   EnemyType.BUTCHER,
   EnemyType.BURSTER,
-  EnemyType.SCREAMER
+  EnemyType.SCREAMER,
+  EnemyType.CLINGER
 ];
 
 /**
@@ -97,7 +104,8 @@ const TYPE_SLOT: Record<EnemyType, number> = {
   BLOATER: 2,
   BUTCHER: 3,
   BURSTER: 4,
-  SCREAMER: 5
+  SCREAMER: 5,
+  CLINGER: 6
 };
 
 export class InstancedEnemies {

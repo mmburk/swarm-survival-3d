@@ -154,7 +154,7 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
 
 ---
 
-## 4. HAT: DÜŞMAN HATTI (6 tip + boss)
+## 4. HAT: DÜŞMAN HATTI (7 tip + boss)
 
 | Tip | Can | Hız | Yarıçap | Temas hasarı | Scrap | Rol |
 |---|---|---|---|---|---|---|
@@ -164,6 +164,7 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
 | **Butcher** | 210 | 2.9 | 1.55 | 26 | 4 | Duvar; itilmez, yolunu kapatır |
 | **Burster** | 40 | 4.6 | 0.95 | 22 | 2 | Yaklaşır, 0.85 sn şişer, patlar (oyuncuya 30, etrafa 110) |
 | **Screamer** | 25 | 3.4 | 0.78 | 8 | 3 | 15 m'de durur, 1.2 sn kurulur, çığlıkla ön safı 6 gövde büyütür |
+| **Clinger** | 55 | 5.2 | 0.80 | 6 | 2 | 0.35 sn hamle, tutarsa oyuncuyu 1.5 sn yerinde tutar (sn'de 13 hasar) |
 
 ### AI mimarisi
 
@@ -207,6 +208,18 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
   2.5 unutuyor, 120'de bir Screamer geliyor. Harvester saniyede 0.3 üretiyor —
   yani **hiç çağırmıyor**, kartındaki "the quiet ones do not call the herd"
   sözü ilk kez doğru.
+- **Kapan (Clinger).** Kalabalık oyununun eksik dişlisi: oyuncuyu bir saniye
+  durdurmak, kalabalığın kendisini silaha çeviren tek şey. Sırası olan bir
+  Clinger 3.6 m'ye girince 0.35 saniyelik bir hamleye giriyor — **hamle
+  seçtiği hattı bırakmıyor**, yani yuvarlanan oyuncunun yanından geçip gidiyor.
+  Tuttuğunda hareket ve yuvarlanma kilitleniyor; **nişan ve ateş serbest
+  kalıyor**, çünkü silahı da alan bir tutuş karar değil, can barlı bir ara
+  sahne olurdu. Saniyede 13 hasar (tam tutuş ≈ 20 can) — asıl bedel o 1.5
+  saniyede sokağın geri kalanının üstüne gelmesi.
+  **Üç çıkış yolu:** yuvarlanarak önlemek (bedava ama zamanlama), **F ile
+  itmek** (anında ama 5 sn cooldown), ya da **hayvan** — strike yapabilen her
+  hayvan üstünden alıyor. Kedi alamıyor, çünkü kedi hiç dövüşmüyor; bu
+  bilinçli. Aynı anda yalnız bir tanesi tutabiliyor.
 - **Spawn telegraph'ı.** Hiçbir şey aniden belirmez: yere 0.45 sn kanlı bir
   halka çizilir, sonra düşman oradan gelir. Spawn oyuncudan en az 12 m, en fazla
   33 m uzakta ve çitin içinde.
@@ -821,6 +834,8 @@ Oyuncu:      100 can (maks 160) · 8.2 hız (maks 10.4) · 0.85 yarıçap
 Arena:       52 birim yarıçaplı daire (köşeye saklanmayı engellemek için)
 Spawn:       oyuncudan 17–33 m, min 12 m ayrık, 0.45 sn telegraph
              0.85 sn'de 2 / ekranda <7 ise 4 · tavan 34 aktif
+Kapan:       55 can · 1.9 m menzil · 0.35 sn hamle · 1.5 sn tutuş
+             sn'de 13 hasar · 6 sn bekleme · aynı anda tek tutuş
 Çığlıkçı:    25 can · 15 m duruş · 1.2 sn kurulma · 9 sn bekleme
              çığlık: +6 gövde anında, 5 sn boyunca +6 sıra
 Gürültü:     eşik 120 · unutma 2.5/sn · Ranger 8.7/sn, Stutter 10.3/sn

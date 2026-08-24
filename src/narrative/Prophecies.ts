@@ -31,6 +31,8 @@ export interface Tally {
   dogRuns: number;
   /** Bodies put down by whatever came out of the pens, all time. */
   pennedKills: number;
+  /** Times an animal pulled something off you, all time. */
+  penRescues: number;
   /** Deepest single run that never took the sixth signal. */
   deepestClean: number;
 }
@@ -43,6 +45,7 @@ export function emptyTally(): Tally {
     fullBandRuns: 0,
     dogRuns: 0,
     pennedKills: 0,
+    penRescues: 0,
     deepestClean: 0
   };
 }
@@ -223,6 +226,16 @@ export const PROPHECIES: Prophecy[] = [
     progress: (c) => c.pennedOwned,
     reward: 220,
     requires: 'eli-dog'
+  },
+  {
+    id: 'eli-hands',
+    caller: 'ELI',
+    title: 'Somebody Pulled You Out',
+    text: 'Ten times now something with no idea what a promise is has come and taken a dead man off you. I do not have a sermon for that. I am only saying it happened ten times and you are still here.',
+    target: 10,
+    progress: (c) => c.tally.penRescues,
+    reward: 240,
+    visible: (c) => c.tally.penRescues >= 1
   },
   {
     id: 'eli-teeth',

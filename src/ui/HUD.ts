@@ -70,6 +70,8 @@ export class HUD {
   private bossFill!: HTMLElement;
   private cacheEl!: HTMLElement;
   private vignette!: HTMLElement;
+  /** Whether the vignette is currently being held up by a grab. */
+  private heldShown: boolean = false;
   private crosshair!: HTMLElement;
 
   private minimapCanvas!: HTMLCanvasElement;
@@ -568,7 +570,20 @@ export class HUD {
 
   public flashDamage(): void {
     this.vignette.style.opacity = '1';
-    setTimeout(() => { this.vignette.style.opacity = '0'; }, 150);
+    // Falls back to whatever the steady state is rather than to nothing: being
+    // hit while something has hold of you must not clear the hold's own tell.
+    setTimeout(() => { this.vignette.style.opacity = this.heldShown ? '0.8' : '0'; }, 150);
+  }
+
+  /**
+   * Held. The vignette stays up for as long as it lasts rather than pulsing,
+   * because the player needs to be able to tell at a glance that the reason
+   * they are not moving is a body and not a dropped input.
+   */
+  public setHeld(held: boolean): void {
+    if (held === this.heldShown) return;
+    this.heldShown = held;
+    this.vignette.style.opacity = held ? '0.8' : '0';
   }
 
   public setFpsVisible(show: boolean): void {

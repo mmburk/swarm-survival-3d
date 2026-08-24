@@ -24,6 +24,8 @@ Uzun araştırmalar kendi dosyalarında:
 | 5 | **Hayvanlar saldırana öncelik veriyor** — `engaged` cesede 5 m avans | `4039e99` | Rook'un ısırıkları %28 → %92 doğru hedefe; bedeli: kondisyon %60 → %23 |
 | 6 | **Çığlıkçı** — altıncı tip. 15 m'de durur, 1.2 sn kurulur, çığlıkla ön safı 4'ten 10'a çıkarır (5 sn). Artı **gürültü sistemi**: silah sesi sayaca yazılıyor, 120'de plan dışı bir Çığlıkçı geliyor | `1922dab` | Harvester saniyede 0.3 gürültü üretiyor → hiç çağırmıyor. Kartındaki söz ilk kez doğru |
 
+| 7 | **Kapan (Clinger)** — yedinci tip. 0.35 sn hamle, tutarsa 1.5 sn hareket kilidi. Yuvarlanarak önleniyor, **F** ile kırılıyor, **hayvan** üstünden alıyor. Oyuncuya `drain()` ve `isHeld`, hayvana `penRescues` sayacı + Eli'nin yeni kehaneti geldi | *(aşağıda)* | Ateş etmek serbest kalıyor — silahı da alan tutuş karar değil, ara sahne olurdu |
+
 ---
 
 ## SIRADA
@@ -44,12 +46,25 @@ Bilinen pürüzler:
 - Ekranda ayırt etme: sarkık çene (geometri) + kurulurken `hot` yanıp sönmesi.
   Kalabalıkta yeterli mi, oynayınca belli olacak.
 
-### Kapan *(sonraki tip)*
-Kavrar, oyuncuyu ~1.5 sn yerinde tutar. Kurtuluş: **F ile itekleme** ya da
-**hayvan** — Rook üstüne atlayıp kurtarır. İkincisi asıl sebep: ağıllar oyunun
-duygusal merkezi ama hayvanın şu anki işi "biraz hasar". L4D'nin dört
-özelinin dördü de yakalayan tip; kalabalık oyununda oyuncuyu bir saniye
-durdurmak, kalabalığı silaha çeviren tek şey.
+### Kapanın dengesi *(oynayıp bakılacak)*
+Sayılar: `Engine.ts` → `GRAB_DURATION` (1.5 sn), `GRAB_DAMAGE_PER_SECOND` (13).
+`Enemy.ts` → `GRAB_RANGE` (1.9 m), `GRAB_WINDUP` (0.35 sn), `GRAB_COOLDOWN`
+(6 sn). Sektör başına spawn: `(sektör-1) × 1.6`.
+
+Bilinen pürüzler:
+- **Sıklık.** Sektör 5'te ~6 Clinger var ve hepsi sıraya girdiğinde tutabilir.
+  Aynı anda tek tutuş var ama arka arkaya gelmeleri boğucu olabilir — o zaman
+  ya spawn katsayısı ya da `GRAB_COOLDOWN` artar.
+- **Shove cooldown'u 5 sn, tutuş 1.5 sn.** Yani üst üste iki tutuşta ikinciye
+  botu yetiştiremiyorsun. Bilerek: hayvanın ve silahın da bir işi olsun.
+- **Hayvan kurtarması strike'a bağlı.** Kedi (WATCH) hiç strike yapmadığı için
+  kurtaramıyor — karakterine uygun ama oyuncu bunu bilmiyor. Kedinin kartına
+  bir satır eklenebilir.
+
+### Sıradaki tip yok — kadro tamam sayılabilir
+7 tip + boss. [Roster araştırmasındaki](zombie-roster-research.md) yedi rolün
+altısı dolu; boş kalan tek şey "alan reddi"nin tam hâli (Bloater yarım
+karşılıyor). Yeni tip yerine artık **İşaretliler katmanı** daha çok getirir.
 
 ### İşaretliler *(katman)*
 [Plan yazılı](enemy-ai-plan.md) — Yelekli, Çığlıkçı-nitelik, Öfkeli, Şişkin.
