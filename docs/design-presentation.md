@@ -154,7 +154,7 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
 
 ---
 
-## 4. HAT: DÜŞMAN HATTI (5 tip + boss)
+## 4. HAT: DÜŞMAN HATTI (6 tip + boss)
 
 | Tip | Can | Hız | Yarıçap | Temas hasarı | Scrap | Rol |
 |---|---|---|---|---|---|---|
@@ -163,6 +163,7 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
 | **Bloater** | 60 | 3.0 | 1.00 | 10 | 2 | Menzilli; mesafeyi korur, safra tükürür (2.6 sn'de bir) |
 | **Butcher** | 210 | 2.9 | 1.55 | 26 | 4 | Duvar; itilmez, yolunu kapatır |
 | **Burster** | 40 | 4.6 | 0.95 | 22 | 2 | Yaklaşır, 0.85 sn şişer, patlar (oyuncuya 30, etrafa 110) |
+| **Screamer** | 25 | 3.4 | 0.78 | 8 | 3 | 15 m'de durur, 1.2 sn kurulur, çığlıkla ön safı 6 gövde büyütür |
 
 ### AI mimarisi
 
@@ -196,6 +197,16 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
   kaldığında `pressAttack` açılır ve üstüne gelir. **Sebep:** son bloater'ın
   sabrınızın dışında park edip sektörü sonsuza kadar kilitlemesini engellemek.
   (Bu, playtest'ten çıkmış bir düzeltme; sunumda anlatmaya değer.)
+- **Çığlıkçı ve gürültü.** Screamer sıraya hiç girmiyor (Bloater gibi menzilli
+  sayılıyor), 15 metrede duruyor ve 9 saniyede bir çığlık atıyor. Çığlık
+  ne doğuruyor ne de güçlendiriyor — **halkada bekleyen 6 gövdeye anında sıra
+  veriyor** ve 5 saniye boyunca sıra bütçesini 6 artırıyor. Karşı oyun 1.2
+  saniyelik kurulma: o sırada öldürülürse hiçbir şey olmuyor. Ayrıca oyuncunun
+  gürültüsüne göre plan dışı Screamer doğuyor (7 Days to Die'ın Heat sistemi):
+  her atış silahın `noise` değerini sokağın sayacına yazıyor, sayaç saniyede
+  2.5 unutuyor, 120'de bir Screamer geliyor. Harvester saniyede 0.3 üretiyor —
+  yani **hiç çağırmıyor**, kartındaki "the quiet ones do not call the herd"
+  sözü ilk kez doğru.
 - **Spawn telegraph'ı.** Hiçbir şey aniden belirmez: yere 0.45 sn kanlı bir
   halka çizilir, sonra düşman oradan gelir. Spawn oyuncudan en az 12 m, en fazla
   33 m uzakta ve çitin içinde.
@@ -810,6 +821,10 @@ Oyuncu:      100 can (maks 160) · 8.2 hız (maks 10.4) · 0.85 yarıçap
 Arena:       52 birim yarıçaplı daire (köşeye saklanmayı engellemek için)
 Spawn:       oyuncudan 17–33 m, min 12 m ayrık, 0.45 sn telegraph
              0.85 sn'de 2 / ekranda <7 ise 4 · tavan 34 aktif
+Çığlıkçı:    25 can · 15 m duruş · 1.2 sn kurulma · 9 sn bekleme
+             çığlık: +6 gövde anında, 5 sn boyunca +6 sıra
+Gürültü:     eşik 120 · unutma 2.5/sn · Ranger 8.7/sn, Stutter 10.3/sn
+             Boomstick 3.5/sn, Widowmaker 2.4/sn, Harvester 0.3/sn
 Sıra:        aynı anda 3 + sektör×0.7 saldırgan (tavan 9)
              sıra 6.5 sn · dinlenme 3.5 sn · dağıtım 0.45 sn'de bir
              bekleyen halka 7.5–13 m · yay 3 m'de kapanıyor

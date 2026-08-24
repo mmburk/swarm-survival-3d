@@ -68,6 +68,39 @@ const TURN_REST = 3.5;
 const TURN_REFRESH = 0.45;
 
 /**
+ * What a Screamer's shout is worth: extra attack lanes, and for how long.
+ *
+ * Six is roughly double the opening street's allowance, which is the point —
+ * the shout has to be felt as the street closing in rather than as a number
+ * going up somewhere.
+ */
+const SCREAM_LANES = 6;
+/**
+ * Deliberately shorter than a Screamer's own cooldown (9s), so a live one
+ * gives the street a rhythm — surge, ease, surge — rather than holding it
+ * permanently open. A wall that never comes down is just a harder wall.
+ */
+const SCREAM_LANE_DURATION = 5.0;
+
+/**
+ * The street's memory for gunfire, and what it costs.
+ *
+ * Straight out of 7 Days to Die's heat: noise is a resource the player spends
+ * without meaning to, and a Screamer is the bill. Every shot adds the weapon's
+ * own report; the street forgets at `NOISE_DECAY` a second, and when the meter
+ * fills, something that was already out there has heard enough and comes to
+ * say so.
+ *
+ * The numbers are set so that the Harvester — whose card has always claimed
+ * the quiet ones do not call the herd — never reaches the threshold at all:
+ * it makes 0.1 per nail at one every 0.34s, which is 0.29 a second against a
+ * decay of 2.5. The Ranger held down nets about 6 a second and buys a Screamer
+ * roughly every twenty seconds of continuous fire.
+ */
+const NOISE_THRESHOLD = 120;
+const NOISE_DECAY = 2.5;
+
+/**
  * Flat distance test on the XZ plane.
  *
  * The grid is a broad phase — it hands back whole cells, and its integer hash
@@ -188,6 +221,10 @@ export class Engine {
 
   /** Counts down to the next deal of attack turns. See `updateTurns`. */
   private turnTimer: number = 0;
+  /** Seconds of widened attack lanes left over from a shout. */
+  private screamLanes: number = 0;
+  /** How much gunfire this street has heard lately. See `NOISE_THRESHOLD`. */
+  private noise: number = 0;
   /** Scratch list for that deal, so dealing them allocates nothing. */
   private turnOrder: Enemy[] = [];
 
@@ -1088,6 +1125,12 @@ export class Engine {
     this.telegraphs.length = 0;
     this.grid.clear();
 
+    // Both of these belong to the street that just ended. Carried over, a
+    // sector cleared in a firefight would call a Screamer down on the quiet
+    // one after it.
+    this.noise = 0;
+    this.screamLanes = 0;
+
     this.boss.deactivate();
     this.trader.deactivate();
     this.cache.deactivate();
@@ -1102,10 +1145,15 @@ export class Engine {
 
   // ------------------------------------------------------------------ combat
 
-  private spawnFromEdge(): void {
-    if (this.sectors.remainingSpawns() <= 0) return;
+  /**
+   * @param forced A type to put on the street regardless of what the sector
+   *   had left in its queue. Only the noise meter uses this — everything else
+   *   draws from the plan.
+   */
+  private spawnFromEdge(forced?: EnemyType): void {
+    if (!forced && this.sectors.remainingSpawns() <= 0) return;
 
-    const type = this.sectors.nextSpawnType();
+    const type = forced ?? this.sectors.nextSpawnType();
     const p = this.player.position;
 
     let x = 0;
@@ -1141,6 +1189,8 @@ export class Engine {
    * would only take the lane from something that does.
    */
   private updateTurns(active: Enemy[], delta: number): void {
+    if (this.screamLanes > 0) this.screamLanes = Math.max(0, this.screamLanes - delta);
+
     for (const e of active) {
       if (e.engaged) e.turnTimer += delta;
       else if (e.restTimer > 0) e.restTimer = Math.max(0, e.restTimer - delta);
@@ -1152,12 +1202,14 @@ export class Engine {
 
     // Later streets let more of them in at once. This is the difficulty knob:
     // the crowd is as big as it ever was, it is the front rank that grows.
-    const lanes = Math.min(9, 3 + Math.floor(this.sectors.current * 0.7));
+    // A shout on top of that is the only thing that widens it mid-fight.
+    const lanes = Math.min(9, 3 + Math.floor(this.sectors.current * 0.7))
+      + (this.screamLanes > 0 ? SCREAM_LANES : 0);
 
     this.turnOrder.length = 0;
     for (const e of active) {
       if (!e.active) continue;
-      if (e.type === EnemyType.BLOATER) {
+      if (e.type === EnemyType.BLOATER || e.type === EnemyType.SCREAMER) {
         e.engaged = true;
         continue;
       }
@@ -1182,6 +1234,67 @@ export class Engine {
       e.turnTimer = 0;
       e.restTimer = wanted ? 0 : TURN_REST;
     }
+  }
+
+  /**
+   * Somebody heard it and told the rest.
+   *
+   * The shout does not spawn anything and does not buff anything. All it does
+   * is take the street's own waiting rank and put it on you at once: the ring
+   * the player has spent the whole fight reading as safe stands up and walks
+   * in. That is why the counter-play is the wind-up rather than the noise —
+   * afterwards there is nothing to shoot that undoes it.
+   */
+  private onScream(screamer: Enemy): void {
+    this.audio.playScream();
+    this.cameraJuice.addTrauma(0.28);
+    this.particles.emitShockwave(screamer.position, 9.0, HEX.bloodDark);
+
+    this.screamLanes = SCREAM_LANE_DURATION;
+
+    // Granted here as well as through the widened lanes, so the street moves
+    // on the shout itself rather than up to half a second later when the next
+    // deal comes round.
+    let called = 0;
+    for (const e of this.enemies.getActiveItems()) {
+      if (called >= SCREAM_LANES) break;
+      if (!e.active || e.engaged) continue;
+      if (e.type === EnemyType.BLOATER || e.type === EnemyType.SCREAMER) continue;
+      e.engaged = true;
+      e.turnTimer = 0;
+      e.restTimer = 0;
+      called++;
+    }
+
+    this.hud.showToast(called > 0
+      ? 'It screamed — and the street turned round.'
+      : 'It screamed. Nothing left out there to hear it.');
+  }
+
+  /**
+   * Gunfire the street remembers.
+   *
+   * Spent by every shot and paid back at `NOISE_DECAY` a second in the run
+   * loop. When it fills, one more Screamer walks in off the edge on top of
+   * whatever the sector had planned — it is a bill for how the player chose
+   * to fight, not part of the budget. Capped at one at a time so a long
+   * firefight cannot stack them.
+   */
+  private spendNoise(amount: number): void {
+    if (this.sectors.state !== 'COMBAT') return;
+    this.noise += amount;
+    if (this.noise < NOISE_THRESHOLD) return;
+    this.noise = 0;
+
+    for (const e of this.enemies.getActiveItems()) {
+      if (e.active && e.type === EnemyType.SCREAMER) return;
+    }
+    for (const t of this.telegraphs) {
+      if (t.type === EnemyType.SCREAMER) return;
+    }
+
+    this.spawnFromEdge(EnemyType.SCREAMER);
+    this.hud.showToast('Something out there heard all that.');
   }
 
   private firePrimary(): void {
@@ -1209,6 +1322,7 @@ export class Engine {
 
     this.player.triggerRecoil();
     this.cameraJuice.addTrauma(w.trauma);
+    this.spendNoise(w.noise);
 
     const kind = this.player.weaponId === 'BOOMSTICK' || this.player.weaponId === 'WIDOWMAKER' ? 'heavy'
       : this.player.weaponId === 'STUTTER' ? 'light'
@@ -1253,6 +1367,9 @@ export class Engine {
     this.player.triggerRecoil();
     this.cameraJuice.addTrauma(0.34);
     this.audio.playGunshot('heavy');
+    // A heavy attack is the loudest thing the player owns, whatever it is
+    // bolted to. Even the nail rifle's fan volley is a shout.
+    this.spendNoise(3.0);
 
     const dmg = Math.round(alt.damage * this.player.damageMultiplier);
 
@@ -1646,6 +1763,9 @@ export class Engine {
     // everything downstream of that — pathing, spitting, contact — follows.
     const lure = this.companion.lurePoint;
 
+    // The street forgets the shooting, slowly.
+    if (this.noise > 0) this.noise = Math.max(0, this.noise - NOISE_DECAY * delta);
+
     // Whose turn it is to come at you.
     this.updateTurns(active, delta);
 
@@ -1666,7 +1786,8 @@ export class Engine {
         (origin, dir) => {
           this.bullets.get(origin, dir, 17, ProjectileType.ENEMY_BILE, 14, { range: 40, radius: 0.5 });
         },
-        (burster) => this.burstOpen(burster)
+        (burster) => this.burstOpen(burster),
+        (screamer) => this.onScream(screamer)
       );
     }
 

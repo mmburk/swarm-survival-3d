@@ -16,6 +16,8 @@ export class LoadingScreen {
     'Shove (F) throws whatever is in front of you back and stuns it. It is the answer to a Burster.',
     'Reload (R) between fights, not during one. An empty gun feeds itself, but it picks the worst moment to do it.',
     'They come at you in turns. The ones hanging back are not waiting politely — they are waiting for a gap.',
+    'A Screamer stands further out than anything else and takes a second to fill its lungs. That second is the whole of your answer to it.',
+    'The street remembers gunfire. Empty a magazine into nothing and something out there will come and say so.',
     'The flare (Q) pulls the whole street toward it before it goes off. Throw it away from you, not at your feet.',
     'Bursters swell before they blow. Shoot them at range or shove them off — never stand still next to one.',
     'Scrap stays with you when you die. A bad run still pays for the workbench.',

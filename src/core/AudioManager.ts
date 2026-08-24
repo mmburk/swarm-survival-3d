@@ -631,6 +631,17 @@ export class AudioManager {
     this.noiseBurst({ duration: 0.75, volume: 0.13, type: 'bandpass', startFreq: 420, endFreq: 1700, q: 2.2 });
   }
 
+  /**
+   * The shout itself. Long, ragged and up top, so it cuts through a street
+   * that is already full of gunfire — this is the one sound in the game the
+   * player has to hear over their own weapon.
+   */
+  public playScream(): void {
+    this.noiseBurst({ duration: 1.1, volume: 0.3, type: 'bandpass', startFreq: 900, endFreq: 2400, q: 4.5 });
+    this.noiseBurst({ duration: 0.9, volume: 0.16, type: 'bandpass', startFreq: 2600, endFreq: 1500, q: 7, delay: 0.08 });
+    this.thump(240, 150, 0.7, 0.1);
+  }
+
   public playBossRoar(): void {
     this.thump(85, 38, 1.5, 0.34);
     this.thump(128, 52, 1.3, 0.2, 0.06);

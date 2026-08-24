@@ -18,7 +18,9 @@ export const EnemyType = {
   /** Was a big man before. Still is. */
   BUTCHER: 'BUTCHER',
   /** Gas-bloated. Comes close, swells, and goes off. */
-  BURSTER: 'BURSTER'
+  BURSTER: 'BURSTER',
+  /** Keeps its distance and calls the street down on you. */
+  SCREAMER: 'SCREAMER'
 } as const;
 
 export type EnemyType = typeof EnemyType[keyof typeof EnemyType];
@@ -40,8 +42,18 @@ export const PROFILES: Record<EnemyType, Profile> = {
   SPRINTER: { health: 22, speed: 7.4, radius: 0.78, contact: 15, score: 150, scrap: 1, scale: 0.85, flesh: 0x9c8a72, cloth: 0x5e3730 },
   BLOATER: { health: 60, speed: 3.0, radius: 1.0, contact: 10, score: 190, scrap: 2, scale: 1.05, flesh: 0x7d8a5c, cloth: 0x3f4a34 },
   BUTCHER: { health: 210, speed: 2.9, radius: 1.55, contact: 26, score: 360, scrap: 4, scale: 1.65, flesh: 0x6f7259, cloth: 0x53372b },
-  BURSTER: { health: 40, speed: 4.6, radius: 0.95, contact: 22, score: 230, scrap: 2, scale: 1.0, flesh: 0x8f9152, cloth: 0x4a4a2c }
+  BURSTER: { health: 40, speed: 4.6, radius: 0.95, contact: 22, score: 230, scrap: 2, scale: 1.0, flesh: 0x8f9152, cloth: 0x4a4a2c },
+  // Thin, and worth more than it can do to you by itself. Everything a
+  // Screamer costs the player arrives afterwards.
+  SCREAMER: { health: 25, speed: 3.4, radius: 0.78, contact: 8, score: 260, scrap: 3, scale: 0.92, flesh: 0xb0a894, cloth: 0x6a5f52 }
 };
+
+/** How far out a Screamer tries to stand. Inside every weapon's range but one. */
+const SCREAM_STANDOFF = 15.0;
+/** Seconds of winding up before it lets go. The whole of the counter-play. */
+const SCREAM_WINDUP = 1.2;
+/** And how long before it can do it again. */
+const SCREAM_COOLDOWN = 9.0;
 
 const tempSteer = new THREE.Vector3();
 const tempTarget = new THREE.Vector3();
@@ -76,6 +88,15 @@ export class Enemy implements IPoolable {
 
   public isSwelling: boolean = false;
   public swellTimer: number = 0;
+
+  /**
+   * A Screamer's lungs filling. Counts down to the shout; killing it first is
+   * the entire point of the type, so nothing else about it may be urgent.
+   */
+  public isScreaming: boolean = false;
+  public screamTimer: number = 0;
+  /** Seconds until it is allowed to try again. */
+  private screamCooldown: number = 0;
 
   // ---- what the renderer reads --------------------------------------------
 
@@ -158,6 +179,10 @@ export class Enemy implements IPoolable {
     this.stunTimer = 0;
     this.isSwelling = false;
     this.swellTimer = 0;
+    this.isScreaming = false;
+    this.screamTimer = 0;
+    // Staggered so two that walk in together do not shout together.
+    this.screamCooldown = 1.5 + Math.random() * 2.5;
     this.pressAttack = false;
     this.lurch = Math.random() * Math.PI * 2;
 
@@ -222,6 +247,8 @@ export class Enemy implements IPoolable {
       this.active = false;
       this.hpVisible = false;
       this.flashing = false;
+      // Shot mid-breath. Nothing comes of it — that is the whole trade.
+      this.isScreaming = false;
       return true;
     }
     return false;
@@ -233,7 +260,8 @@ export class Enemy implements IPoolable {
     playerPos: THREE.Vector3,
     grid: SpatialHashGrid<Enemy>,
     onSpit: (origin: THREE.Vector3, dir: THREE.Vector3) => void,
-    onBurst?: (enemy: Enemy) => void
+    onBurst?: (enemy: Enemy) => void,
+    onScream?: (enemy: Enemy) => void
   ): void {
     if (!this.active) return;
 
@@ -280,11 +308,63 @@ export class Enemy implements IPoolable {
       }
     }
 
+    // A Screamer's whole job is the second and a bit before the noise.
+    //
+    // It stands further out than anything else on the street, which is what
+    // makes it a decision rather than an event: it is always reachable, but
+    // reaching it means turning away from whatever is already on you. Killed
+    // during the wind-up, nothing happens at all.
+    if (this.type === EnemyType.SCREAMER) {
+      if (this.screamCooldown > 0) this.screamCooldown -= delta;
+
+      if (this.isScreaming) {
+        this.velocity.multiplyScalar(0.82);
+        this.screamTimer -= delta;
+        // Draws itself up as the lungs fill, and flashes faster the closer it
+        // gets — the same language the Burster's gas already speaks.
+        const t = 1 - this.screamTimer / SCREAM_WINDUP;
+        this.renderScale = this.baseScale * (1 + t * 0.22);
+        this.hot = Math.floor(frameCount / (t > 0.6 ? 3 : 6)) % 2 === 0;
+
+        this.position.x += this.velocity.x * delta;
+        this.position.z += this.velocity.z * delta;
+        this.position.y = this.terrain.getHeightAt(this.position.x, this.position.z);
+        this.yaw = Math.atan2(this.position.x - playerPos.x, this.position.z - playerPos.z);
+
+        if (this.screamTimer <= 0) {
+          this.isScreaming = false;
+          this.hot = false;
+          this.renderScale = this.baseScale;
+          this.screamCooldown = SCREAM_COOLDOWN;
+          onScream?.(this);
+        }
+        return;
+      }
+
+      // Only shouts once it is standing where it means to stand, so the
+      // wind-up never starts in the middle of a walk the player cannot read.
+      const gap = this.position.distanceTo(playerPos);
+      if (this.screamCooldown <= 0 && gap > SCREAM_STANDOFF * 0.6) {
+        this.isScreaming = true;
+        this.screamTimer = SCREAM_WINDUP;
+        this.audio.playSwell();
+        return;
+      }
+    }
+
     tempTarget.copy(playerPos);
 
     const toPlayerX = playerPos.x - this.position.x;
     const toPlayerZ = playerPos.z - this.position.z;
     const distance = Math.hypot(toPlayerX, toPlayerZ) || 0.0001;
+
+    // Screamers back away to their own working distance and stay there. They
+    // never take an attack lane — see `closingIn` below.
+    if (this.type === EnemyType.SCREAMER && !this.pressAttack) {
+      if (distance < SCREAM_STANDOFF) {
+        tempTarget.subVectors(this.position, playerPos).add(this.position);
+      }
+    }
 
     // Bloaters hold a lane and spit bile from range.
     if (this.type === EnemyType.BLOATER) {
@@ -309,7 +389,7 @@ export class Enemy implements IPoolable {
     // takes the waiting away but not the arc — at the end of a street nothing
     // is allowed to stand off, but nothing has to run at you down a ruler
     // either.
-    const closingIn = this.type !== EnemyType.BLOATER;
+    const closingIn = this.type !== EnemyType.BLOATER && this.type !== EnemyType.SCREAMER;
 
     if (closingIn && !this.engaged && !this.pressAttack) {
       // Waiting its turn. Closes to its own ring, then walks round it — near
@@ -408,6 +488,7 @@ export class Enemy implements IPoolable {
     this.hpVisible = false;
     this.flashing = false;
     this.hot = false;
+    this.isScreaming = false;
     this.position.set(0, -9999, 0);
   }
 }

@@ -22,17 +22,27 @@ Uzun araştırmalar kendi dosyalarında:
 | 3 | **Yay çizerek yaklaşma** — düz hat yerine omuzdan, 3 metrede kapanan bir açıyla | `75e7a45` | Düzlük: shambler 0.87, sprinter 0.98 (1.0 = cetvel) |
 | 4 | **Hayvan tasma bug'ları** — Bristle 17 m'ye hücum ediyordu, Mouser 4 m'lik kontrolde 5.5 m'yi görüyordu | `a02ea09` | bug.md 15–16 |
 | 5 | **Hayvanlar saldırana öncelik veriyor** — `engaged` cesede 5 m avans | `4039e99` | Rook'un ısırıkları %28 → %92 doğru hedefe; bedeli: kondisyon %60 → %23 |
+| 6 | **Çığlıkçı** — altıncı tip. 15 m'de durur, 1.2 sn kurulur, çığlıkla ön safı 4'ten 10'a çıkarır (5 sn). Artı **gürültü sistemi**: silah sesi sayaca yazılıyor, 120'de plan dışı bir Çığlıkçı geliyor | *(aşağıda)* | Harvester saniyede 0.3 gürültü üretiyor → hiç çağırmıyor. Kartındaki söz ilk kez doğru |
 
 ---
 
 ## SIRADA
 
-### Çığlıkçı *(şu an yapılıyor)*
-Altıncı zombi tipi. Uzakta durur, 1.2 sn kurulur, çığlık atar → halkada
-bekleyenlere anında sıra verir. **Gürültüye göre de doğar** (7DTD'nin Heat
-sistemi): sektörde ne kadar ses çıkardıysan o kadar. Bu, Harvester'ın
-kartındaki *"The quiet ones do not call the herd"* sözünü ilk kez gerçek
-yapıyor — şu an o satırın arkasında hiçbir mekanik yok.
+### Çığlıkçının dengesi *(oynayıp bakılacak)*
+Yapıldı, ama masa başında ayarlandı. İzlenecek sayılar, hepsi `Engine.ts`
+tepesinde: `SCREAM_LANES` (6), `SCREAM_LANE_DURATION` (5 sn),
+`NOISE_THRESHOLD` (120), `NOISE_DECAY` (2.5). `Enemy.ts` tarafında
+`SCREAM_STANDOFF` (15 m), `SCREAM_WINDUP` (1.2 sn), `SCREAM_COOLDOWN` (9 sn).
+
+Bilinen pürüzler:
+- **Boomstick menzili 16 m, Çığlıkçı 15 m'de duruyor.** Çifteyle oynayan
+  oyuncu onu ancak menzilinin ucundan vurabiliyor. Şimdilik bilerek bırakıldı
+  (çifte zaten az gürültü üretiyor, yani ona daha az Çığlıkçı geliyor) ama
+  oynarken sinir bozucuysa `SCREAM_STANDOFF` 13'e inebilir.
+- **Minimap'te ayırt edilmiyor.** Bütün zombiler aynı blip. Çığlıkçı uzakta
+  durduğu için asıl bulunması gereken şey o — minimap'e ayrı renk iyi olur.
+- Ekranda ayırt etme: sarkık çene (geometri) + kurulurken `hot` yanıp sönmesi.
+  Kalabalıkta yeterli mi, oynayınca belli olacak.
 
 ### Kapan *(sonraki tip)*
 Kavrar, oyuncuyu ~1.5 sn yerinde tutar. Kurtuluş: **F ile itekleme** ya da
@@ -56,9 +66,14 @@ bedavaya geliyor. Tavan: sektör 3'ten önce yok, aynı anda en fazla 3.
 - **Faz 5** — spawn sonrası 0.3–0.6 sn uyanma duraklaması (kozmetik)
 
 ### Küçük ve bağımsız
-- **Ses "gürültü çeker" kuralı genellensin.** Şu an sadece fişek kalabalığı
-  çekiyor; patlamalar ve Bloater safrası hiçbir şey yapmıyor. Çığlıkçının
-  gürültü sayacı bunun altyapısı olabilir.
+- **Ses "gürültü çeker" kuralı genellensin.** Gürültü sayacı artık var
+  (`Engine.noise`) ama sadece Çığlıkçı doğuruyor. Patlamalar ve fişek de
+  sayaca yazabilir; ya da yüksek gürültü doğrudan sıra bütçesini biraz
+  açabilir — "gürültü yaptın, daha fazlası seninle ilgileniyor".
+- **Gürültü göstergesi.** Şu an oyuncu sayacı görmüyor, sadece sonucunu
+  (toast + Çığlıkçı). 7DTD de göstermiyor. Ama silah rafında artık
+  "Silent / Quiet / Loud / Deafening" etiketi var, yani en azından seçim
+  bilinçli yapılabiliyor.
 - **Rook'un grit'i (60) izlensin.** 5 numaralı değişiklikten sonra daha hızlı
   yıpranıyor. Her sokakta yere yığılıyorsa ya grit yükselir ya da HARRY rolüne
   "kondisyon düşünce geri çekil" eklenir. Önce oynayıp bakılacak.

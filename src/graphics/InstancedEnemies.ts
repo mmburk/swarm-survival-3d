@@ -7,7 +7,7 @@ import { tint } from './VertexTint';
 import { CAMERA_RIG } from './CameraRig';
 
 /**
- * Every zombie on the street, drawn in eight calls.
+ * Every zombie on the street, drawn in nine calls.
  *
  * Each one used to be a small scene graph of its own: a group holding a body
  * group, which held the merged torso mesh and two arms, plus two health-bar
@@ -32,7 +32,7 @@ const JAW_COLOR = 0x6b1a1a;
 /**
  * The merged, vertex-coloured body for one zombie type.
  *
- * All five types share the same box proportions and differ only in the cloth
+ * The types share the same box proportions and differ only in the cloth
  * and flesh shades baked into them, which is why there is one of these per
  * type rather than one for all of them: a single per-instance colour cannot
  * move two baked colours independently.
@@ -56,7 +56,12 @@ function bodyGeometryFor(type: EnemyType): THREE.BufferGeometry {
   const rightSocket = new THREE.BoxGeometry(0.09, 0.07, 0.05).translate(0.09, 1.59, -0.25);
   parts.push(tint(leftSocket, SOCKET_COLOR), tint(rightSocket, SOCKET_COLOR));
 
-  const jaw = new THREE.BoxGeometry(0.2, 0.1, 0.12).translate(0, 1.42, -0.2);
+  // A Screamer is read at fifteen metres or not at all, and at fifteen metres
+  // a colour is nothing. What carries is the outline: the jaw is unhinged and
+  // hanging, twice the drop of anything else on the street.
+  const jaw = type === EnemyType.SCREAMER
+    ? new THREE.BoxGeometry(0.24, 0.26, 0.14).translate(0, 1.3, -0.21)
+    : new THREE.BoxGeometry(0.2, 0.1, 0.12).translate(0, 1.42, -0.2);
   parts.push(tint(jaw, JAW_COLOR));
 
   // useGroups = false: grouping would keep one draw call per material and
@@ -71,7 +76,8 @@ const TYPES: EnemyType[] = [
   EnemyType.SPRINTER,
   EnemyType.BLOATER,
   EnemyType.BUTCHER,
-  EnemyType.BURSTER
+  EnemyType.BURSTER,
+  EnemyType.SCREAMER
 ];
 
 /**
@@ -90,7 +96,8 @@ const TYPE_SLOT: Record<EnemyType, number> = {
   SPRINTER: 1,
   BLOATER: 2,
   BUTCHER: 3,
-  BURSTER: 4
+  BURSTER: 4,
+  SCREAMER: 5
 };
 
 export class InstancedEnemies {
@@ -146,7 +153,7 @@ export class InstancedEnemies {
     // Arms stay their own batch because they animate out of phase with the
     // body — that paw forward is most of what makes the silhouette read as a
     // zombie — and because a flat colour is exactly what an instance tint can
-    // carry, so all five types share one geometry here.
+    // carry, so every type shares one geometry here.
     const armMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       roughness: 0.95,

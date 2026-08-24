@@ -30,6 +30,15 @@ export interface WeaponStats {
   magazine: number;
   /** Seconds spent feeding it. */
   reload: number;
+  /**
+   * How far the report carries, per shot.
+   *
+   * Spent into the street's noise (`Engine.noise`), which is what calls a
+   * Screamer down on you. Read it per second rather than per shot — the
+   * Boomstick is the loudest single report on the rack and one of the
+   * quietest guns to carry, because you fire it twice and stop.
+   */
+  noise: number;
   /** Camera shake per shot. */
   trauma: number;
   /** Visual kick on the character rig. */
@@ -91,6 +100,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       pierce: 0,
       magazine: 30,
       reload: 2.1,
+      noise: 1.0,
       trauma: 0.07,
       recoil: 0.12
     },
@@ -136,6 +146,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       pierce: 1,
       magazine: 2,
       reload: 1.2,
+      noise: 2.4,
       trauma: 0.32,
       recoil: 0.45
     },
@@ -180,6 +191,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       pierce: 2,
       magazine: 5,
       reload: 2.5,
+      noise: 2.0,
       trauma: 0.4,
       recoil: 0.34
     },
@@ -224,6 +236,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       pierce: 0,
       magazine: 45,
       reload: 1.8,
+      noise: 0.6,
       trauma: 0.04,
       recoil: 0.07
     },
@@ -268,6 +281,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       pierce: 4,
       magazine: 24,
       reload: 2.2,
+      noise: 0.1,
       trauma: 0.12,
       recoil: 0.18
     },

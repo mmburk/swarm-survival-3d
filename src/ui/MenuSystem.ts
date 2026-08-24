@@ -520,6 +520,17 @@ export class MenuSystem {
     const r = def.readout;
     const shotsPerSecond = (1 / stats.cooldown).toFixed(1);
 
+    // What the gun costs in attention rather than in scrap. Measured per
+    // second of held trigger, because that is what actually calls a Screamer
+    // — a single loud shell is cheaper than a quiet gun you never stop firing.
+    const noiseLabel = (w: typeof stats) => {
+      const perSecond = w.noise / w.cooldown;
+      return perSecond < 1 ? 'Silent'
+        : perSecond < 4 ? 'Quiet'
+        : perSecond < 7 ? 'Loud'
+        : 'Deafening';
+    };
+
     this.present(`
       <div class="ll-panel ll-pinned mn-shell ll-scroll" style="width:940px;">
         <div class="mn-head">
@@ -560,6 +571,7 @@ export class MenuSystem {
               <div class="ll-tag">${shotsPerSecond} / sec</div>
               <div class="ll-tag">${Math.round(stats.range)}m</div>
               <div class="ll-tag">${stats.magazine} loaded &nbsp;·&nbsp; ${stats.reload.toFixed(1)}s</div>
+              <div class="ll-tag">${noiseLabel(stats)} on the street</div>
               ${stats.pierce > 0 ? `<div class="ll-tag">pierces ${stats.pierce}</div>` : ''}
             </div>
 
@@ -1168,6 +1180,7 @@ export class MenuSystem {
       ['Bloater', 'Hangs back and spits bile. Close the distance or drop it.'],
       ['Butcher', 'Two hundred pounds of nothing left. Do not let it corner you.'],
       ['Burster', 'Swells up next to you and goes off. Shove it away or shoot it early.'],
+      ['Screamer', 'Hangs back where you cannot be bothered to go, draws breath, and hands the whole waiting crowd your position. Kill it while it is filling its lungs. Loud guns bring more of them.'],
       ['The Behemoth', 'Slams where you are standing. Keep moving and it never lands.']
     ].map(([n, d]) => `
       <div style="padding:9px 12px; background:rgba(0,0,0,0.2); border:1px solid var(--char);">

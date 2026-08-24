@@ -29,6 +29,7 @@ export interface SectorPlan {
   bloaters: number;
   butchers: number;
   bursters: number;
+  screamers: number;
   isBoss: boolean;
   isTrader: boolean;
 }
@@ -71,7 +72,7 @@ export class SectorManager {
   public gatesOpen: boolean = false;
 
   public toSpawn: Record<EnemyType, number> = {
-    SHAMBLER: 0, SPRINTER: 0, BLOATER: 0, BUTCHER: 0, BURSTER: 0
+    SHAMBLER: 0, SPRINTER: 0, BLOATER: 0, BUTCHER: 0, BURSTER: 0, SCREAMER: 0
   };
   public isBossSector: boolean = false;
   public isTraderSector: boolean = false;
@@ -157,11 +158,11 @@ export class SectorManager {
 
   public plan(sector: number): SectorPlan {
     if (sector % this.bossEvery === 0) {
-      return { shamblers: 14, sprinters: 8, bloaters: 4, butchers: 2, bursters: 4, isBoss: true, isTrader: false };
+      return { shamblers: 14, sprinters: 8, bloaters: 4, butchers: 2, bursters: 4, screamers: 2, isBoss: true, isTrader: false };
     }
     // A trade gate overrides the ordinary cadence — the player asked for it.
     if (this.traderNext || sector % this.bossEvery === 3) {
-      return { shamblers: 0, sprinters: 0, bloaters: 0, butchers: 0, bursters: 0, isBoss: false, isTrader: true };
+      return { shamblers: 0, sprinters: 0, bloaters: 0, butchers: 0, bursters: 0, screamers: 0, isBoss: false, isTrader: true };
     }
 
     const n = this.night.enemyCount;
@@ -173,6 +174,9 @@ export class SectorManager {
       bloaters: Math.round(Math.max(0, (sector - 1) * 1.3) * n),
       butchers: Math.round(Math.max(0, (sector - 2) * 0.9) * n),
       bursters: Math.round(Math.max(0, (sector - 2) * 1.5) * n),
+      // Rare on purpose. One of these on a street changes the shape of the
+      // whole fight; two of them is a different game.
+      screamers: Math.round(Math.max(0, (sector - 1) * 0.8) * n),
       isBoss: false,
       isTrader: false
     };
@@ -190,6 +194,7 @@ export class SectorManager {
     this.toSpawn.BLOATER = p.bloaters;
     this.toSpawn.BUTCHER = p.butchers;
     this.toSpawn.BURSTER = p.bursters;
+    this.toSpawn.SCREAMER = p.screamers;
     this.isBossSector = p.isBoss;
     this.isTraderSector = p.isTrader;
     this.traderNext = false;
@@ -202,7 +207,7 @@ export class SectorManager {
 
   public remainingSpawns(): number {
     return this.toSpawn.SHAMBLER + this.toSpawn.SPRINTER + this.toSpawn.BLOATER +
-           this.toSpawn.BUTCHER + this.toSpawn.BURSTER;
+           this.toSpawn.BUTCHER + this.toSpawn.BURSTER + this.toSpawn.SCREAMER;
   }
 
   /** Weighted draw so the dangerous types trickle in rather than arriving as a block. */
@@ -210,7 +215,10 @@ export class SectorManager {
     // Rarer types are down-weighted so they arrive spread through the wave
     // rather than as one lump at the end of the queue.
     const bias: Record<EnemyType, number> = {
-      SHAMBLER: 1.0, SPRINTER: 0.9, BLOATER: 0.7, BURSTER: 0.6, BUTCHER: 0.45
+      SHAMBLER: 1.0, SPRINTER: 0.9, BLOATER: 0.7, BURSTER: 0.6, BUTCHER: 0.45,
+      // Deliberately near the top: a Screamer held back to the end of the
+      // queue arrives when there is nothing left for it to call.
+      SCREAMER: 0.85
     };
 
     const weights: Array<[EnemyType, number]> = [];
