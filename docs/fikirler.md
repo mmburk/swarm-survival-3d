@@ -26,7 +26,7 @@ Uzun araştırmalar kendi dosyalarında:
 
 | 7 | **Kapan (Clinger)** — yedinci tip. 0.35 sn hamle, tutarsa 1.5 sn hareket kilidi. Yuvarlanarak önleniyor, **F** ile kırılıyor, **hayvan** üstünden alıyor. Oyuncuya `drain()` ve `isHeld`, hayvana `penRescues` sayacı + Eli'nin yeni kehaneti geldi | `6b92de8` | Ateş etmek serbest kalıyor — silahı da alan tutuş karar değil, ara sahne olurdu |
 
-| 8 | **İşaretliler** — `config/Marks.ts`. Dört kural (Vested / Wound Up / Swollen / Unburnt), tipe göre yasaklar, sektör 3'ten sonra tavanlı. Tek soğuk renk, pin board'da kartları, ilkinde toast | *(aşağıda)* | Vested yön tabanlı: omzunu geçersen plaka bitiyor. Delici ve patlama zaten tanımıyor |
+| 8 | **İşaretliler** — `config/Marks.ts`. Dört kural (Vested / Wound Up / Swollen / Unburnt), tipe göre yasaklar, sektör 3'ten sonra tavanlı. Tek soğuk renk, pin board'da kartları, ilkinde toast | `6045800` | Vested yön tabanlı: omzunu geçersen plaka bitiyor. Delici ve patlama zaten tanımıyor |
 
 ---
 
