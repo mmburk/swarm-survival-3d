@@ -28,8 +28,8 @@ Uzun araştırmalar kendi dosyalarında:
 
 | 8 | **İşaretliler** — `config/Marks.ts`. Dört kural (Vested / Wound Up / Swollen / Unburnt), tipe göre yasaklar, sektör 3'ten sonra tavanlı. Tek soğuk renk, pin board'da kartları, ilkinde toast | `6045800` | Vested yön tabanlı: omzunu geçersen plaka bitiyor. Delici ve patlama zaten tanımıyor |
 
-| 9 | **Faz 3 — her sayı bir bant.** `Profile` altı `Range` taşıyor (`pace`, `standoff`, `turn`, `rest`, `windup`, `recover`), hepsi gövde başına spawn'da çekiliyor. Dört sabit silindi | *(aşağıda)* | 22 m'den gelen 20 shambler artık 8.7 metreye yayılmış varıyor |
-| 10 | **Faz 4 — sıra üç kuyruğa ayrıldı.** melee / heavy (Butcher+Burster) / grab (Clinger). Çığlık yalnız melee'yi açıyor | *(aşağıda)* | Sektör 5'te 3 butcher + 3 burster varken sadece 2'si saldırabiliyor, 5 clinger'dan 1'i tutabiliyor |
+| 9 | **Faz 3 — her sayı bir bant.** `Profile` altı `Range` taşıyor (`pace`, `standoff`, `turn`, `rest`, `windup`, `recover`), hepsi gövde başına spawn'da çekiliyor. Dört sabit silindi | `0f19467` | 22 m'den gelen 20 shambler artık 8.7 metreye yayılmış varıyor |
+| 10 | **Faz 4 — sıra üç kuyruğa ayrıldı.** melee / heavy (Butcher+Burster) / grab (Clinger). Çığlık yalnız melee'yi açıyor | `0f19467` | Sektör 5'te 3 butcher + 3 burster varken sadece 2'si saldırabiliyor, 5 clinger'dan 1'i tutabiliyor |
 
 ---
 
