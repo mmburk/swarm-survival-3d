@@ -31,7 +31,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 9 | **Faz 3 — her sayı bir bant.** `Profile` altı `Range` taşıyor (`pace`, `standoff`, `turn`, `rest`, `windup`, `recover`), hepsi gövde başına spawn'da çekiliyor. Dört sabit silindi | `0f19467` | 22 m'den gelen 20 shambler artık 8.7 metreye yayılmış varıyor |
 | 10 | **Faz 4 — sıra üç kuyruğa ayrıldı.** melee / heavy (Butcher+Burster) / grab (Clinger). Çığlık yalnız melee'yi açıyor | `0f19467` | Sektör 5'te 3 butcher + 3 burster varken sadece 2'si saldırabiliyor, 5 clinger'dan 1'i tutabiliyor |
 
-| 11 | **Faz 1 — vuruşun hazırlığı.** `NONE → WINDUP → STRIKE → RECOVER`, üç melee tipinde. Taahhütlü hamle, siluetle tell, temas hasarı sürtünmeye indi | *(aşağıda)* | Duran oyuncu 19.6 → 12–14 dps, ama sektör 9'da 27.6 → 34: eskiden kalabalık i-frame'de doyuma ulaşıyordu |
+| 11 | **Faz 1 — vuruşun hazırlığı.** `NONE → WINDUP → STRIKE → RECOVER`, üç melee tipinde. Taahhütlü hamle, siluetle tell, temas hasarı sürtünmeye indi | `94fbb12` | Duran oyuncu 19.6 → 12–14 dps, ama sektör 9'da 27.6 → 34: eskiden kalabalık i-frame'de doyuma ulaşıyordu |
 
 ---
 
