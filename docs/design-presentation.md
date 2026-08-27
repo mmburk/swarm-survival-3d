@@ -194,6 +194,32 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
 - **Weave (salınım).** Her düşmanın sinüs faz kayması var; sürü tek blok
   hâlinde hareket etmiyor. Sprinter hızlı ve dar salınıyor, shambler yavaş ve
   geniş.
+- **Hiçbir gövde bir sayıyı paylaşmıyor.** `Profile` altı **bant** taşıyor —
+  `pace` (hız çarpanı), `standoff` (halka), `turn`/`rest` (sırayı ne kadar
+  tutuyor, sonra ne kadar bekliyor), `windup`/`recover` (yapacağı şeyin
+  hazırlığı ve sonrası) — ve altısı da gövde başına, spawn anında bir kez
+  çekiliyor. Hades'te de neredeyse hiçbir zamanlama tek sabit değil
+  (`PreAttackDurationMin/Max`, `PostAttackCooldownMin/Max`). Ölçülen etki:
+  22 metreden aynı çember üzerinde gelen 20 shambler 8 saniye sonra **8.7
+  metreye yayılmış** hâlde varıyor; eskiden hepsi aynı hizadaydı.
+  Bantlar tipin karakterini de taşıyor — Butcher sırasını 7.5–10 saniye
+  tutuyor (altı saniyede rotasyona giren duvar, duvar değildir), Sprinter
+  3.5–5.5 (girip çıkıyor), Clinger halkanın **içinde** bekliyor (5.5–8 m)
+  çünkü beklediği şey sıra değil, boşluk.
+- **Sıra tek havuz değil, üç kuyruk.** Hades'te `MaxAttackers` silahın
+  üstünde, düşmanın değil; bizde de artık baskı türüne göre ayrı bütçeler var:
+
+  | Kuyruk | Kim | Bütçe |
+  |---|---|---|
+  | melee | Shambler, Sprinter | `min(9, 3 + sektör×0.7)` + çığlık varsa 6 |
+  | heavy | Butcher, Burster | sektör ≤ 4 ise 1, sonra 2 |
+  | grab | Clinger | sektör ≤ 5 ise 1, sonra 2 |
+  | — | Bloater, Screamer | sıra dışı, kendi mesafelerini tutuyorlar |
+
+  **Sebep:** tek havuzken sektörün en sert anı — iki Butcher ve bir Burster'ın
+  aynı anda sıraya girmesi — kimsenin tasarlamadığı, kuranın çıkardığı bir
+  andı. Ve çığlık artık yalnız kalabalığı açıyor: Screamer halkayı üstüne
+  çeviriyor, sana ikinci bir Butcher getirmiyor.
 - **Bloater kiting.** 13 m içinde geri çekilir — ama sektörde 4'ten az düşman
   kaldığında `pressAttack` açılır ve üstüne gelir. **Sebep:** son bloater'ın
   sabrınızın dışında park edip sektörü sonsuza kadar kilitlemesini engellemek.
@@ -865,9 +891,10 @@ Kapan:       55 can · 1.9 m menzil · 0.35 sn hamle · 1.5 sn tutuş
              çığlık: +6 gövde anında, 5 sn boyunca +6 sıra
 Gürültü:     eşik 120 · unutma 2.5/sn · Ranger 8.7/sn, Stutter 10.3/sn
              Boomstick 3.5/sn, Widowmaker 2.4/sn, Harvester 0.3/sn
-Sıra:        aynı anda 3 + sektör×0.7 saldırgan (tavan 9)
-             sıra 6.5 sn · dinlenme 3.5 sn · dağıtım 0.45 sn'de bir
-             bekleyen halka 7.5–13 m · yay 3 m'de kapanıyor
+Sıra:        melee min(9, 3+sektör×0.7) · heavy 1→2 · grab 1→2
+             sıra ve dinlenme gövde başına banttan (Butcher 7.5–10 sn,
+             Sprinter 3.5–5.5) · dağıtım 0.45 sn'de bir
+             bekleyen halka tipe göre 5.5–16.5 m · yay 3 m'de kapanıyor
 Şarjör:      Ranger 30/2.1 · Boomstick 2/1.2 · Widowmaker 5/2.5
              Stutter 45/1.8 · Harvester 24/2.2 (mermi / saniye)
 Kapılar:     %72 en az bir SIGNAL · kapı A (−17,−19), kapı B (+17,−19)

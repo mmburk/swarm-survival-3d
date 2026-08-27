@@ -28,15 +28,18 @@ Uzun araştırmalar kendi dosyalarında:
 
 | 8 | **İşaretliler** — `config/Marks.ts`. Dört kural (Vested / Wound Up / Swollen / Unburnt), tipe göre yasaklar, sektör 3'ten sonra tavanlı. Tek soğuk renk, pin board'da kartları, ilkinde toast | `6045800` | Vested yön tabanlı: omzunu geçersen plaka bitiyor. Delici ve patlama zaten tanımıyor |
 
+| 9 | **Faz 3 — her sayı bir bant.** `Profile` altı `Range` taşıyor (`pace`, `standoff`, `turn`, `rest`, `windup`, `recover`), hepsi gövde başına spawn'da çekiliyor. Dört sabit silindi | *(aşağıda)* | 22 m'den gelen 20 shambler artık 8.7 metreye yayılmış varıyor |
+| 10 | **Faz 4 — sıra üç kuyruğa ayrıldı.** melee / heavy (Butcher+Burster) / grab (Clinger). Çığlık yalnız melee'yi açıyor | *(aşağıda)* | Sektör 5'te 3 butcher + 3 burster varken sadece 2'si saldırabiliyor, 5 clinger'dan 1'i tutabiliyor |
+
 ---
 
 ## SIRADA
 
 ### Çığlıkçının dengesi *(oynayıp bakılacak)*
-Yapıldı, ama masa başında ayarlandı. İzlenecek sayılar, hepsi `Engine.ts`
-tepesinde: `SCREAM_LANES` (6), `SCREAM_LANE_DURATION` (5 sn),
-`NOISE_THRESHOLD` (120), `NOISE_DECAY` (2.5). `Enemy.ts` tarafında
-`SCREAM_STANDOFF` (15 m), `SCREAM_WINDUP` (1.2 sn), `SCREAM_COOLDOWN` (9 sn).
+Yapıldı, ama masa başında ayarlandı. İzlenecek sayılar `Engine.ts` tepesinde:
+`SCREAM_LANES` (6), `SCREAM_LANE_DURATION` (5 sn), `NOISE_THRESHOLD` (120),
+`NOISE_DECAY` (2.5). Duruşu ve temposu artık `PROFILES.SCREAMER` bantlarında:
+`standoff` 14.0–16.5, `windup` 1.0–1.45, `recover` 7.5–11.0.
 
 Bilinen pürüzler:
 - **Boomstick menzili 16 m, Çığlıkçı 15 m'de duruyor.** Çifteyle oynayan
@@ -49,14 +52,15 @@ Bilinen pürüzler:
   Kalabalıkta yeterli mi, oynayınca belli olacak.
 
 ### Kapanın dengesi *(oynayıp bakılacak)*
-Sayılar: `Engine.ts` → `GRAB_DURATION` (1.5 sn), `GRAB_DAMAGE_PER_SECOND` (13).
-`Enemy.ts` → `GRAB_RANGE` (1.9 m), `GRAB_WINDUP` (0.35 sn), `GRAB_COOLDOWN`
-(6 sn). Sektör başına spawn: `(sektör-1) × 1.6`.
+Sayılar: `Engine.ts` → `GRAB_DURATION` (1.5 sn), `GRAB_DAMAGE_PER_SECOND` (13),
+grab bütçesi `updateTurns` içinde. `Enemy.ts` → `GRAB_RANGE` (1.9 m); hamle ve
+bekleme artık `PROFILES.CLINGER.windup` (0.30–0.42) ve `.recover` (5.0–7.5).
+Sektör başına spawn: `(sektör-1) × 1.6`.
 
 Bilinen pürüzler:
-- **Sıklık.** Sektör 5'te ~6 Clinger var ve hepsi sıraya girdiğinde tutabilir.
-  Aynı anda tek tutuş var ama arka arkaya gelmeleri boğucu olabilir — o zaman
-  ya spawn katsayısı ya da `GRAB_COOLDOWN` artar.
+- ~~**Sıklık.** Sektör 5'te ~6 Clinger var ve hepsi sıraya girdiğinde
+  tutabilir.~~ **Faz 4 çözdü:** grab bütçesi sektör 5'e kadar 1, sonra 2.
+  Beşi de sokakta ama sırası olan bir tanesi.
 - **Shove cooldown'u 5 sn, tutuş 1.5 sn.** Yani üst üste iki tutuşta ikinciye
   botu yetiştiremiyorsun. Bilerek: hayvanın ve silahın da bir işi olsun.
 - **Hayvan kurtarması strike'a bağlı.** Kedi (WATCH) hiç strike yapmadığı için
@@ -87,13 +91,16 @@ Bilinen pürüzler:
   bizde Faz 1'e (windup) bağlı. Faz 1 gelince işaretlilere `windup × 0.6`
   eklenecek — asıl "elit" hissi orada.
 
-### AI planının fazları
-Öneri sırası **3 → 4 → 1 → 2 → 5**:
-- **Faz 3** — her zamanlama Min/Max aralığı olsun (çok ucuz)
-- **Faz 4** — sıra bütçesi tipe ayrılsın: melee 3–9, heavy (Butcher/Burster) 1–2
-- **Faz 1** — `WINDUP → LUNGE → RECOVER`, temas hasarı sürtünmeye insin *(büyük iş, dengeyi baştan ölçmek gerek)*
-- **Faz 2** — sırayı 6.5 sn'lik sayaç değil saldırının kendisi tutsun
-- **Faz 5** — spawn sonrası 0.3–0.6 sn uyanma duraklaması (kozmetik)
+### AI planının kalan fazları
+3 ve 4 yapıldı. Kalanlar:
+- **Faz 1** — `WINDUP → LUNGE → RECOVER`, temas hasarı sürtünmeye insin.
+  *Büyük iş, dengeyi baştan ölçmek gerek.* Altyapısı hazır: her gövde zaten
+  kendi `windup`/`recover` bandını çekiyor, Shambler/Sprinter/Butcher'ınki
+  şu an kullanılmıyor ve tam bunu bekliyor.
+- **Faz 2** — sırayı sayaç değil saldırının kendisi tutsun. Faz 1'in üstüne
+  yarım saatlik iş: `turnLength` yerine "WINDUP başladı → sıra alındı,
+  RECOVER bitti → bırakıldı".
+- **Faz 5** — spawn sonrası 0.3–0.6 sn uyanma duraklaması (kozmetik).
 
 ### Küçük ve bağımsız
 - **Ses "gürültü çeker" kuralı genellensin.** Gürültü sayacı artık var

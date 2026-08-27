@@ -61,10 +61,6 @@ const UP = new THREE.Vector3(0, 1, 0);
 /** Play area is a circle so the player cannot hide in a fence corner. */
 const ARENA_RADIUS = 52;
 
-/** How long one of the dead gets to press before it is asked to give the lane up. */
-const TURN_LENGTH = 6.5;
-/** And how long it has to spend back in the ring before it can have another. */
-const TURN_REST = 3.5;
 /** How often the turns are dealt again. */
 const TURN_REFRESH = 0.45;
 
@@ -235,8 +231,13 @@ export class Engine {
   /** Whatever currently has hold of the player, and where it took hold from. */
   private grabber: Enemy | null = null;
   private readonly grabOffset = new THREE.Vector3();
-  /** Scratch list for that deal, so dealing them allocates nothing. */
-  private turnOrder: Enemy[] = [];
+  /**
+   * Scratch lists for that deal, one per kind of pressure, so dealing them
+   * allocates nothing. See `updateTurns` for why there are three.
+   */
+  private meleeOrder: Enemy[] = [];
+  private heavyOrder: Enemy[] = [];
+  private grabOrder: Enemy[] = [];
 
   /**
    * Marks the player has already been introduced to this run. The layer is
@@ -1223,20 +1224,48 @@ export class Engine {
     if (this.turnTimer > 0) return;
     this.turnTimer = TURN_REFRESH;
 
-    // Later streets let more of them in at once. This is the difficulty knob:
-    // the crowd is as big as it ever was, it is the front rank that grows.
-    // A shout on top of that is the only thing that widens it mid-fight.
-    const lanes = Math.min(9, 3 + Math.floor(this.sectors.current * 0.7))
-      + (this.screamLanes > 0 ? SCREAM_LANES : 0);
+    const sector = this.sectors.current;
 
-    this.turnOrder.length = 0;
+    // Three queues, not one.
+    //
+    // Hades hangs `MaxAttackers` off the weapon rather than off the enemy, so
+    // a room can have two casters firing while the melee work off a budget of
+    // their own. Ours was a single number for everything, which meant the
+    // hardest moment in a sector — two Butchers and a Burster all pressing at
+    // once — was not designed, it was drawn. Now each kind of pressure is
+    // rationed separately and the shape of a street is a decision.
+    //
+    // The shout widens the crowd and nothing else: a Screamer turns the ring
+    // round on you, it does not fetch you a second Butcher.
+    const budget = {
+      MELEE: Math.min(9, 3 + Math.floor(sector * 0.7)) + (this.screamLanes > 0 ? SCREAM_LANES : 0),
+      HEAVY: sector <= 4 ? 1 : 2,
+      GRAB: sector <= 5 ? 1 : 2
+    };
+
+    this.meleeOrder.length = 0;
+    this.heavyOrder.length = 0;
+    this.grabOrder.length = 0;
+
     for (const e of active) {
       if (!e.active) continue;
-      if (e.type === EnemyType.BLOATER || e.type === EnemyType.SCREAMER) {
-        e.engaged = true;
-        continue;
+      switch (e.type) {
+        // Both of these keep their own distance by their own rules and would
+        // only be taking a lane away from something that wants to walk down it.
+        case EnemyType.BLOATER:
+        case EnemyType.SCREAMER:
+          e.engaged = true;
+          break;
+        case EnemyType.BUTCHER:
+        case EnemyType.BURSTER:
+          this.heavyOrder.push(e);
+          break;
+        case EnemyType.CLINGER:
+          this.grabOrder.push(e);
+          break;
+        default:
+          this.meleeOrder.push(e);
       }
-      this.turnOrder.push(e);
     }
 
     const p = this.player.position;
@@ -1245,21 +1274,28 @@ export class Engine {
       // never spent. Two metres of edge is enough to keep them in the front
       // rank without letting one shoulder past a body that is already on you.
       const d = Math.hypot(e.position.x - p.x, e.position.z - p.z) - (e.mark ? 2 : 0);
-      if (e.engaged) return e.turnTimer < TURN_LENGTH ? d - 3 : d + 40;
+      // Each body now runs out its own turn rather than a shared six and a half
+      // seconds, so a rank does not rotate as one.
+      if (e.engaged) return e.turnTimer < e.turnLength ? d - 3 : d + 40;
       return e.restTimer > 0 ? d + 40 : d;
     };
 
-    this.turnOrder.sort((a, b) => rank(a) - rank(b));
+    const deal = (queue: Enemy[], lanes: number) => {
+      queue.sort((a, b) => rank(a) - rank(b));
+      for (let i = 0; i < queue.length; i++) {
+        const e = queue[i];
+        const wanted = i < lanes;
+        if (wanted === e.engaged) continue;
 
-    for (let i = 0; i < this.turnOrder.length; i++) {
-      const e = this.turnOrder[i];
-      const wanted = i < lanes;
-      if (wanted === e.engaged) continue;
+        e.engaged = wanted;
+        e.turnTimer = 0;
+        e.restTimer = wanted ? 0 : e.restLength;
+      }
+    };
 
-      e.engaged = wanted;
-      e.turnTimer = 0;
-      e.restTimer = wanted ? 0 : TURN_REST;
-    }
+    deal(this.meleeOrder, budget.MELEE);
+    deal(this.heavyOrder, budget.HEAVY);
+    deal(this.grabOrder, budget.GRAB);
   }
 
   /**

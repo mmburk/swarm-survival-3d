@@ -28,6 +28,22 @@ export const EnemyType = {
 
 export type EnemyType = typeof EnemyType[keyof typeof EnemyType];
 
+/**
+ * A band a number is drawn from, once, when a body walks in.
+ *
+ * Hades has almost no timing that is a single figure: `PreAttackDurationMin`
+ * and `Max`, `PostAttackCooldownMin` and `Max`, `AIMoveWithinRangeTimeoutMin`
+ * and `Max`. Ours were all single figures, and the whole job of keeping a
+ * crowd from moving as one block was being done by one sine phase offset. A
+ * band per body does it in every dimension at once and costs a `Math.random`
+ * at spawn.
+ */
+export type Range = readonly [number, number];
+
+function roll(r: Range): number {
+  return r[0] + Math.random() * (r[1] - r[0]);
+}
+
 export interface Profile {
   health: number;
   speed: number;
@@ -38,35 +54,89 @@ export interface Profile {
   scale: number;
   flesh: number;
   cloth: number;
+
+  /** Personal pace, as a multiplier on `speed`. Nothing walks at the average. */
+  pace: Range;
+  /** How far out this one holds while it waits its turn. */
+  standoff: Range;
+  /** How long it presses once it has a lane, and how long it hangs back after. */
+  turn: Range;
+  rest: Range;
+  /**
+   * The pause before it does its thing, and the wait afterwards.
+   *
+   * Live today for the four types that have a timed action of their own — the
+   * Screamer's breath, the Clinger's lunge, the Burster's swell, the Bloater's
+   * spit. The rest carry them for the melee wind-up in phase 1 of the AI plan,
+   * which is what turns contact damage into something you can see coming.
+   */
+  windup: Range;
+  recover: Range;
 }
 
 export const PROFILES: Record<EnemyType, Profile> = {
-  SHAMBLER: { health: 34, speed: 2.6, radius: 0.85, contact: 12, score: 100, scrap: 1, scale: 0.95, flesh: HEX.flesh, cloth: 0x4c4b41 },
-  SPRINTER: { health: 22, speed: 7.4, radius: 0.78, contact: 15, score: 150, scrap: 1, scale: 0.85, flesh: 0x9c8a72, cloth: 0x5e3730 },
-  BLOATER: { health: 60, speed: 3.0, radius: 1.0, contact: 10, score: 190, scrap: 2, scale: 1.05, flesh: 0x7d8a5c, cloth: 0x3f4a34 },
-  BUTCHER: { health: 210, speed: 2.9, radius: 1.55, contact: 26, score: 360, scrap: 4, scale: 1.65, flesh: 0x6f7259, cloth: 0x53372b },
-  BURSTER: { health: 40, speed: 4.6, radius: 0.95, contact: 22, score: 230, scrap: 2, scale: 1.0, flesh: 0x8f9152, cloth: 0x4a4a2c },
+  SHAMBLER: {
+    health: 34, speed: 2.6, radius: 0.85, contact: 12, score: 100, scrap: 1, scale: 0.95,
+    flesh: HEX.flesh, cloth: 0x4c4b41,
+    // The widest pace band on the street. It is the type there are thirty of,
+    // so it is the type where everything walking in step is most obvious.
+    pace: [0.84, 1.16], standoff: [7.5, 13.0], turn: [5.5, 7.5], rest: [3.0, 4.2],
+    windup: [0.34, 0.5], recover: [1.0, 1.7]
+  },
+  SPRINTER: {
+    health: 22, speed: 7.4, radius: 0.78, contact: 15, score: 150, scrap: 1, scale: 0.85,
+    flesh: 0x9c8a72, cloth: 0x5e3730,
+    // Waits further out and takes a short lane: in fast, out fast, round again.
+    pace: [0.93, 1.07], standoff: [9.0, 14.0], turn: [3.5, 5.5], rest: [2.2, 3.4],
+    windup: [0.22, 0.32], recover: [0.7, 1.1]
+  },
+  BLOATER: {
+    health: 60, speed: 3.0, radius: 1.0, contact: 10, score: 190, scrap: 2, scale: 1.05,
+    flesh: 0x7d8a5c, cloth: 0x3f4a34,
+    // `recover` is its spit cadence. It never takes a lane, so turn and rest
+    // are along for the ride.
+    pace: [0.9, 1.1], standoff: [12.0, 14.0], turn: [5.5, 7.5], rest: [3.0, 4.2],
+    windup: [0.4, 0.6], recover: [2.2, 3.2]
+  },
+  BUTCHER: {
+    health: 210, speed: 2.9, radius: 1.55, contact: 26, score: 360, scrap: 4, scale: 1.65,
+    flesh: 0x6f7259, cloth: 0x53372b,
+    // Holds its lane far longer than anything else and stands closer while it
+    // waits. A wall that rotates out every six seconds is not a wall.
+    pace: [0.95, 1.05], standoff: [6.5, 9.0], turn: [7.5, 10.0], rest: [4.0, 6.0],
+    windup: [0.5, 0.7], recover: [1.6, 2.4]
+  },
+  BURSTER: {
+    health: 40, speed: 4.6, radius: 0.95, contact: 22, score: 230, scrap: 2, scale: 1.0,
+    flesh: 0x8f9152, cloth: 0x4a4a2c,
+    // `windup` is the swell. Varying it is the difference between learning the
+    // tell and learning a stopwatch.
+    pace: [0.9, 1.12], standoff: [8.0, 12.0], turn: [5.0, 7.0], rest: [3.0, 4.2],
+    windup: [0.72, 0.98], recover: [1.0, 1.6]
+  },
   // Thin, and worth more than it can do to you by itself. Everything a
   // Screamer costs the player arrives afterwards.
-  SCREAMER: { health: 25, speed: 3.4, radius: 0.78, contact: 8, score: 260, scrap: 3, scale: 0.92, flesh: 0xb0a894, cloth: 0x6a5f52 },
+  SCREAMER: {
+    health: 25, speed: 3.4, radius: 0.78, contact: 8, score: 260, scrap: 3, scale: 0.92,
+    flesh: 0xb0a894, cloth: 0x6a5f52,
+    // Stands further out than anything else, and never takes a lane.
+    pace: [0.9, 1.1], standoff: [14.0, 16.5], turn: [5.5, 7.5], rest: [3.0, 4.2],
+    windup: [1.0, 1.45], recover: [7.5, 11.0]
+  },
   // Low contact damage on purpose: what a Clinger costs you is the seconds,
   // not the bite. Everything else on the street is what actually hurts.
-  CLINGER: { health: 55, speed: 5.2, radius: 0.8, contact: 6, score: 240, scrap: 2, scale: 0.95, flesh: 0x8a7a63, cloth: 0x453a30 }
+  CLINGER: {
+    health: 55, speed: 5.2, radius: 0.8, contact: 6, score: 240, scrap: 2, scale: 0.95,
+    flesh: 0x8a7a63, cloth: 0x453a30,
+    // Lurks closer in than the rest of the ring, because what it is waiting
+    // for is a gap rather than a turn.
+    pace: [0.92, 1.1], standoff: [5.5, 8.0], turn: [4.5, 6.5], rest: [4.0, 6.0],
+    windup: [0.3, 0.42], recover: [5.0, 7.5]
+  }
 };
 
 /** How close a Clinger has to get before it throws itself at you. */
 export const GRAB_RANGE = 1.9;
-/** The lunge before the hold lands. Rolling through this is the free answer. */
-export const GRAB_WINDUP = 0.35;
-/** And how long before the same one can try again. */
-const GRAB_COOLDOWN = 6.0;
-
-/** How far out a Screamer tries to stand. Inside every weapon's range but one. */
-const SCREAM_STANDOFF = 15.0;
-/** Seconds of winding up before it lets go. The whole of the counter-play. */
-const SCREAM_WINDUP = 1.2;
-/** And how long before it can do it again. */
-const SCREAM_COOLDOWN = 9.0;
 
 const tempSteer = new THREE.Vector3();
 const tempTarget = new THREE.Vector3();
@@ -176,6 +246,13 @@ export class Enemy implements IPoolable {
 
   /** How far out it holds while it is waiting. Metres. */
   public standoff: number = 9;
+  /** How long this one holds a lane, and how long it hangs back after. */
+  public turnLength: number = 6.5;
+  public restLength: number = 3.5;
+
+  /** Drawn at spawn from the profile's bands. See `Profile.windup`. */
+  private windup: number = 0.4;
+  private recover: number = 1.2;
 
   /** Which shoulder it comes round, and how wide the arc is. */
   private flankSign: number = 1;
@@ -233,7 +310,6 @@ export class Enemy implements IPoolable {
     this.engaged = false;
     this.turnTimer = 0;
     this.restTimer = 0;
-    this.standoff = 7.5 + Math.random() * 5.5;
     this.flankSign = Math.random() < 0.5 ? -1 : 1;
     this.orbitSign = Math.random() < 0.5 ? -1 : 1;
     // A sprinter's whole read is the straight line it picks; a shambler has
@@ -243,7 +319,14 @@ export class Enemy implements IPoolable {
 
     this.maxHealth = Math.round(p.health * difficulty.health);
     this.health = this.maxHealth;
-    this.moveSpeed = p.speed * difficulty.speed;
+    // Every timing this body owns is drawn here, once. Nothing on the street
+    // shares a number with anything else on the street.
+    this.moveSpeed = p.speed * difficulty.speed * roll(p.pace);
+    this.standoff = roll(p.standoff);
+    this.turnLength = roll(p.turn);
+    this.restLength = roll(p.rest);
+    this.windup = roll(p.windup);
+    this.recover = roll(p.recover);
     this.radius = p.radius;
     this.contactDamage = p.contact;
     this.scoreValue = p.score;
@@ -376,13 +459,13 @@ export class Enemy implements IPoolable {
     if (this.type === EnemyType.BURSTER) {
       if (!this.isSwelling && this.position.distanceToSquared(playerPos) <= 5.0) {
         this.isSwelling = true;
-        this.swellTimer = 0.85;
+        this.swellTimer = this.windup;
         this.audio.playSwell();
       }
       if (this.isSwelling) {
         this.velocity.multiplyScalar(0.8);
         this.swellTimer -= delta;
-        const puff = 1 + (0.85 - this.swellTimer) * 0.55;
+        const puff = 1 + (this.windup - this.swellTimer) * 0.55;
         this.renderScale = this.baseScale * puff;
         // Pulses hotter as the gas builds — the tell that it is about to go.
         this.hot = Math.floor(frameCount / 4) % 2 === 0;
@@ -430,7 +513,9 @@ export class Enemy implements IPoolable {
           if (this.position.distanceTo(playerPos) <= GRAB_RANGE && onGrab?.(this)) {
             this.grabbing = true;
           } else {
-            this.grabCooldown = GRAB_COOLDOWN * 0.5;
+            // Missed. Comes round for another go sooner than it would after a
+            // hold that landed.
+            this.grabCooldown = this.recover * 0.5;
           }
         }
         return;
@@ -439,8 +524,8 @@ export class Enemy implements IPoolable {
       if (this.grabCooldown <= 0 && this.engaged &&
           this.position.distanceTo(playerPos) <= GRAB_RANGE * 1.9) {
         this.isLunging = true;
-        this.lungeTimer = GRAB_WINDUP;
-        this.grabCooldown = GRAB_COOLDOWN;
+        this.lungeTimer = this.windup;
+        this.grabCooldown = this.recover;
         // Thrown at where they are, not tracked to where they will be.
         tempSteer.copy(playerPos).sub(this.position).setY(0);
         if (tempSteer.lengthSq() > 0) tempSteer.normalize();
@@ -465,7 +550,7 @@ export class Enemy implements IPoolable {
         this.screamTimer -= delta;
         // Draws itself up as the lungs fill, and flashes faster the closer it
         // gets — the same language the Burster's gas already speaks.
-        const t = 1 - this.screamTimer / SCREAM_WINDUP;
+        const t = 1 - this.screamTimer / this.windup;
         this.renderScale = this.baseScale * (1 + t * 0.22);
         this.hot = Math.floor(frameCount / (t > 0.6 ? 3 : 6)) % 2 === 0;
 
@@ -478,7 +563,7 @@ export class Enemy implements IPoolable {
           this.isScreaming = false;
           this.hot = false;
           this.renderScale = this.baseScale;
-          this.screamCooldown = SCREAM_COOLDOWN;
+          this.screamCooldown = this.recover;
           onScream?.(this);
         }
         return;
@@ -487,9 +572,9 @@ export class Enemy implements IPoolable {
       // Only shouts once it is standing where it means to stand, so the
       // wind-up never starts in the middle of a walk the player cannot read.
       const gap = this.position.distanceTo(playerPos);
-      if (this.screamCooldown <= 0 && gap > SCREAM_STANDOFF * 0.6) {
+      if (this.screamCooldown <= 0 && gap > this.standoff * 0.6) {
         this.isScreaming = true;
-        this.screamTimer = SCREAM_WINDUP;
+        this.screamTimer = this.windup;
         this.audio.playSwell();
         return;
       }
@@ -504,7 +589,7 @@ export class Enemy implements IPoolable {
     // Screamers back away to their own working distance and stay there. They
     // never take an attack lane — see `closingIn` below.
     if (this.type === EnemyType.SCREAMER && !this.pressAttack) {
-      if (distance < SCREAM_STANDOFF) {
+      if (distance < this.standoff) {
         tempTarget.subVectors(this.position, playerPos).add(this.position);
       }
     }
@@ -516,7 +601,7 @@ export class Enemy implements IPoolable {
         tempTarget.subVectors(this.position, playerPos).add(this.position);
       }
       this.attackTimer += delta;
-      if (this.attackTimer >= 2.6 && d2 < 900) {
+      if (this.attackTimer >= this.recover && d2 < 900) {
         this.attackTimer = 0;
         tempSteer.copy(playerPos).sub(this.position).setY(0);
         if (tempSteer.lengthSq() > 0) tempSteer.normalize();

@@ -274,38 +274,79 @@ geri adım atmıyoruz.
 
 ---
 
-## 6. FAZ 3 — HER SAYI BİR ARALIK OLSUN
+## 6. FAZ 3 — HER SAYI BİR ARALIK OLSUN *(yapıldı)*
 
-`PROFILES`'daki her şey tek sabit. Hades'te neredeyse hiçbir zamanlama tek
-sabit değil.
+`Profile` artık altı **bant** taşıyor ve her biri gövde başına, spawn anında
+bir kez çekiliyor (`Range` + `roll()`, `Enemy.ts`):
 
-```ts
-// Profile'a eklenecek — reset()'te çekilir
-windup:   [0.32, 0.48]
-recover:  [0.9, 1.6]
-standoff: [7.5, 13.0]   // zaten var, aynı biçime taşınır
+| Bant | Ne | Kim okuyor |
+|---|---|---|
+| `pace` | Hızın çarpanı | Hepsi |
+| `standoff` | Bekleme halkasının yarıçapı | Hepsi (Screamer kendi duruşu için) |
+| `turn` | Sırayı ne kadar tutuyor | Sıra sistemi |
+| `rest` | Sırayı bıraktıktan sonra ne kadar bekliyor | Sıra sistemi |
+| `windup` | Yapacağı şeyden önceki duraklama | Screamer'ın nefesi, Clinger'ın hamlesi, Burster'ın şişmesi |
+| `recover` | Sonrasındaki bekleme | Aynı üçü + Bloater'ın tükürme temposu |
+
+Bu, dört ayrı sabiti (`TURN_LENGTH`, `TURN_REST`, `SCREAM_WINDUP/COOLDOWN`,
+`GRAB_WINDUP/COOLDOWN`, `SCREAM_STANDOFF`) ortadan kaldırdı — hepsi artık
+profilin bandından geliyor.
+
+Ölçüm (aynı tipten 200 gövde):
+
+```
+SHAMBLER   hız 2.19–3.01   halka  7.6–13.0   sıra 5.6–7.5   dinlenme 3.0–4.2
+SPRINTER   hız 6.89–7.91   halka  9.1–14.0   sıra 3.5–5.5   dinlenme 2.2–3.4
+BUTCHER    hız 2.76–3.04   halka  6.5–9.0    sıra 7.5–10.0  dinlenme 4.0–6.0
+CLINGER    hız 4.79–5.71   halka  5.5–8.0    sıra 4.5–6.5   dinlenme 4.0–6.0
+SCREAMER   hız 3.07–3.74   halka 14.0–16.5   sıra 5.5–7.5   dinlenme 3.0–4.2
 ```
 
-Tek dosya, ucuz, ve Faz 1'in kalabalıkta okunmasını doğrudan iyileştiriyor:
-sekiz zombinin hamlesi aynı anda gelmiyor.
+Bantlar tipin karakterini de taşıyor: Butcher sırasını 7.5–10 saniye tutuyor
+(altı saniyede rotasyona giren duvar, duvar değildir), Sprinter 3.5–5.5 (girip
+çıkıyor), Clinger halkanın **içinde** bekliyor (5.5–8 m) çünkü beklediği şey
+sıra değil, boşluk.
+
+**Görünen etkisi:** 22 metreden aynı çember üzerinde gelen 20 shambler, 8
+saniye sonra **8.7 metreye yayılmış** hâlde varıyor. Eskiden hepsi aynı hizada
+gelirdi.
+
+`windup`/`recover` üç tipte bugün canlı; Shambler, Sprinter ve Butcher'ınki
+Faz 1'in yakın dövüş hazırlığı için hazır bekliyor.
 
 ---
 
-## 7. FAZ 4 — SIRA TEK HAVUZ DEĞİL, TİPE GÖRE
+## 7. FAZ 4 — SIRA TEK HAVUZ DEĞİL, TİPE GÖRE *(yapıldı)*
 
-Hades'te `MaxAttackers` silahın üstünde. Bizde tek bir `lanes` sayısı var,
-yani iki Butcher ve bir Burster aynı anda sıraya girebiliyor — sektörün en
+Hades'te `MaxAttackers` silahın üstünde. Bizde tek bir `lanes` sayısı vardı,
+yani iki Butcher ve bir Burster aynı anda sıraya girebiliyordu — sektörün en
 sert anı ve **kimse tasarlamadı, kura çıkardı.**
 
+`updateTurns` artık üç kuyruk dağıtıyor:
+
 ```ts
-// updateTurns, iki bütçe
-melee  (Shambler, Sprinter) : 3 + sektör × 0.7, tavan 9
+melee  (Shambler, Sprinter) : min(9, 3 + sektör × 0.7)  + çığlık varsa 6
 heavy  (Butcher, Burster)   : sektör ≤ 4 ise 1, sonra 2
-bloater                     : sıra dışı (zaten menzilli)
+grab   (Clinger)            : sektör ≤ 5 ise 1, sonra 2
+dışarıda (Bloater, Screamer): kendi mesafelerini kendileri tutuyor
 ```
 
-Aynı fonksiyon, iki sayaç. Yan faydası: Butcher gerçekten "duvar" gibi
-okunmaya başlıyor, çünkü tek başına geliyor.
+Ölçüm — aynı sokak (16 shambler, 4 sprinter, 3 butcher, 3 burster, 5 clinger):
+
+```
+sektör 1    melee 3    heavy 1    grab 1
+sektör 5    melee 6    heavy 2    grab 1
+sektör 9    melee 9    heavy 2    grab 2
+sektör 5 + çığlık:  melee 12   heavy 2   grab 1
+```
+
+Son satır önemli: **çığlık yalnız kalabalığı açıyor.** Screamer halkayı senin
+üstüne çeviriyor, sana ikinci bir Butcher getirmiyor.
+
+Yan faydaları: Butcher gerçekten "duvar" gibi okunmaya başlıyor çünkü tek
+başına geliyor, ve Clinger'ın "sektör 5'te altı tane var, hepsi tutabilir"
+riski (fikirler.md'de yazılıydı) bütçeyle çözüldü — beşi de sokakta ama biri
+tutabiliyor.
 
 ---
 
@@ -346,20 +387,19 @@ değiştiriyor ("sırası var" → "şu an saldırıyor"), ve hayvanların hedef
 
 ## 10. SIRA VE MALİYET
 
-| Faz | İş | Maliyet | Oynanışa etkisi |
-|---|---|---|---|
-| 1 | Hazırlık + hamle + toparlanma | Yüksek | **Çok yüksek** |
-| 2 | Sırayı saldırı tutsun | Düşük (Faz 1'in üstüne) | Orta |
-| 3 | Min/Max varyasyon | Çok düşük | Orta |
-| 4 | Tipe göre sıra bütçesi | Düşük | Orta |
-| 5 | Uyanma duraklaması | Çok düşük | Düşük (kozmetik) |
+| Faz | İş | Maliyet | Oynanışa etkisi | Durum |
+|---|---|---|---|---|
+| 1 | Hazırlık + hamle + toparlanma | Yüksek | **Çok yüksek** | açık |
+| 2 | Sırayı saldırı tutsun | Düşük (Faz 1'in üstüne) | Orta | açık |
+| 3 | Min/Max varyasyon | Çok düşük | Orta | **yapıldı** |
+| 4 | Tipe göre sıra bütçesi | Düşük | Orta | **yapıldı** |
+| 5 | Uyanma duraklaması | Çok düşük | Düşük (kozmetik) | açık |
 
-Faz 3 ve 4 tek başlarına, Faz 1 olmadan da yapılabilir ve ikisi birlikte yarım
-günlük iş. Faz 1 ise gerçek bir sistem değişikliği: temas hasarı modelini
-değiştiriyor, yani dengeyi baştan ölçmek gerekiyor.
-
-**Önerilen sıra:** 3 → 4 → 1 → 2 → 5. Ucuz olanlar önce, çünkü Faz 1'in dengesi
-ölçülürken zaten yerlerinde olsunlar.
+Faz 3 ve 4 tek başlarına, Faz 1 olmadan da yapılabilirdi ve öyle yapıldı.
+Kalan asıl iş Faz 1: temas hasarı modelini değiştiriyor, yani dengeyi baştan
+ölçmek gerekiyor. Faz 2 onun üstüne yarım saatlik bir iş — `turn`/`rest`
+bantları zaten yerinde, tek yapılacak sırayı sayaç yerine saldırının kendisine
+bağlamak.
 
 ---
 
