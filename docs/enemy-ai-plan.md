@@ -219,7 +219,7 @@ Bir uyarlama planının yarısı budur.
 
 ---
 
-## 4. FAZ 1 — VURUŞUN BİR HAZIRLIĞI OLSUN *(en yüksek getiri)*
+## 4. FAZ 1 — VURUŞUN BİR HAZIRLIĞI OLSUN *(yapıldı)*
 
 **Bugün:** temas hasarı saf çakışma testi ([Engine.ts:1471](../src/core/Engine.ts:1471)).
 Zombi sana değiyorsa `contactDamage` alıyorsun, oyuncunun 0.45 sn i-frame'i
@@ -245,10 +245,69 @@ Temas hasarı sıfırlanmıyor ama **sürtünmeye** iniyor: `contactDamage × 0.
 çözümü ikiye ayrılır: sürtünme ve hamle), `InstancedEnemies.ts` (windup
 görseli), `AudioManager.ts` (bir hamle sesi).
 
-**Neden bu ilk sırada:** yuvarlanmaya (SPACE) gerçek bir anlam veriyor. Şu an
-i-frame'ler soyut bir hasar penceresini atlatıyor; bundan sonra **görünen bir
-hamleyi** atlatacak. Hades'in dash'inin oyunun merkezinde olmasının sebebi tam
+**Neden bu ilk sırada:** yuvarlanmaya (SPACE) gerçek bir anlam veriyor. Eskiden
+i-frame'ler soyut bir hasar penceresini atlatıyordu; artık **görünen bir
+hamleyi** atlatıyor. Hades'in dash'inin oyunun merkezinde olmasının sebebi tam
 olarak bu.
+
+### Nasıl yapıldı
+
+`SwingState` — `NONE → WINDUP → STRIKE → RECOVER`, sadece üç tipte
+(Shambler, Sprinter, Butcher). Diğerlerinin zaten kendi hasar kaynağı var
+(safra, şişme, tutuş, çığlık) ve onlara bir de yumruk vermek her birinin ne
+işe yaradığını bulanıklaştırırdı.
+
+- **Menzil:** gövdenin yarıçapı + 1.45 m. Butcher'ınki (1.55) doğal olarak
+  daha uzun — büyük olanın erişimi de büyük.
+- **Süreler gövdeye özel**, Faz 3'ün bantlarından: Shambler 0.34–0.50 sn
+  hazırlık / 1.0–1.7 sn toparlanma, Sprinter 0.22–0.32 / 0.7–1.1, Butcher
+  0.50–0.70 / 1.6–2.4. Sekizi aynı anda geldiğinde koro hâlinde vurmuyorlar.
+- **Hamle taahhütlü:** yön, hazırlık bittiği anda kilitleniyor ve 0.18 saniye
+  boyunca 6 m/sn ileri atılıyor. Yani yana adım atmak işe yarıyor, durmak
+  yaramıyor.
+- **Sırası olmayan hiç vurmuyor.** Halkada bekleyen gövde hazırlığa bile
+  girmiyor — beklemek bu demek.
+- **Sersemleme hazırlığı iptal ediyor.** İtekleme (F) artık kalkan.
+- **İşaretlilerin hazırlığı ×0.6.** Hades'in elitten aldığı şey kalınlık değil
+  zaman: `LightRangedElite`'in `PreAttackDuration`'ı 0.5'ten 0.25'e iniyor.
+  Aynı gövde, aynı hamle, okumak için daha az süre.
+
+**Görsel:** renk kanalı doluydu (hit flash, Burster'ın gazı, işaret rengi) ve
+dokuz gövde aynı anda kurulurken onuncu bir ton gürültü olurdu. Onun yerine
+**siluet**: `swingPose` -1'den +1'e gidiyor, kollar geriye çekiliyor ve gövde
+arkaya yaslanıyor, sonra ikisi birden öne fırlıyor. Sokağın öbür ucundan
+okunuyor çünkü şekli değiştiriyor.
+
+**Temas hasarı sürtünmeye indi:** artık gövde başına değil, **oyuncu başına**
+1.1 saniyede bir, dokunan gövdelerin temas hasarının %25'i, en fazla 3 gövde
+sayılıyor. Sebep: altı tanesinin üstüne yığılması birinden kötü olmalı, ama
+altı katı kötü olmamalı.
+
+### Ölçüm — eski model vs yeni
+
+İkisi de gerçek kodla, oyuncunun 0.45 sn dokunulmazlığı modellenerek
+(eski sayılar için çalışan ağaç `git stash`'lendi):
+
+| Senaryo | ESKİ dps | ölüm | YENİ dps | ölüm |
+|---|---|---|---|---|
+| Sektör 1, hiç kımıldamıyor | 19.6 | 5.1 sn | **12–14** | 7–9 sn |
+| Sektör 1, sürekli kaçıyor | 1.4 | 70 sn | **0.6–1.8** | 55–167 sn |
+| Sektör 5, hiç kımıldamıyor | 27.6 | 3.6 sn | **25–28** | 3.6–4.1 sn |
+| Sektör 9, hiç kımıldamıyor | 27.6 | 3.6 sn | **32–34** | 3.0 sn |
+
+Toplam hasar aynı büyüklük sırasında kaldı — yani oyunun zorluğu alt üst
+olmadı — ama iki şey değişti:
+
+1. **Artık okunuyor ve kaçınılabiliyor.** Duran oyuncuya hamlelerin %69'u
+   isabet ediyor, kaçan oyuncuya %18–20'si.
+2. **Kalabalık artık gerçekten ölçekleniyor.** Eski modelde sektör 5 ve 9
+   aynı sayıyı veriyordu (27.6) çünkü oyuncunun i-frame'i doyuma ulaşıyordu —
+   ekranda 20 gövde de olsa 40 gövde de olsa fark etmiyordu. Yenisi 14 → 25 →
+   34 diye çıkıyor.
+
+`STRIKE_MULTIPLIER` 1.75 (plan 1.4 öngörmüştü; ölçünce daha fazlasını istedi,
+çünkü toparlanma süresi duran bir oyuncunun bile eskisinden az vurulması
+demek).
 
 ---
 
@@ -389,17 +448,16 @@ değiştiriyor ("sırası var" → "şu an saldırıyor"), ve hayvanların hedef
 
 | Faz | İş | Maliyet | Oynanışa etkisi | Durum |
 |---|---|---|---|---|
-| 1 | Hazırlık + hamle + toparlanma | Yüksek | **Çok yüksek** | açık |
+| 1 | Hazırlık + hamle + toparlanma | Yüksek | **Çok yüksek** | **yapıldı** |
 | 2 | Sırayı saldırı tutsun | Düşük (Faz 1'in üstüne) | Orta | açık |
 | 3 | Min/Max varyasyon | Çok düşük | Orta | **yapıldı** |
 | 4 | Tipe göre sıra bütçesi | Düşük | Orta | **yapıldı** |
 | 5 | Uyanma duraklaması | Çok düşük | Düşük (kozmetik) | açık |
 
-Faz 3 ve 4 tek başlarına, Faz 1 olmadan da yapılabilirdi ve öyle yapıldı.
-Kalan asıl iş Faz 1: temas hasarı modelini değiştiriyor, yani dengeyi baştan
-ölçmek gerekiyor. Faz 2 onun üstüne yarım saatlik bir iş — `turn`/`rest`
-bantları zaten yerinde, tek yapılacak sırayı sayaç yerine saldırının kendisine
-bağlamak.
+Kalan iki faz küçük. **Faz 2** artık gerçekten yarım saatlik bir iş: durum
+makinesi ve bantlar yerinde, tek yapılacak sırayı `turnLength` sayacı yerine
+"WINDUP başladı → sıra alındı, RECOVER bitti → bırakıldı" hâline getirmek.
+**Faz 5** kozmetik.
 
 ---
 

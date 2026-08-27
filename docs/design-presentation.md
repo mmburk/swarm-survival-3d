@@ -194,6 +194,30 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
 - **Weave (salınım).** Her düşmanın sinüs faz kayması var; sürü tek blok
   hâlinde hareket etmiyor. Sprinter hızlı ve dar salınıyor, shambler yavaş ve
   geniş.
+- **Her vuruşun bir hazırlığı var.** Temas hasarı artık saf çakışma testi
+  değil: Shambler, Sprinter ve Butcher **kuruluyor → vuruyor → toparlanıyor**
+  (`NONE → WINDUP → STRIKE → RECOVER`). Hazırlık ve toparlanma gövdeye özel
+  (Shambler 0.34–0.50 / 1.0–1.7 sn, Sprinter 0.22–0.32 / 0.7–1.1, Butcher
+  0.50–0.70 / 1.6–2.4), **hamle taahhütlü** — yön hazırlık biterken
+  kilitleniyor ve 0.18 sn boyunca 6 m/sn ileri atılıyor. Yani yana adım atmak
+  işe yarıyor, durmak yaramıyor. Sırası olmayan hiç vurmuyor; sersemleyen
+  hazırlığı iptal ediyor (itekleme artık bir kalkan); işaretlilerin hazırlığı
+  ×0.6 — Hades'in elitten aldığı şey kalınlık değil **zaman**.
+
+  Görsel kanal **siluet**, renk değil: `swingPose` -1 → +1 gidiyor, kollar
+  geriye çekilip gövde arkaya yaslanıyor, sonra ikisi birden öne fırlıyor.
+  Renk kanalı zaten dolu (hit flash, Burster'ın gazı, işaret rengi) ve dokuz
+  gövde aynı anda kurulurken onuncu bir ton gürültü olurdu.
+
+  Temas hasarı **sürtünmeye** indi: gövde başına değil oyuncu başına, 1.1
+  saniyede bir, dokunanların temas hasarının %25'i, en fazla 3 gövde sayılıyor.
+
+  **Ölçüm (eski model vs yeni, ikisi de gerçek kodla):** duran oyuncu sektör
+  1'de 19.6 → 12–14 dps, sektör 5'te 27.6 → 25–28, sektör 9'da 27.6 → 32–34.
+  Toplam aynı büyüklükte kaldı ama iki şey değişti: hamleler artık
+  kaçınılabiliyor (duran oyuncuya %69, kaçana %18 isabet), ve **kalabalık
+  gerçekten ölçekleniyor** — eskiden sektör 5 ile 9 aynı sayıyı veriyordu,
+  çünkü oyuncunun i-frame'i doyuma ulaşıyordu.
 - **Hiçbir gövde bir sayıyı paylaşmıyor.** `Profile` altı **bant** taşıyor —
   `pace` (hız çarpanı), `standoff` (halka), `turn`/`rest` (sırayı ne kadar
   tutuyor, sonra ne kadar bekliyor), `windup`/`recover` (yapacağı şeyin
@@ -891,6 +915,9 @@ Kapan:       55 can · 1.9 m menzil · 0.35 sn hamle · 1.5 sn tutuş
              çığlık: +6 gövde anında, 5 sn boyunca +6 sıra
 Gürültü:     eşik 120 · unutma 2.5/sn · Ranger 8.7/sn, Stutter 10.3/sn
              Boomstick 3.5/sn, Widowmaker 2.4/sn, Harvester 0.3/sn
+Vuruş:       menzil yarıçap+1.45 m · hamle 0.18 sn / 6 m/sn taahhütlü
+             hasar temas×1.75 · sürtünme %25, 1.1 sn'de bir, en fazla 3 gövde
+             işaretlilerin hazırlığı ×0.6
 Sıra:        melee min(9, 3+sektör×0.7) · heavy 1→2 · grab 1→2
              sıra ve dinlenme gövde başına banttan (Butcher 7.5–10 sn,
              Sprinter 3.5–5.5) · dağıtım 0.45 sn'de bir

@@ -202,7 +202,8 @@ export class InstancedEnemies {
     this.barRoot.add(this.barBack);
     this.barRoot.add(this.barFill);
 
-    this.torso.rotation.x = -0.22; // hunched
+    // Base hunch. Overwritten every frame now that the swing leans off it.
+    this.torso.rotation.x = -0.22;
     this.leftArm.position.set(-0.38, 1.0, -0.38);
     this.rightArm.position.set(0.38, 1.0, -0.38);
 
@@ -250,8 +251,18 @@ export class InstancedEnemies {
       this.root.scale.setScalar(e.renderScale);
       this.torso.rotation.z = gait * 0.09;
       this.torso.position.y = Math.abs(gait) * 0.05;
-      this.leftArm.rotation.x = Math.PI / 2 - 0.2 + gait * 0.12;
-      this.rightArm.rotation.x = Math.PI / 2 - 0.1 - gait * 0.12;
+
+      // The swing, in the only channel that can carry it.
+      //
+      // Colour is already spoken for — the hit flash, a Burster's gas, a mark
+      // — and with nine of them winding up at once a tenth tint would be
+      // noise. The arms are the silhouette, so the arms are the tell: drawn
+      // back and the body leaning away, then both thrown forward through the
+      // player. It reads across a street because it changes the shape.
+      const pose = e.swingPose;
+      this.torso.rotation.x = -0.22 - pose * 0.3;
+      this.leftArm.rotation.x = Math.PI / 2 - 0.2 + gait * 0.12 + pose * 1.05;
+      this.rightArm.rotation.x = Math.PI / 2 - 0.1 - gait * 0.12 + pose * 1.05;
 
       this.root.updateMatrixWorld(true);
 

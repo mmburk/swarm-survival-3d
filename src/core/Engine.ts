@@ -15,7 +15,7 @@ import { ObjectPool } from '../pooling/ObjectPool';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
 
 import { Player } from '../entities/Player';
-import { Enemy, EnemyType } from '../entities/Enemy';
+import { Enemy, EnemyType, SwingState } from '../entities/Enemy';
 import { BossEnemy } from '../entities/BossEnemy';
 import { Projectile, ProjectileType } from '../entities/Projectile';
 import { Pickup, PickupType } from '../entities/Pickup';
@@ -96,6 +96,20 @@ const SCREAM_LANE_DURATION = 5.0;
  */
 const NOISE_THRESHOLD = 120;
 const NOISE_DECAY = 2.5;
+
+/**
+ * Standing in a crowd, as a cost rather than as an execution.
+ *
+ * Bodies pressed against the player used to deal their full contact damage on
+ * the player's own 0.45s invulnerability clock, which at close quarters was a
+ * figure nobody had ever chosen — a Butcher leaning on you was theoretically
+ * fifty-odd a second. Now the spike is the swing, and being in the middle of
+ * them is a steady grind you can feel coming and walk out of.
+ */
+const FRICTION_INTERVAL = 1.1;
+const FRICTION_SHARE = 0.25;
+/** However many are pressed against you, only this many are billed. */
+const FRICTION_MAX_BODIES = 3;
 
 /** How long a Clinger holds on if nothing takes it off you. */
 const GRAB_DURATION = 1.5;
@@ -227,6 +241,11 @@ export class Engine {
   private screamLanes: number = 0;
   /** How much gunfire this street has heard lately. See `NOISE_THRESHOLD`. */
   private noise: number = 0;
+
+  /** Counts down to the next friction tick. See `FRICTION_INTERVAL`. */
+  private frictionTimer: number = 0;
+  /** Rate limit on the whiff, so nine misses are not nine sounds. */
+  private whiffTimer: number = 0;
 
   /** Whatever currently has hold of the player, and where it took hold from. */
   private grabber: Enemy | null = null;
@@ -1375,6 +1394,21 @@ export class Engine {
     return pickMark(type);
   }
 
+  /**
+   * A swing that missed, heard once.
+   *
+   * Rate limited hard: nine of them pressing means nine misses a second when
+   * the player is moving well, and the sound of doing it right must not be
+   * worse than the sound of doing it wrong.
+   */
+  private whiff(at: Enemy): void {
+    if (this.whiffTimer > 0) return;
+    if (!withinRadius(at.position, this.player.position, 4.5)) return;
+    this.whiffTimer = 0.22;
+    this.audio.playSwing();
+    this.particles.emitTrail(at.position, HEX.smoke);
+  }
+
   private spendNoise(amount: number): void {
     if (this.sectors.state !== 'COMBAT') return;
     this.noise += amount;
@@ -1739,18 +1773,49 @@ export class Engine {
 
     // Bodies pressing on the player.
     const near = this.grid.query(this.player.position, this.player.radius + 2.6);
+
+    // Two separate things happen against a body. A swing that lands is the
+    // hit — it flashes, it makes a noise, it takes a bite. Merely being in
+    // contact is friction, billed once every `FRICTION_INTERVAL` across
+    // everything touching at once rather than per body, because six of them
+    // leaning on you should be worse than one and not six times worse.
+    let frictionLoad = 0;
+    let touching = 0;
+
     for (const e of near) {
       if (!e.active) continue;
       // Whatever has hold is billed by the second in the run loop instead, and
       // must not be pushed off the player by the crowd separation.
       if (e.grabbing) continue;
 
-      ArcadePhysics.resolveSoftOverlap(
-        e.position, e.velocity, this.player.position, e.radius, this.player.radius, 11.0);
-
-      if (ArcadePhysics.checkSphereOverlap(this.player.position, this.player.radius, e.position, e.radius)) {
-        this.player.takeDamage(e.contactDamage);
+      // A body mid-swing is committed and does not get shouldered aside.
+      if (e.swing !== SwingState.STRIKE) {
+        ArcadePhysics.resolveSoftOverlap(
+          e.position, e.velocity, this.player.position, e.radius, this.player.radius, 11.0);
       }
+
+      if (!ArcadePhysics.checkSphereOverlap(
+        this.player.position, this.player.radius, e.position, e.radius)) continue;
+
+      if (e.swing === SwingState.STRIKE && !e.swingLanded) {
+        e.swingLanded = true;
+        this.player.takeDamage(e.strikeDamage);
+        continue;
+      }
+
+      if (touching < FRICTION_MAX_BODIES) {
+        frictionLoad += e.contactDamage;
+        touching++;
+      }
+    }
+
+    this.frictionTimer -= delta;
+    if (touching > 0 && this.frictionTimer <= 0) {
+      this.frictionTimer = FRICTION_INTERVAL;
+      this.player.drain(frictionLoad * FRICTION_SHARE);
+      // Being ground down still counts as being hurt, or the cat would sit
+      // there healing you through it.
+      this.calm = 0;
     }
 
     if (this.boss.active &&
@@ -1936,6 +2001,8 @@ export class Engine {
     // everything downstream of that — pathing, spitting, contact — follows.
     const lure = this.companion.lurePoint;
 
+    if (this.whiffTimer > 0) this.whiffTimer -= delta;
+
     // The street forgets the shooting, slowly.
     if (this.noise > 0) this.noise = Math.max(0, this.noise - NOISE_DECAY * delta);
 
@@ -1947,6 +2014,9 @@ export class Engine {
       if (!e.active) continue;
       e.pressAttack = mopUp;
       const drawnOff = lure && withinRadius(e.position, lure, LURE_RADIUS);
+      // Watched across the call so a swing that ends without landing can be
+      // heard going past. Cheaper than another callback into the AI.
+      const wasStriking = e.swing === SwingState.STRIKE;
       // Anything the animal has pulled off you goes straight for her. Holding
       // a ring around a dog is not a thing a corpse does — and the whole point
       // of the bait is that it commits them.
@@ -1963,6 +2033,8 @@ export class Engine {
         (screamer) => this.onScream(screamer),
         (clinger) => this.tryGrab(clinger)
       );
+
+      if (wasStriking && e.swing === SwingState.RECOVER && !e.swingLanded) this.whiff(e);
     }
 
     // Whatever has hold of the player is kept there by hand: it does not steer

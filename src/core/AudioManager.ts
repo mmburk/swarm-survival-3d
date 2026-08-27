@@ -615,6 +615,14 @@ export class AudioManager {
     this.noiseBurst({ duration: 0.035, volume: 0.11, type: 'bandpass', startFreq: 3000, endFreq: 1800, q: 7 });
   }
 
+  /**
+   * A swing that went past you. Air and cloth, no impact — the whole point is
+   * that it sounds like nothing happening.
+   */
+  public playSwing(): void {
+    this.noiseBurst({ duration: 0.16, volume: 0.1, type: 'bandpass', startFreq: 620, endFreq: 190, q: 1.1 });
+  }
+
   public playGetUp(): void {
     this.thump(70, 190, 0.5, 0.24);
     this.noiseBurst({ duration: 0.42, volume: 0.1, type: 'bandpass', startFreq: 260, endFreq: 900, q: 2 });

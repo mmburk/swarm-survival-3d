@@ -31,6 +31,8 @@ Uzun araştırmalar kendi dosyalarında:
 | 9 | **Faz 3 — her sayı bir bant.** `Profile` altı `Range` taşıyor (`pace`, `standoff`, `turn`, `rest`, `windup`, `recover`), hepsi gövde başına spawn'da çekiliyor. Dört sabit silindi | `0f19467` | 22 m'den gelen 20 shambler artık 8.7 metreye yayılmış varıyor |
 | 10 | **Faz 4 — sıra üç kuyruğa ayrıldı.** melee / heavy (Butcher+Burster) / grab (Clinger). Çığlık yalnız melee'yi açıyor | `0f19467` | Sektör 5'te 3 butcher + 3 burster varken sadece 2'si saldırabiliyor, 5 clinger'dan 1'i tutabiliyor |
 
+| 11 | **Faz 1 — vuruşun hazırlığı.** `NONE → WINDUP → STRIKE → RECOVER`, üç melee tipinde. Taahhütlü hamle, siluetle tell, temas hasarı sürtünmeye indi | *(aşağıda)* | Duran oyuncu 19.6 → 12–14 dps, ama sektör 9'da 27.6 → 34: eskiden kalabalık i-frame'de doyuma ulaşıyordu |
+
 ---
 
 ## SIRADA
@@ -92,15 +94,27 @@ Bilinen pürüzler:
   eklenecek — asıl "elit" hissi orada.
 
 ### AI planının kalan fazları
-3 ve 4 yapıldı. Kalanlar:
-- **Faz 1** — `WINDUP → LUNGE → RECOVER`, temas hasarı sürtünmeye insin.
-  *Büyük iş, dengeyi baştan ölçmek gerek.* Altyapısı hazır: her gövde zaten
-  kendi `windup`/`recover` bandını çekiyor, Shambler/Sprinter/Butcher'ınki
-  şu an kullanılmıyor ve tam bunu bekliyor.
-- **Faz 2** — sırayı sayaç değil saldırının kendisi tutsun. Faz 1'in üstüne
+1, 3 ve 4 yapıldı. Kalanlar:
+- **Faz 2** — sırayı sayaç değil saldırının kendisi tutsun. Artık gerçekten
   yarım saatlik iş: `turnLength` yerine "WINDUP başladı → sıra alındı,
   RECOVER bitti → bırakıldı".
 - **Faz 5** — spawn sonrası 0.3–0.6 sn uyanma duraklaması (kozmetik).
+
+### Faz 1'in dengesi *(oynayıp bakılacak)*
+Sayılar `Enemy.ts` tepesinde: `SWING_REACH` (1.45), `STRIKE_TIME` (0.18),
+`STRIKE_LUNGE` (6.0), `STRIKE_MULTIPLIER` (1.75). Sürtünme `Engine.ts`
+tepesinde: `FRICTION_INTERVAL` (1.1), `FRICTION_SHARE` (0.25),
+`FRICTION_MAX_BODIES` (3).
+
+Bilinen pürüzler:
+- **Kaçan oyuncu neredeyse hiç hasar almıyor** (0.6–1.8 dps). Bilerek: cezayı
+  artık Clinger (tutuş), Screamer (halka dönüyor), Bloater (menzilli) ve
+  Burster veriyor. Ama saf kiting fazla güvenliyse `SWING_REACH` veya
+  `STRIKE_LUNGE` artırılabilir.
+- **Sektör 1 eskisinden hafif** (19.6 → 12–14). İlk sokakların yeni oyuncuya
+  nefes vermesi iyi, ama fazla yumuşaksa `STRIKE_MULTIPLIER` 2.0'a çıkar.
+- **Hamle sesi sadece ıskalayınca çalıyor** (0.22 sn'de bir, 4.5 m içinde).
+  İsabet edenin sesi zaten `playPlayerHurt`. Kalabalıkta yeterli mi belirsiz.
 
 ### Küçük ve bağımsız
 - **Ses "gürültü çeker" kuralı genellensin.** Gürültü sayacı artık var

@@ -138,6 +138,55 @@ export const PROFILES: Record<EnemyType, Profile> = {
 /** How close a Clinger has to get before it throws itself at you. */
 export const GRAB_RANGE = 1.9;
 
+/**
+ * A swing, in three parts.
+ *
+ * Contact damage used to be a sphere test: if a body was touching you it was
+ * hurting you, with no warning, no way to miss, and nothing on screen to say
+ * where it came from — the health bar just went down. Everything Hades gets
+ * out of `PreAttackDuration` comes from the opposite arrangement, so the dead
+ * now wind up, commit to a line, and stand there having missed.
+ *
+ * The wind-up and the recovery are per body, drawn from the profile's bands,
+ * so eight of them arriving together do not swing in chorus.
+ */
+export const SwingState = {
+  NONE: 'NONE',
+  /** Planted, drawing back. The window in which the player can leave. */
+  WINDUP: 'WINDUP',
+  /** Thrown forward down the line it picked. Two tenths of a second. */
+  STRIKE: 'STRIKE',
+  /** Spent, and unable to do anything about you. */
+  RECOVER: 'RECOVER'
+} as const;
+
+export type SwingState = typeof SwingState[keyof typeof SwingState];
+
+/**
+ * The types that swing. The rest already have a way of hurting you that is
+ * theirs — bile, a swell, a hold, a shout — and giving them a fist as well
+ * would only blur what each one is for.
+ */
+const SWINGS: ReadonlySet<string> = new Set([
+  EnemyType.SHAMBLER, EnemyType.SPRINTER, EnemyType.BUTCHER
+]);
+
+/** Added to a body's own radius to get the distance it will swing from. */
+const SWING_REACH = 1.45;
+/** How long the arm is actually travelling. Short: this is the committed part. */
+const STRIKE_TIME = 0.18;
+/** Forward speed during it, so a swing closes a little ground of its own. */
+const STRIKE_LUNGE = 6.0;
+/**
+ * What a landed swing costs, against the old contact figure.
+ *
+ * Above one because a swing can miss and contact never could. The plan called
+ * for 1.4; measured against a player who does not move it wanted more, because
+ * the recovery is long enough that even a stationary target is hit less often
+ * than it used to be touched.
+ */
+const STRIKE_MULTIPLIER = 1.75;
+
 const tempSteer = new THREE.Vector3();
 const tempTarget = new THREE.Vector3();
 const tempAvoid = new THREE.Vector3();
@@ -197,6 +246,20 @@ export class Enemy implements IPoolable {
   public mark: MarkId | null = null;
   /** Counts down after each hit while a wound-up one is still angry. */
   private frenzyTimer: number = 0;
+
+  /**
+   * Where this body is in its swing, and how far through. `swingPose` runs
+   * from -1 (fully drawn back) through 0 to +1 (thrown forward) and is the
+   * only thing the renderer needs to animate the whole business.
+   */
+  public swing: SwingState = SwingState.NONE;
+  public swingTimer: number = 0;
+  public swingPose: number = 0;
+  /** One swing is one hit, however many frames it overlaps for. */
+  public swingLanded: boolean = false;
+  /** What a landed swing costs. Contact, above, is now only friction. */
+  public strikeDamage: number = 12;
+  private strikeDir: THREE.Vector3 = new THREE.Vector3();
 
   public isLunging: boolean = false;
   public lungeTimer: number = 0;
@@ -304,6 +367,11 @@ export class Enemy implements IPoolable {
     this.lungeTimer = 0;
     this.grabbing = false;
     this.grabCooldown = 0;
+
+    this.swing = SwingState.NONE;
+    this.swingTimer = 0;
+    this.swingPose = 0;
+    this.swingLanded = false;
     this.pressAttack = false;
     this.lurch = Math.random() * Math.PI * 2;
 
@@ -327,6 +395,12 @@ export class Enemy implements IPoolable {
     this.restLength = roll(p.rest);
     this.windup = roll(p.windup);
     this.recover = roll(p.recover);
+    this.strikeDamage = Math.round(p.contact * STRIKE_MULTIPLIER);
+
+    // What Hades takes off an elite is not thickness, it is time: its
+    // `PreAttackDuration` drops from half a second to a quarter. Same body,
+    // same swing, less of it to read.
+    if (mark) this.windup *= 0.6;
     this.radius = p.radius;
     this.contactDamage = p.contact;
     this.scoreValue = p.score;
@@ -449,6 +523,9 @@ export class Enemy implements IPoolable {
 
     if (this.stunTimer > 0) {
       this.stunTimer -= delta;
+      // Whatever it was about to do, it is not doing it now.
+      this.swing = SwingState.NONE;
+      this.swingPose = 0;
       this.velocity.multiplyScalar(0.86);
       this.position.x += this.velocity.x * delta;
       this.position.z += this.velocity.z * delta;
@@ -578,6 +655,63 @@ export class Enemy implements IPoolable {
         this.audio.playSwell();
         return;
       }
+    }
+
+    // Mid-swing, and nothing else about the world matters until it is over.
+    if (this.swing !== SwingState.NONE) {
+      this.swingTimer -= delta;
+
+      if (this.swing === SwingState.WINDUP) {
+        // Plants itself and draws back. This is the whole window.
+        this.velocity.multiplyScalar(0.72);
+        this.swingPose = -Math.min(1, 1 - this.swingTimer / Math.max(0.01, this.windup));
+
+        if (this.swingTimer <= 0) {
+          this.swing = SwingState.STRIKE;
+          this.swingTimer = STRIKE_TIME;
+          this.swingLanded = false;
+          // Committed to where they were when it let go, not to where they
+          // are. Everything the player can do about this happens before here.
+          this.strikeDir.copy(playerPos).sub(this.position).setY(0);
+          if (this.strikeDir.lengthSq() > 0) this.strikeDir.normalize();
+        }
+      } else if (this.swing === SwingState.STRIKE) {
+        this.swingPose = 1 - Math.max(0, this.swingTimer / STRIKE_TIME) * 2;
+        this.velocity.x = this.strikeDir.x * STRIKE_LUNGE;
+        this.velocity.z = this.strikeDir.z * STRIKE_LUNGE;
+
+        if (this.swingTimer <= 0) {
+          this.swing = SwingState.RECOVER;
+          this.swingTimer = this.recover;
+        }
+      } else {
+        this.velocity.multiplyScalar(0.86);
+        this.swingPose = Math.max(0, this.swingTimer / Math.max(0.01, this.recover));
+        if (this.swingTimer <= 0) {
+          this.swing = SwingState.NONE;
+          this.swingPose = 0;
+        }
+      }
+
+      this.position.x += this.velocity.x * delta;
+      this.position.z += this.velocity.z * delta;
+      for (const o of InstancedProps.obstacles) {
+        ArcadePhysics.resolveSolidObstacle(this.position, this.radius, o);
+      }
+      this.position.y = this.terrain.getHeightAt(this.position.x, this.position.z);
+      this.yaw = Math.atan2(this.position.x - playerPos.x, this.position.z - playerPos.z);
+      this.gait = 0;
+      return;
+    }
+
+    // In reach, and it is this one's turn. Anything still waiting its turn out
+    // in the ring never swings — that is what waiting means.
+    if (SWINGS.has(this.type) && this.engaged &&
+        this.position.distanceTo(playerPos) <= this.radius + SWING_REACH) {
+      this.swing = SwingState.WINDUP;
+      this.swingTimer = this.windup;
+      this.swingPose = 0;
+      return;
     }
 
     tempTarget.copy(playerPos);
@@ -722,6 +856,8 @@ export class Enemy implements IPoolable {
     this.isScreaming = false;
     this.isLunging = false;
     this.grabbing = false;
+    this.swing = SwingState.NONE;
+    this.swingPose = 0;
     this.mark = null;
     this.position.set(0, -9999, 0);
   }
