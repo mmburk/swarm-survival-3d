@@ -33,7 +33,7 @@ Uzun araştırmalar kendi dosyalarında:
 
 | 11 | **Faz 1 — vuruşun hazırlığı.** `NONE → WINDUP → STRIKE → RECOVER`, üç melee tipinde. Taahhütlü hamle, siluetle tell, temas hasarı sürtünmeye indi | `94fbb12` | Duran oyuncu 19.6 → 12–14 dps, ama sektör 9'da 27.6 → 34: eskiden kalabalık i-frame'de doyuma ulaşıyordu |
 
-| 12 | **Faz 2 — sırayı hamle bitiriyor.** `turnSpent`, sayaç güvenlik ağına indi (2× turn). Devredilen gövde `standoff × 0.42`'de asılı kalıyor | *(aşağıda)* | Devir 0.85 → 1.56/sn (hamle başına bir devir). Hasar %5–15 düştü, hâlâ Faz 1 bandında |
+| 12 | **Faz 2 — sırayı hamle bitiriyor.** `turnSpent`, sayaç güvenlik ağına indi (2× turn). Devredilen gövde `standoff × 0.42`'de asılı kalıyor | `8618ae8` | Devir 0.85 → 1.56/sn (hamle başına bir devir). Hasar %5–15 düştü, hâlâ Faz 1 bandında |
 
 ---
 
