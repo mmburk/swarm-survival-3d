@@ -306,6 +306,16 @@ export class Enemy implements IPoolable {
   public turnTimer: number = 0;
   /** Seconds it has to hang back before it can be given another turn. */
   public restTimer: number = 0;
+  /**
+   * Whether this body has had its go.
+   *
+   * Set the moment a swing finishes recovering, and it is what ends a turn —
+   * the clock is only a fallback for a body that never got near enough to
+   * take its swing at all. Hades holds its attack token for exactly the
+   * length of the attack and lets the recovery do the rotating; this is the
+   * same idea worked back into a system that hands turns out centrally.
+   */
+  public turnSpent: boolean = false;
 
   /** How far out it holds while it is waiting. Metres. */
   public standoff: number = 9;
@@ -378,6 +388,7 @@ export class Enemy implements IPoolable {
     this.engaged = false;
     this.turnTimer = 0;
     this.restTimer = 0;
+    this.turnSpent = false;
     this.flankSign = Math.random() < 0.5 ? -1 : 1;
     this.orbitSign = Math.random() < 0.5 ? -1 : 1;
     // A sprinter's whole read is the straight line it picks; a shambler has
@@ -690,6 +701,8 @@ export class Enemy implements IPoolable {
         if (this.swingTimer <= 0) {
           this.swing = SwingState.NONE;
           this.swingPose = 0;
+          // Had its go. The engine reads this and hands the lane on.
+          this.turnSpent = true;
         }
       }
 
@@ -757,7 +770,14 @@ export class Enemy implements IPoolable {
       // Waiting its turn. Closes to its own ring, then walks round it — near
       // enough to be a threat and to be shot at, far enough to leave the
       // player a line out.
-      const gap = distance - this.standoff;
+      //
+      // Two different rings, though. A body that has never had a go queues at
+      // the full standoff; one that has just swung and been rotated out hovers
+      // at not much more than arm's length, because a crowd does not politely
+      // withdraw eight metres between swings — and because making it walk that
+      // back and forth would be most of a street spent walking.
+      const ring = this.restTimer > 0 ? this.standoff * 0.42 : this.standoff;
+      const gap = distance - ring;
       const radial = Math.max(-1, Math.min(1, gap * 0.35));
       const tangentX = -tempSteer.z * this.orbitSign;
       const tangentZ = tempSteer.x * this.orbitSign;

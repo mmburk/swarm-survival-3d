@@ -230,6 +230,17 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
   tutuyor (altı saniyede rotasyona giren duvar, duvar değildir), Sprinter
   3.5–5.5 (girip çıkıyor), Clinger halkanın **içinde** bekliyor (5.5–8 m)
   çünkü beklediği şey sıra değil, boşluk.
+- **Sırayı bitiren şey saldırının kendisi.** Sıra bir sayaçla dolup boşalmıyor:
+  gövde hamlesini yapıp toparlanmayı bitirdiği an (`turnSpent`) sırasını
+  devrediyor. Sayaç güvenlik ağı olarak duruyor — oyuncu kaçıyorsa sırası olan
+  gövde hiç menzile giremez, hiç vuramaz ve sırayı hiç bırakmazdı; kendi sıra
+  süresinin iki katı geçtiyse fırsatını kullanmış sayılıyor.
+  **İki halka:** hiç sırası gelmemiş gövde tam mesafede (7.5–13 m) kuyrukta
+  bekliyor, az önce vurup devredilen gövde ise `standoff × 0.42`'de asılı
+  duruyor — kalabalık iki hamle arasında sekiz metre geri çekilmez, ve
+  çekilseydi sokağın çoğu yürüyerek geçerdi.
+  **Ölçüm:** devir hızı 0.85 → 1.56/sn (sektör 5), yani **hamle başına bir
+  devir**; 40 saniyede vuran ayrı gövde sayısı 14 → 17; hasar %5–15 düştü.
 - **Sıra tek havuz değil, üç kuyruk.** Hades'te `MaxAttackers` silahın
   üstünde, düşmanın değil; bizde de artık baskı türüne göre ayrı bütçeler var:
 
@@ -919,8 +930,9 @@ Vuruş:       menzil yarıçap+1.45 m · hamle 0.18 sn / 6 m/sn taahhütlü
              hasar temas×1.75 · sürtünme %25, 1.1 sn'de bir, en fazla 3 gövde
              işaretlilerin hazırlığı ×0.6
 Sıra:        melee min(9, 3+sektör×0.7) · heavy 1→2 · grab 1→2
-             sıra ve dinlenme gövde başına banttan (Butcher 7.5–10 sn,
-             Sprinter 3.5–5.5) · dağıtım 0.45 sn'de bir
+             sırayı hamle bitiriyor; sayaç yalnız güvenlik ağı (2× turn)
+             dinlenme banttan (3.0–6.0 sn) · dağıtım 0.45 sn'de bir
+             devredilen gövde standoff×0.42'de asılı kalıyor
              bekleyen halka tipe göre 5.5–16.5 m · yay 3 m'de kapanıyor
 Şarjör:      Ranger 30/2.1 · Boomstick 2/1.2 · Widowmaker 5/2.5
              Stutter 45/1.8 · Harvester 24/2.2 (mermi / saniye)

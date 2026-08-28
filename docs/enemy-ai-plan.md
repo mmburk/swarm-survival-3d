@@ -311,7 +311,7 @@ demek).
 
 ---
 
-## 5. FAZ 2 — SIRAYI ZAMANLAYICI DEĞİL SALDIRI TUTSUN
+## 5. FAZ 2 — SIRAYI ZAMANLAYICI DEĞİL SALDIRI TUTSUN *(yapıldı)*
 
 Faz 1 gelince `TURN_LENGTH = 6.5` gereksizleşiyor. Hades'teki gibi: sıra
 WINDUP başlarken alınır, RECOVER biterken bırakılır.
@@ -330,6 +330,59 @@ tutuyor, çünkü hamleleri farklı uzunlukta.
 düşman saldırıyı atlıyor ve sıra kimseye verilmiyor — kim önce gelirse. Bizde
 0.45 sn'de bir **en yakındakiler** seçiliyor. Bu daha okunaklı ve daha adil;
 geri adım atmıyoruz.
+
+### Nasıl yapıldı, ve planın görmediği tuzak
+
+`Enemy.turnSpent` — hamle toparlanmayı bitirdiği an true. Sıralamada:
+
+```ts
+if (e.engaged) {
+  if (e.turnSpent || e.turnTimer > e.turnLength * 2) return d + 40;  // bırak
+  return d - 3;                                                      // yapışkan
+}
+```
+
+Sayaç tamamen kalkmadı, **güvenlik ağına** dönüştü: oyuncu kaçıyorsa sırası
+olan gövde hiç menzile giremez, hiç vuramaz, ve `turnSpent` hiç true olmaz —
+sıraya sonsuza kadar oturur. Kendi sıra süresinin iki katı geçtiyse fırsatını
+kullanmış sayılıyor.
+
+**Tuzak:** sırayı bırakan gövde bekleme halkasına (7.5–13 m) geri yürüyordu.
+Her hamleden sonra 8 metre gidip 8 metre gelmek, saniyede 2.6 metre yürüyen
+bir Shambler için sokağın çoğunu yürüyerek geçirmek demek — ve baskının
+çökmesi demek. Çözüm iki halka:
+
+```ts
+const ring = this.restTimer > 0 ? this.standoff * 0.42 : this.standoff;
+```
+
+Hiç sırası gelmemiş gövde tam mesafede **kuyrukta bekliyor**; az önce vurup
+devredilen gövde kolun biraz ötesinde **asılı duruyor**. Kalabalık iki
+hamle arasında sekiz metre geri çekilmez.
+
+**Plandan sapma:** plan `restTimer = kendi RECOVER süresi` diyordu (Shambler
+için 1.0–1.7 sn). Denenince çok hızlı geliyor: gövde devrediliyor, bir saniye
+sonra yine en yakın olduğu için sırayı geri alıyor, yeni gelen bumpleniyor.
+`restLength` bandı (3.0–6.0 sn) korundu.
+
+### Ölçüm — sayaçlı sıra vs saldırının tuttuğu sıra
+
+Aynı tohumlar, 40 saniye, 3 koşunun ortalaması:
+
+| Senaryo | dps önce → sonra | devir/sn önce → sonra | kaç ayrı gövde vurdu |
+|---|---|---|---|
+| Sektör 1, duruyor | 14.8 → **13.3** | 0.44 → **0.77** | 7 → **8** |
+| Sektör 5, duruyor | 28.0 → **23.6** | 0.85 → **1.56** | 14 → **17** |
+| Sektör 5, kaçıyor | 4.2 → **1.8** | 1.43 → 1.39 | 12 → 11 |
+| Sektör 9, duruyor | 30.1 → **28.6** | 1.23 → **2.24** | 20 → **22** |
+
+Devir hızı neredeyse ikiye katlandı ve **hamle başına bir devir** oluyor —
+tasarlandığı gibi. Hasar %5–15 düştü, çünkü devredilen gövde bir sonraki
+hamlesine kadar geri çekiliyor; sayılar hâlâ Faz 1'in bandında.
+
+Kaçan oyuncuda düşüş daha büyük (4.2 → 1.8) ama hamle sayısı aynı (0.39 →
+0.38) — yani aynı sayıda hamle atılıyor, daha azı tutuyor. Saf kiting fazla
+güvenli gelirse ayar noktası `standoff * 0.42` çarpanı ya da `rest` bandı.
 
 ---
 
@@ -449,15 +502,13 @@ değiştiriyor ("sırası var" → "şu an saldırıyor"), ve hayvanların hedef
 | Faz | İş | Maliyet | Oynanışa etkisi | Durum |
 |---|---|---|---|---|
 | 1 | Hazırlık + hamle + toparlanma | Yüksek | **Çok yüksek** | **yapıldı** |
-| 2 | Sırayı saldırı tutsun | Düşük (Faz 1'in üstüne) | Orta | açık |
+| 2 | Sırayı saldırı tutsun | Düşük (Faz 1'in üstüne) | Orta | **yapıldı** |
 | 3 | Min/Max varyasyon | Çok düşük | Orta | **yapıldı** |
 | 4 | Tipe göre sıra bütçesi | Düşük | Orta | **yapıldı** |
 | 5 | Uyanma duraklaması | Çok düşük | Düşük (kozmetik) | açık |
 
-Kalan iki faz küçük. **Faz 2** artık gerçekten yarım saatlik bir iş: durum
-makinesi ve bantlar yerinde, tek yapılacak sırayı `turnLength` sayacı yerine
-"WINDUP başladı → sıra alındı, RECOVER bitti → bırakıldı" hâline getirmek.
-**Faz 5** kozmetik.
+Geriye yalnız **Faz 5** kaldı ve o kozmetik: telegraph halkasından çıkan
+gövdenin yürümeden önce yarım saniye duraklaması.
 
 ---
 

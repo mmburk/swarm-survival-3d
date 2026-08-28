@@ -1293,9 +1293,19 @@ export class Engine {
       // never spent. Two metres of edge is enough to keep them in the front
       // rank without letting one shoulder past a body that is already on you.
       const d = Math.hypot(e.position.x - p.x, e.position.z - p.z) - (e.mark ? 2 : 0);
-      // Each body now runs out its own turn rather than a shared six and a half
-      // seconds, so a rank does not rotate as one.
-      if (e.engaged) return e.turnTimer < e.turnLength ? d - 3 : d + 40;
+
+      if (e.engaged) {
+        // What ends a turn is the swing, not the clock.
+        //
+        // Hades holds its attack token for exactly as long as the attack takes
+        // and lets `PostAttackCooldown` do the rotating, so how long a body
+        // gets is a property of what it does rather than a number somebody
+        // picked. Ours keeps a clock, but only as a way out for a body that
+        // never got near enough to take its swing — twice its own turn length
+        // and it has plainly had its chance.
+        if (e.turnSpent || e.turnTimer > e.turnLength * 2) return d + 40;
+        return d - 3;
+      }
       return e.restTimer > 0 ? d + 40 : d;
     };
 
@@ -1308,6 +1318,7 @@ export class Engine {
 
         e.engaged = wanted;
         e.turnTimer = 0;
+        e.turnSpent = false;
         e.restTimer = wanted ? 0 : e.restLength;
       }
     };

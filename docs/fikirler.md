@@ -33,6 +33,8 @@ Uzun araştırmalar kendi dosyalarında:
 
 | 11 | **Faz 1 — vuruşun hazırlığı.** `NONE → WINDUP → STRIKE → RECOVER`, üç melee tipinde. Taahhütlü hamle, siluetle tell, temas hasarı sürtünmeye indi | `94fbb12` | Duran oyuncu 19.6 → 12–14 dps, ama sektör 9'da 27.6 → 34: eskiden kalabalık i-frame'de doyuma ulaşıyordu |
 
+| 12 | **Faz 2 — sırayı hamle bitiriyor.** `turnSpent`, sayaç güvenlik ağına indi (2× turn). Devredilen gövde `standoff × 0.42`'de asılı kalıyor | *(aşağıda)* | Devir 0.85 → 1.56/sn (hamle başına bir devir). Hasar %5–15 düştü, hâlâ Faz 1 bandında |
+
 ---
 
 ## SIRADA
@@ -93,12 +95,26 @@ Bilinen pürüzler:
   bizde Faz 1'e (windup) bağlı. Faz 1 gelince işaretlilere `windup × 0.6`
   eklenecek — asıl "elit" hissi orada.
 
-### AI planının kalan fazları
-1, 3 ve 4 yapıldı. Kalanlar:
-- **Faz 2** — sırayı sayaç değil saldırının kendisi tutsun. Artık gerçekten
-  yarım saatlik iş: `turnLength` yerine "WINDUP başladı → sıra alındı,
-  RECOVER bitti → bırakıldı".
-- **Faz 5** — spawn sonrası 0.3–0.6 sn uyanma duraklaması (kozmetik).
+### AI planının kalan fazı
+1, 2, 3, 4 yapıldı. Kalan tek şey **Faz 5** ve o kozmetik: telegraph
+halkasından çıkan gövde yürümeden önce 0.3–0.6 sn duraklasın (doğrulur,
+döner, sonra yürür). Spawn edilen dördünün aynı anda aynı yöne dönmesini
+kırıyor.
+
+### Faz 2'nin dengesi *(oynayıp bakılacak)*
+İki ayar noktası: `Enemy.ts` içindeki halka çarpanı (`standoff * 0.42`,
+devredilen gövdenin ne kadar geri çekildiği) ve `PROFILES.*.rest` bandı.
+
+**Plandan sapma:** plan `restTimer = kendi RECOVER süresi` diyordu (1.0–1.7
+sn). Çok hızlı: gövde devrediliyor, bir saniye sonra yine en yakın olduğu için
+sırayı geri alıyor, yeni gelen bumpleniyor. `rest` bandı (3.0–6.0) korundu.
+
+Bilinen pürüz:
+- **Kaçan oyuncuda hasar 4.2 → 1.8 dps'ye indi** (sektör 5). Hamle sayısı aynı
+  (0.39 → 0.38), yani aynı sayıda hamle atılıyor ama daha azı tutuyor. Saf
+  kiting zaten çok güvenliydi, şimdi daha da güvenli. Ölçümde Clinger ve
+  Screamer yoktu — gerçek sokakta cezayı onlar veriyor. Yine de fazla
+  yumuşaksa halka çarpanı düşürülür.
 
 ### Faz 1'in dengesi *(oynayıp bakılacak)*
 Sayılar `Enemy.ts` tepesinde: `SWING_REACH` (1.45), `STRIKE_TIME` (0.18),
