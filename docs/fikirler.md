@@ -35,6 +35,8 @@ Uzun araştırmalar kendi dosyalarında:
 
 | 12 | **Faz 2 — sırayı hamle bitiriyor.** `turnSpent`, sayaç güvenlik ağına indi (2× turn). Devredilen gövde `standoff × 0.42`'de asılı kalıyor | `8618ae8` | Devir 0.85 → 1.56/sn (hamle başına bir devir). Hasar %5–15 düştü, hâlâ Faz 1 bandında |
 
+| 13 | **Faz 5 — uyanma anı.** `Profile.wake` bandı, gövde rastgele yönle doğup oyuncuyu buluyor, vurulunca uyanma kesiliyor | *(aşağıda)* | **AI planının beş fazı da bitti.** Bundan sonrası ayar, ve ayarın yeri masa değil oyun |
+
 ---
 
 ## SIRADA
@@ -95,11 +97,22 @@ Bilinen pürüzler:
   bizde Faz 1'e (windup) bağlı. Faz 1 gelince işaretlilere `windup × 0.6`
   eklenecek — asıl "elit" hissi orada.
 
-### AI planının kalan fazı
-1, 2, 3, 4 yapıldı. Kalan tek şey **Faz 5** ve o kozmetik: telegraph
-halkasından çıkan gövde yürümeden önce 0.3–0.6 sn duraklasın (doğrulur,
-döner, sonra yürür). Spawn edilen dördünün aynı anda aynı yöne dönmesini
-kırıyor.
+### AI planı bitti — sıra oynamakta
+Beş fazın beşi de yapıldı. **Ama son sekiz iş masa başında ayarlandı ve
+hiçbiri oynanmadı.** Yukarıdaki her başlığın altında "oynayıp bakılacak"
+notu ve hangi sabitin çevrileceği yazılı. Sıradaki en değerli şey yeni bir
+sistem değil, bir koşu oynayıp bu notları doldurmak.
+
+Oynarken bakılacak sıra (en çok şüphe duyulandan aza):
+1. **Faz 1'in dengesi** — duran oyuncu sektör 1'de 12–14 dps alıyor, eskiden
+   19.6'ydı. Fazla yumuşaksa `STRIKE_MULTIPLIER` 2.0.
+2. **Kaçan oyuncu neredeyse hiç hasar almıyor** (1.8 dps). Clinger ve Screamer
+   bunu gerçek sokakta telafi ediyor mu, ölçümde onlar yoktu.
+3. **Okunabilirlik** — 34 gövde varken kolların geri çekilmesi hamleyi
+   anlatıyor mu? İşaretlilerin soğuk rengi Burster'ın sıcak sarısından
+   ayrılıyor mu? Çığlıkçının sarkık çenesi 15 metreden seçiliyor mu?
+4. **Çığlık + gürültü** — bir sokakta kaç Çığlıkçı geliyor, ön safın 4'ten
+   10'a çıkması panik mi yaratıyor yoksa duvar mı?
 
 ### Faz 2'nin dengesi *(oynayıp bakılacak)*
 İki ayar noktası: `Enemy.ts` içindeki halka çarpanı (`standoff * 0.42`,

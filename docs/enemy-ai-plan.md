@@ -462,15 +462,38 @@ tutabiliyor.
 
 ---
 
-## 8. FAZ 5 — UYANMA ANI *(düşük öncelik)*
+## 8. FAZ 5 — UYANMA ANI *(yapıldı)*
 
 Hades'te `AIAggroRange = 600`, `AggroMinimumDistance = 500`, `IdleUntilAggroAI`
 ve `AIResetDistance` var — düşmanların hepsi aynı anda uyanmıyor.
 
-Bizde arena kapalı ve her zombi doğduğu andan itibaren tam bilinçli. Alınmaya
-değer tek parça: **telegraph halkasından çıkan gövde 0.3–0.6 saniye duraklasın**
-(doğrulur, döner, sonra yürür). Tamamen kozmetik, çok ucuz, ve spawn edilen
-dördünün aynı anda aynı yöne dönmesini kırıyor.
+Bizde arena kapalı ve her zombi doğduğu andan itibaren tam bilinçliydi.
+Alınmaya değer tek parça: **telegraph halkasından çıkan gövde duraklasın**
+(doğrulur, döner, sonra yürür).
+
+Yapılan: `Profile`'a yedinci bant, `wake`. Ve asıl işi yapan ikinci satır —
+gövde artık `yaw = 0` ile değil, **rastgele bir yöne bakarak** doğuyor, sonra
+uyanma süresi boyunca oyuncuyu buluyor. Tek telegraph'tan çıkan dördü eskiden
+aynı anda, zaten oyuncuya dönük hâlde ayağa kalkıyordu.
+
+| Tip | Bant | Ölçülen (100 gövde) |
+|---|---|---|
+| Sprinter | 0.15–0.30 | 0.17–0.30 sn |
+| Clinger | 0.25–0.45 | 0.27–0.45 sn |
+| Burster | 0.30–0.55 | 0.32–0.57 sn |
+| Shambler | 0.35–0.65 | 0.37–0.67 sn |
+| Bloater / Screamer | 0.40–0.70 | 0.42–0.70 sn |
+| Butcher | 0.60–1.00 | 0.62–1.00 sn |
+
+Sprinter'lar taze döndükleri için çabuk toparlanıyor, Butcher bir saniyeye
+kadar alıyor. Tek halkadan çıkan dört Shambler'ın oyuncuya bakma hatası
+başlangıçta 134° / 150° / 8° / 14°, yarım saniye sonra hepsi sıfır, ve ilk
+adımlarını 0.06 / 0.53 / 0.30 / 0.52 metre farkla atıyorlar.
+
+**Kozmetik değil, bir kuralı da var:** uyanırken vurulan gövde uyanmayı
+bırakıyor (`takeDamage` içinde `wakeTimer = 0`). Ölçüldü: dokunulmayan bir
+Butcher 0.6 saniyede 0 metre gidiyor, 0.2 saniyede vurulan aynı Butcher 0.92
+metre. Yoksa "ateş ettim, öylece durdu" hissi olurdu.
 
 ---
 
@@ -505,10 +528,10 @@ değiştiriyor ("sırası var" → "şu an saldırıyor"), ve hayvanların hedef
 | 2 | Sırayı saldırı tutsun | Düşük (Faz 1'in üstüne) | Orta | **yapıldı** |
 | 3 | Min/Max varyasyon | Çok düşük | Orta | **yapıldı** |
 | 4 | Tipe göre sıra bütçesi | Düşük | Orta | **yapıldı** |
-| 5 | Uyanma duraklaması | Çok düşük | Düşük (kozmetik) | açık |
+| 5 | Uyanma duraklaması | Çok düşük | Düşük (kozmetik) | **yapıldı** |
 
-Geriye yalnız **Faz 5** kaldı ve o kozmetik: telegraph halkasından çıkan
-gövdenin yürümeden önce yarım saniye duraklaması.
+**Beş fazın beşi de yapıldı.** Planın açık bıraktığı hiçbir madde kalmadı;
+bundan sonrası ayar, ve ayarın yeri masa değil oyun.
 
 ---
 

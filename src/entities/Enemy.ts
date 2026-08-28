@@ -72,6 +72,15 @@ export interface Profile {
    */
   windup: Range;
   recover: Range;
+  /**
+   * How long it takes to notice you.
+   *
+   * Hades gates this with `AIAggroRange` and `IdleUntilAggroAI` — nothing in
+   * a room wakes at the same moment. Our arena is closed and everything is
+   * awake from the frame it spawns, so what is left worth taking is the beat
+   * itself: a body straightens up, turns, and only then starts walking.
+   */
+  wake: Range;
 }
 
 export const PROFILES: Record<EnemyType, Profile> = {
@@ -81,14 +90,16 @@ export const PROFILES: Record<EnemyType, Profile> = {
     // The widest pace band on the street. It is the type there are thirty of,
     // so it is the type where everything walking in step is most obvious.
     pace: [0.84, 1.16], standoff: [7.5, 13.0], turn: [5.5, 7.5], rest: [3.0, 4.2],
-    windup: [0.34, 0.5], recover: [1.0, 1.7]
+    windup: [0.34, 0.5], recover: [1.0, 1.7],
+    wake: [0.35, 0.65]
   },
   SPRINTER: {
     health: 22, speed: 7.4, radius: 0.78, contact: 15, score: 150, scrap: 1, scale: 0.85,
     flesh: 0x9c8a72, cloth: 0x5e3730,
     // Waits further out and takes a short lane: in fast, out fast, round again.
     pace: [0.93, 1.07], standoff: [9.0, 14.0], turn: [3.5, 5.5], rest: [2.2, 3.4],
-    windup: [0.22, 0.32], recover: [0.7, 1.1]
+    windup: [0.22, 0.32], recover: [0.7, 1.1],
+    wake: [0.15, 0.30]
   },
   BLOATER: {
     health: 60, speed: 3.0, radius: 1.0, contact: 10, score: 190, scrap: 2, scale: 1.05,
@@ -96,7 +107,8 @@ export const PROFILES: Record<EnemyType, Profile> = {
     // `recover` is its spit cadence. It never takes a lane, so turn and rest
     // are along for the ride.
     pace: [0.9, 1.1], standoff: [12.0, 14.0], turn: [5.5, 7.5], rest: [3.0, 4.2],
-    windup: [0.4, 0.6], recover: [2.2, 3.2]
+    windup: [0.4, 0.6], recover: [2.2, 3.2],
+    wake: [0.40, 0.70]
   },
   BUTCHER: {
     health: 210, speed: 2.9, radius: 1.55, contact: 26, score: 360, scrap: 4, scale: 1.65,
@@ -104,7 +116,8 @@ export const PROFILES: Record<EnemyType, Profile> = {
     // Holds its lane far longer than anything else and stands closer while it
     // waits. A wall that rotates out every six seconds is not a wall.
     pace: [0.95, 1.05], standoff: [6.5, 9.0], turn: [7.5, 10.0], rest: [4.0, 6.0],
-    windup: [0.5, 0.7], recover: [1.6, 2.4]
+    windup: [0.5, 0.7], recover: [1.6, 2.4],
+    wake: [0.60, 1.00]
   },
   BURSTER: {
     health: 40, speed: 4.6, radius: 0.95, contact: 22, score: 230, scrap: 2, scale: 1.0,
@@ -112,7 +125,8 @@ export const PROFILES: Record<EnemyType, Profile> = {
     // `windup` is the swell. Varying it is the difference between learning the
     // tell and learning a stopwatch.
     pace: [0.9, 1.12], standoff: [8.0, 12.0], turn: [5.0, 7.0], rest: [3.0, 4.2],
-    windup: [0.72, 0.98], recover: [1.0, 1.6]
+    windup: [0.72, 0.98], recover: [1.0, 1.6],
+    wake: [0.30, 0.55]
   },
   // Thin, and worth more than it can do to you by itself. Everything a
   // Screamer costs the player arrives afterwards.
@@ -121,7 +135,8 @@ export const PROFILES: Record<EnemyType, Profile> = {
     flesh: 0xb0a894, cloth: 0x6a5f52,
     // Stands further out than anything else, and never takes a lane.
     pace: [0.9, 1.1], standoff: [14.0, 16.5], turn: [5.5, 7.5], rest: [3.0, 4.2],
-    windup: [1.0, 1.45], recover: [7.5, 11.0]
+    windup: [1.0, 1.45], recover: [7.5, 11.0],
+    wake: [0.40, 0.70]
   },
   // Low contact damage on purpose: what a Clinger costs you is the seconds,
   // not the bite. Everything else on the street is what actually hurts.
@@ -131,7 +146,8 @@ export const PROFILES: Record<EnemyType, Profile> = {
     // Lurks closer in than the rest of the ring, because what it is waiting
     // for is a gap rather than a turn.
     pace: [0.92, 1.1], standoff: [5.5, 8.0], turn: [4.5, 6.5], rest: [4.0, 6.0],
-    windup: [0.3, 0.42], recover: [5.0, 7.5]
+    windup: [0.3, 0.42], recover: [5.0, 7.5],
+    wake: [0.25, 0.45]
   }
 };
 
@@ -326,6 +342,8 @@ export class Enemy implements IPoolable {
   /** Drawn at spawn from the profile's bands. See `Profile.windup`. */
   private windup: number = 0.4;
   private recover: number = 1.2;
+  /** Counts down while it is still working out where it is. */
+  private wakeTimer: number = 0;
 
   /** Which shoulder it comes round, and how wide the arc is. */
   private flankSign: number = 1;
@@ -407,6 +425,7 @@ export class Enemy implements IPoolable {
     this.windup = roll(p.windup);
     this.recover = roll(p.recover);
     this.strikeDamage = Math.round(p.contact * STRIKE_MULTIPLIER);
+    this.wakeTimer = roll(p.wake);
 
     // What Hades takes off an elite is not thickness, it is time: its
     // `PreAttackDuration` drops from half a second to a quarter. Same body,
@@ -435,7 +454,10 @@ export class Enemy implements IPoolable {
     this.hpVisible = false;
     this.hpRatio = 1;
     this.gait = 0;
-    this.yaw = 0;
+    // Facing wherever it happened to be lying. Four bodies out of one
+    // telegraph used to stand up already pointed at the player, in step; now
+    // each of them has to find you first.
+    this.yaw = Math.random() * Math.PI * 2;
 
     this.spawnTimer = 0.22;
     this.renderScale = this.baseScale * 0.45;
@@ -471,6 +493,8 @@ export class Enemy implements IPoolable {
     }
 
     if (this.mark === 'FRENZY') this.frenzyTimer = FRENZY_DURATION;
+    // Whatever it was working out, it has stopped working it out.
+    this.wakeTimer = 0;
 
     this.health -= dealt;
     this.hitFlashTimer = 0.07;
@@ -666,6 +690,30 @@ export class Enemy implements IPoolable {
         this.audio.playSwell();
         return;
       }
+    }
+
+    // Still coming up.
+    //
+    // It does not steer, does not swing, and cannot be handed anything to do
+    // — it is turning to face whatever woke it. Half a second on a Shambler,
+    // twice that on a Butcher, a fifth of it on a Sprinter, which are fresh
+    // enough to still be quick about it.
+    if (this.wakeTimer > 0) {
+      this.wakeTimer -= delta;
+      this.velocity.multiplyScalar(0.82);
+
+      const want = Math.atan2(this.position.x - playerPos.x, this.position.z - playerPos.z);
+      const diff = ((want - this.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      this.yaw += diff * Math.min(1, delta * 5.5);
+
+      // A shoulder roll rather than a walk cycle: it is not going anywhere yet.
+      this.lurch += delta * 3.2;
+      this.gait = Math.sin(this.lurch) * 0.35;
+
+      this.position.x += this.velocity.x * delta;
+      this.position.z += this.velocity.z * delta;
+      this.position.y = this.terrain.getHeightAt(this.position.x, this.position.z);
+      return;
     }
 
     // Mid-swing, and nothing else about the world matters until it is over.

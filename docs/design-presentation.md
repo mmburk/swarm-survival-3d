@@ -303,6 +303,13 @@ oynanış profilini veriyor — Hades'te aspect'in yaptığı şey.
   itmek** (anında ama 5 sn cooldown), ya da **hayvan** — strike yapabilen her
   hayvan üstünden alıyor. Kedi alamıyor, çünkü kedi hiç dövüşmüyor; bu
   bilinçli. Aynı anda yalnız bir tanesi tutabiliyor.
+- **Uyanma anı.** Gövde telegraph halkasından **rastgele bir yöne bakarak**
+  doğuyor ve yürümeye başlamadan önce doğrulup oyuncuyu buluyor: Sprinter
+  0.15–0.30 sn, Shambler 0.35–0.65, Butcher 0.60–1.00. Tek halkadan çıkan
+  dördü artık aynı anda aynı yöne dönmüyor — ölçüldü, bakma hataları 134° /
+  150° / 8° / 14° başlıyor ve ilk adımlar yarım metre arayla atılıyor.
+  Uyanırken vurulan gövde uyanmayı bırakıp yürüyor, yoksa "ateş ettim, öylece
+  durdu" olurdu.
 - **Spawn telegraph'ı.** Hiçbir şey aniden belirmez: yere 0.45 sn kanlı bir
   halka çizilir, sonra düşman oradan gelir. Spawn oyuncudan en az 12 m, en fazla
   33 m uzakta ve çitin içinde.
@@ -926,6 +933,8 @@ Kapan:       55 can · 1.9 m menzil · 0.35 sn hamle · 1.5 sn tutuş
              çığlık: +6 gövde anında, 5 sn boyunca +6 sıra
 Gürültü:     eşik 120 · unutma 2.5/sn · Ranger 8.7/sn, Stutter 10.3/sn
              Boomstick 3.5/sn, Widowmaker 2.4/sn, Harvester 0.3/sn
+Uyanma:      Sprinter 0.15–0.30 · Shambler 0.35–0.65 · Butcher 0.60–1.00 sn
+             rastgele yönle doğuyor · vurulunca kesiliyor
 Vuruş:       menzil yarıçap+1.45 m · hamle 0.18 sn / 6 m/sn taahhütlü
              hasar temas×1.75 · sürtünme %25, 1.1 sn'de bir, en fazla 3 gövde
              işaretlilerin hazırlığı ×0.6
