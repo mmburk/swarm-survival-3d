@@ -439,9 +439,9 @@ export class Enemy implements IPoolable {
 
     // Marked bodies are worth going after rather than worth avoiding — the
     // whole layer is meant to be a decision, and a decision needs a payout.
-    // No health bonus: the mark is the difference. Hades' elites are quicker
-    // as well as thicker, and quicker is a thing we cannot do until the dead
-    // have wind-ups of their own.
+    // No health bonus: the shortened wind-up above is the difference. Hades'
+    // elites are quicker as well as thicker, and thicker on a street of
+    // thirty-four is only a longer wait.
     this.mark = mark;
     this.frenzyTimer = 0;
     if (mark) {

@@ -62,6 +62,13 @@ export class MenuSystem {
    */
   public onDisplayChange: (() => void) | null = null;
 
+  /**
+   * Told mid-drag, so the ear hears the number it is setting. Separate from
+   * `onDisplayChange` because this one fires many times a second and must not
+   * touch the save.
+   */
+  public onVolumeChange: ((vol: number) => void) | null = null;
+
   constructor() {
     injectTheme();
 
@@ -317,6 +324,41 @@ export class MenuSystem {
       .opt-chip.active .opt-num { color: var(--amber); }
       .opt-chip.active .opt-note { color: var(--bone); }
 
+      .opt-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 3px;
+        background: var(--char);
+        outline: none;
+        cursor: pointer;
+      }
+      .opt-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 13px;
+        height: 20px;
+        background: var(--amber);
+        border: 1px solid rgba(0,0,0,0.5);
+        cursor: pointer;
+      }
+      .opt-slider::-moz-range-thumb {
+        width: 13px;
+        height: 20px;
+        border-radius: 0;
+        background: var(--amber);
+        border: 1px solid rgba(0,0,0,0.5);
+        cursor: pointer;
+      }
+      .opt-readout {
+        font-family: var(--stencil);
+        font-size: 17px;
+        letter-spacing: 1.4px;
+        color: var(--amber);
+        min-width: 52px;
+        text-align: right;
+      }
+
       .mn-scrap {
         font-family: var(--stencil);
         font-size: 24px;
@@ -430,6 +472,20 @@ export class MenuSystem {
           </div>
         </div>
 
+        <div class="ll-sub" style="margin:18px 0 0;">Volume</div>
+        <div style="font-size:12px; color:var(--ash); margin-top:6px; line-height:1.6;">
+          Everything the game makes goes through here. <b style="color:var(--bone)">M</b> still cuts
+          it entirely without moving the slider, so a mute is a mute and not a number you have to
+          find your way back to.
+        </div>
+        <div style="display:flex; align-items:center; gap:14px; margin-top:12px;">
+          <input id="rng-volume" class="opt-slider" type="range" min="0" max="100" step="1"
+                 value="${Math.round(s.volume * 100)}" aria-label="Master volume" />
+          <div id="lbl-volume" class="opt-readout">${Math.round(s.volume * 100)}%</div>
+        </div>
+
+        <div class="ll-rule"></div>
+
         <div class="ll-sub" style="margin:18px 0 0;">Frame ceiling</div>
         <div style="font-size:12px; color:var(--ash); margin-top:6px; line-height:1.6;">
           The loop will not run faster than this. <b style="color:var(--bone)">Display</b> leaves it
@@ -459,6 +515,20 @@ export class MenuSystem {
         this.onDisplayChange?.();
         this.showSettings(onBack);
       });
+    });
+
+    // Live while dragging, saved on release: writing to localStorage on every
+    // pixel of a drag is a lot of writes for a number the ear settles in one
+    // pass. `input` moves the gain, `change` is what lands in the save.
+    const rng = document.getElementById('rng-volume') as HTMLInputElement;
+    const lbl = document.getElementById('lbl-volume')!;
+    rng.addEventListener('input', () => {
+      const v = parseInt(rng.value, 10) / 100;
+      lbl.textContent = `${rng.value}%`;
+      this.onVolumeChange?.(v);
+    });
+    rng.addEventListener('change', () => {
+      SaveSystem.setVolume(parseInt(rng.value, 10) / 100);
     });
 
     document.getElementById('btn-fps-toggle')!.addEventListener('click', () => {

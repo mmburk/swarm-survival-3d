@@ -327,6 +327,7 @@ export class Engine {
       this.wireSectors();
 
       this.menus.onDisplayChange = () => this.applyDisplaySettings();
+      this.menus.onVolumeChange = (vol) => this.audio.setVolume(vol);
       this.applyDisplaySettings();
 
       this.mode = 'TITLE';
@@ -2324,6 +2325,7 @@ export class Engine {
     this.maxDelta = Math.min(0.1, Math.max(0.033, capped));
 
     this.hud.setFpsVisible(s.showFps);
+    this.audio.setVolume(s.volume);
   }
 
   private loop(now: number): void {

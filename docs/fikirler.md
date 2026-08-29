@@ -36,6 +36,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 12 | **Faz 2 — sırayı hamle bitiriyor.** `turnSpent`, sayaç güvenlik ağına indi (2× turn). Devredilen gövde `standoff × 0.42`'de asılı kalıyor | `8618ae8` | Devir 0.85 → 1.56/sn (hamle başına bir devir). Hasar %5–15 düştü, hâlâ Faz 1 bandında |
 
 | 13 | **Faz 5 — uyanma anı.** `Profile.wake` bandı, gövde rastgele yönle doğup oyuncuyu buluyor, vurulunca uyanma kesiliyor | `145e466` | **AI planının beş fazı da bitti.** Bundan sonrası ayar, ve ayarın yeri masa değil oyun |
+| 14 | **Ses Faz 0 — temizlik ve kontrol.** 10 ölü metot silindi (692 → 436 satır), settings kartına ses kaydırıcısı (`DisplaySettings.volume`, kayıtta duruyor), `?audio=test` ile 24 olayı tuşa bağlayan dinleme tezgâhı | `TBD` | **Ses planının MVP maddesi bitti.** Kaydırıcı sesin yüksekliğine dokunan her işten önce gelmesi gerekendi; tezgâh da bundan sonraki her dinleme turunu kısaltan şey |
 
 ---
 
@@ -93,9 +94,11 @@ Bilinen pürüzler:
   aşılıyorsa eşik 0'a, fazla zorsa 0.4'e çekilir.
 - **Hayvanlar plakayı tanıyor** (delici değiller). Rook 16 → 7 hasar. Ayı 75
   ve domuz 45 hâlâ iş görüyor. Bilinçli ama sinir bozucu olabilir.
-- **Can bonusu yok.** Hades elitleri hem kalın hem hızlı; hızlı olan kısım
-  bizde Faz 1'e (windup) bağlı. Faz 1 gelince işaretlilere `windup × 0.6`
-  eklenecek — asıl "elit" hissi orada.
+- ~~**Can bonusu yok.**~~ Hâlâ yok, ve olmayacak — ama hızlı olan kısım geldi:
+  Faz 1 ile birlikte işaretli gövdeye `windup × 0.6` yazıldı (`Enemy.ts`,
+  spawn'da). Yani "elit" hissi kalınlıktan değil, okumak için daha az zaman
+  bırakmaktan geliyor. **Oynarken bakılacak:** kalabalıkta %40 kısalmış bir
+  hamle hâlâ okunabiliyor mu, yoksa işaretli olan tek haksız gövde mi.
 
 ### AI planı bitti — sıra oynamakta
 Beş fazın beşi de yapıldı. **Ama son sekiz iş masa başında ayarlandı ve
@@ -144,6 +147,16 @@ Bilinen pürüzler:
   nefes vermesi iyi, ama fazla yumuşaksa `STRIKE_MULTIPLIER` 2.0'a çıkar.
 - **Hamle sesi sadece ıskalayınca çalıyor** (0.22 sn'de bir, 4.5 m içinde).
   İsabet edenin sesi zaten `playPlayerHurt`. Kalabalıkta yeterli mi belirsiz.
+
+### Ses — sırada Faz 1 *(varyasyon)*
+Faz 0 bitti (14 numara). Sıradaki `bug.md` #11'in düzeltmesi ve en ucuz
+kazanç: gürültü tamponundan rastgele offset (tek satır), atış başına ±%6/±%8/±%4
+sapma, ağır silahlarda slap-back gecikmesinin de sapması. Detay
+[`sound-plan.md`](sound-plan.md) Faz 1'de.
+
+**Bu maddeye karar veren kulak, kod değil** — ve artık kulağın oturacağı yer
+var: `?audio=test`. 1/2/3/4 dört tüfek karakteri, üst üste basıldığında
+tekrarın duyulup duyulmadığı orada belli oluyor.
 
 ### Küçük ve bağımsız
 - **Ses "gürültü çeker" kuralı genellensin.** Gürültü sayacı artık var

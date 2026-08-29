@@ -64,7 +64,7 @@ Sabit kameralı, sürü tabanlı bir oyunda kaybedilen en büyük bilgi kanalı 
 
 ---
 
-## 1. FAZ 0 — TEMİZLİK VE KONTROL *(MVP)*
+## 1. FAZ 0 — TEMİZLİK VE KONTROL *(MVP)* *(yapıldı)*
 
 Ses üstünde çalışmadan önce yapılması gerekenler. İkisi de düşük riskli.
 
@@ -85,6 +85,36 @@ maliyeti bir saat, geri dönüşü her turda.
 
 **Kabul:** dosya 250 satırın altında, `tsc --noEmit` temiz, kaydırıcı seviyeyi
 gerçekten oynatıyor ve sayfa yenilendiğinde korunuyor.
+
+### Nasıl yapıldı
+
+**0.1 — 256 satır silindi**, tahmin edilen ~460 değil. Tahmin dosyanın
+tamamına bakıp "sci-fi dönemi" diye ayırdığı bloğu ölçmüştü; on metodun
+gövdeleri toplandığında çıkan sayı bu. Dosya **692 → 436 satır**. Yani
+kabuldeki "250 satırın altında" tutmuyor ve tutturulamaz — kalan 436 satırın
+hepsinin çağrı yeri var (tek istisna `getBeatPulse` ve `setWaveIntensity`;
+ikisi de arka plan uğultusuna bağlı, silmek uğultuyu da sökmek demek, o yüzden
+bırakıldı). **Kabul kriteri yanlıştı, kod değil.**
+
+**0.2 — Kaydırıcı settings kartında**, frame ceiling'in üstünde. Kayıt
+`DisplaySettings.volume` (0–1, varsayılan 0.3 — eskiden koda gömülü olan
+sayı). Sürüklerken `onVolumeChange` gain'i canlı oynatıyor, bırakınca
+`change` kayda yazıyor: bir sürüklemenin her pikselini localStorage'a
+yazmamak için. `M` hâlâ ayrı — susturma sayıya dokunmuyor, yani mute'tan
+dönerken seviyeyi yeniden bulmak gerekmiyor.
+
+**0.3 — `?audio=test`** → `src/ui/AudioTestPage.ts`. Dört öbek (Guns / The
+player / The dead / The street), 24 olay, her biri bir tuşta ve tıklanabilir;
+artı seviye kaydırıcısı ve uğultu anahtarı. Motoru hiç kurmuyor — `main.ts`
+sorgu parametresini görünce `Engine` yerine bunu dinamik import ediyor, yani
+istenmediğinde bundle'a girmiyor.
+
+**Doğrulandı:** `tsc --noEmit` temiz; bench sayfası konsol hatasız açılıyor ve
+24 satırın hepsini gösteriyor; kaydırıcı %65'e çekilip sayfa yenilendiğinde
+%65 dönüyor (`lastlight_save_v1.settings.volume = 0.65`).
+
+**Doğrulanmadı:** sesin kendisi. Bu ortamda kulak yok — kaydırıcının gain'i
+gerçekten oynattığı kod yolundan okundu, duyularak değil.
 
 ---
 
@@ -239,16 +269,16 @@ Faz 0.3'teki test sayfası bu döngünün her turunu kısaltır; o yüzden en ba
 
 ## 10. SIRA VE MALİYET
 
-| Faz | İş | Maliyet (tahmin) | Kulak gerekir mi |
-|---|---|---|---|
-| **0** | Ölü kod, ses kaydırıcısı, test sayfası | yarım gün | hayır |
-| **1** | Varyasyon (`bug.md` #11 dahil) | yarım gün | evet, 1-2 tur |
-| **2** | Mekân / reverb | 1 gün | evet, 2-3 tur |
-| **3** | Konum + zombi vokalleri | 2 gün | evet, en çok burada |
-| **4** | Eksik olaylar | 1 gün | evet, 1 tur |
-| **5** | Adaptif yatak | 1 gün | evet, 2 tur |
-| **6** | Gerçek foley + beste | — | MVP dışı, karar bekliyor |
+| Faz | İş | Maliyet (tahmin) | Kulak gerekir mi | Durum |
+|---|---|---|---|---|
+| **0** | Ölü kod, ses kaydırıcısı, test sayfası | yarım gün | hayır | **yapıldı** |
+| **1** | Varyasyon (`bug.md` #11 dahil) | yarım gün | evet, 1-2 tur | sırada |
+| **2** | Mekân / reverb | 1 gün | evet, 2-3 tur | — |
+| **3** | Konum + zombi vokalleri | 2 gün | evet, en çok burada | — |
+| **4** | Eksik olaylar | 1 gün | evet, 1 tur | — |
+| **5** | Adaptif yatak | 1 gün | evet, 2 tur | — |
+| **6** | Gerçek foley + beste | — | MVP dışı, karar bekliyor | — |
 
-**MVP için gereken: Faz 0.** Gerisi oyunu belirgin şekilde iyileştirir ama
+**MVP için gereken Faz 0 bitti.** Gerisi oyunu belirgin şekilde iyileştirir ama
 oynanabilirliği tutmuyor — tek istisnası Faz 3, çünkü sessiz bir sürü bir
 bilgi eksiği ve bu bir oynanış meselesi.

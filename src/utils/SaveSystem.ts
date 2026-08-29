@@ -31,6 +31,12 @@ export interface DisplaySettings {
   fpsCap: number;
   /** The little counter in the corner. */
   showFps: boolean;
+  /**
+   * Master output, 0 to 1. The game starts with sound on, so the one control
+   * that has to exist before anything else about sound is worth arguing over
+   * is the one that turns it down.
+   */
+  volume: number;
 }
 
 export interface SaveData {
@@ -100,7 +106,7 @@ function defaultSave(): SaveData {
     penned: ['ROOK'],
     atHeel: null,
     narrative: { seen: [], heard: {} },
-    settings: { fpsCap: 0, showFps: false },
+    settings: { fpsCap: 0, showFps: false, volume: 0.3 },
     claimed: [],
     tally: emptyTally(),
     stats: { runs: 0, deaths: 0, bestSector: 0, totalKills: 0, bestScore: 0, clears: 0 }
@@ -155,6 +161,8 @@ export class SaveSystem {
           const cap = Math.floor(parsed.settings.fpsCap ?? 0);
           base.settings.fpsCap = (FPS_CAPS as readonly number[]).includes(cap) ? cap : 0;
           base.settings.showFps = !!parsed.settings.showFps;
+          const vol = Number(parsed.settings.volume);
+          base.settings.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 0.3;
         }
         if (Array.isArray(parsed.claimed)) base.claimed = parsed.claimed.slice();
         if (parsed.tally) base.tally = { ...base.tally, ...parsed.tally };
@@ -363,6 +371,13 @@ export class SaveSystem {
 
   public static setShowFps(show: boolean): void {
     this.load().settings.showFps = show;
+    this.save();
+  }
+
+  /** Anything off the 0–1 rail is clamped rather than refused. */
+  public static setVolume(vol: number): void {
+    const v = Number(vol);
+    this.load().settings.volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.3;
     this.save();
   }
 
