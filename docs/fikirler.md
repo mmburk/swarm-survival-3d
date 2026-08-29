@@ -40,7 +40,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 15 | **Ses Faz 1 — varyasyon.** Tamponda rastgele offset (`bug.md` #11 kapandı) + atış başına sapma: frekans ±%6, seviye ±%8, süre ±%4, gecikmeli katmanlar ±%15. Hepsi `noiseBurst`/`thump`'ın içinde, yani 24 olayın hepsi aldı | `2823528` | 6 atışta 6 farklı offset, filtre 3079–3340 Hz (yazılı 3200). **Yazıldı, dinlenmedi** — dört sabit de tahmin, kabul kriteri kulakta |
 | 16 | **Üç küçük iş.** Gürültü kuralı genellendi (patlama 18, Burster 9, fişek 30); Çığlıkçı minimap'te içi boş kare oldu; kedinin kartı Clinger'ı alamadığını söylüyor | `1ac455f` | Üçü de "küçük ve bağımsız" listesinden. Gürültünün ikinci yarısı (sıra bütçesini açması) bilerek yapılmadı |
 | 17 | **`bug.md` #8 — 30 fps altı ağır çekim.** `planSteps()`: kare zamanı `maxDelta`'yı aşmayan eşit adımlara bölünüyor, `update()` o kadar kez çağrılıyor, `render()` bir kez. `MAX_SUBSTEPS` 3 | `6983f60` | 20 fps'te hız %66 → **%100**; 30 fps ve üstünde adım sayısı 1, yani sağlıklı makine hiçbir şey ödemiyor. **Bug listesi ilk kez boş** |
-| 18 | **Ses Faz 2, 3, 5 ve Faz 4'ün üçte ikisi.** Prosedürel oda (üç mekân, kuru/ıslak yolu); panning + mesafe zayıflaması; zombi vokalleri, dört ses tavanı, ölüm sesi; ayak sesi, spawn ve slam telegraph'ı; baskıya bağlı yatak | `TBD` | **Ses planının beş fazı da yazıldı.** Hiçbiri dinlenmedi — her fazın altında ölçüm var, hiçbirinin altında kulak yok |
+| 18 | **Ses Faz 2, 3, 5 ve Faz 4'ün üçte ikisi.** Prosedürel oda (üç mekân, kuru/ıslak yolu); panning + mesafe zayıflaması; zombi vokalleri, dört ses tavanı, ölüm sesi; ayak sesi, spawn ve slam telegraph'ı; baskıya bağlı yatak | `7e2c658` | **Ses planının beş fazı da yazıldı.** Hiçbiri dinlenmedi — her fazın altında ölçüm var, hiçbirinin altında kulak yok |
 
 ---
 
