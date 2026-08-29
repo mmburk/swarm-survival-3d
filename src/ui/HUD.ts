@@ -824,7 +824,7 @@ export class HUD {
   public drawMinimap(
     delta: number,
     playerPos: { x: number; z: number },
-    enemies: Array<{ position: { x: number; z: number } }>,
+    enemies: Array<{ position: { x: number; z: number }; type: string }>,
     gates: Array<{ x: number; z: number }>,
     boss?: { x: number; z: number } | null
   ): void {
@@ -858,11 +858,28 @@ export class HUD {
       return tempBlip.set(cx + tempBlip.x * scale, cy + tempBlip.y * scale);
     };
 
-    ctx.fillStyle = 'rgba(142,35,35,0.9)';
+    // One blip for everything except the Screamer, which gets a hollow one.
+    //
+    // The map is for finding what you cannot see, and the Screamer is the only
+    // body out there that deliberately stays where you cannot see it — holding
+    // at fifteen metres while what it called walks in. A red square among
+    // thirty-three red squares was the one thing this map refused to tell you.
+    //
+    // Hollow rather than a second colour: cold blue is already spoken for by
+    // the marked, amber is the gate, and a map with a key is a map nobody
+    // reads. Same colour, different mark — it is still one of them, it is just
+    // not doing what the rest are doing.
+    ctx.strokeStyle = 'rgba(198,64,58,0.95)';
+    ctx.lineWidth = 1;
     for (const e of enemies) {
       const p = blip(e.position.x, e.position.z);
       if (p.x < 3 || p.x > w - 3 || p.y < 3 || p.y > h - 3) continue;
-      ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+      if (e.type === 'SCREAMER') {
+        ctx.strokeRect(p.x - 2.5, p.y - 2.5, 5, 5);
+      } else {
+        ctx.fillStyle = 'rgba(142,35,35,0.9)';
+        ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+      }
     }
 
     ctx.fillStyle = CSS.amber;

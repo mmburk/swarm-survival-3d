@@ -98,6 +98,26 @@ const NOISE_THRESHOLD = 120;
 const NOISE_DECAY = 2.5;
 
 /**
+ * What the street hears besides gunfire.
+ *
+ * The meter was only ever fed by the trigger, which quietly said that a
+ * grenade is silent and that lighting a flare is a free action. Both are
+ * louder than any gun in the rack — a Boomstick shell is 2.4.
+ *
+ * The numbers are read against a full magazine rather than picked: a blast is
+ * about three seconds of Ranger fire, a flare about five. Neither is close to
+ * calling a Screamer on its own, and both make the loud build genuinely loud.
+ *
+ * A Burster is worth less than the ordnance that opened it and is the one
+ * entry here the player did not decide on — so it is deliberately the smallest
+ * of the three, or a street thick with Bursters would call its own Screamers
+ * and the player would be paying for a bill they never ran up.
+ */
+const NOISE_BLAST = 18;
+const NOISE_BURST = 9;
+const NOISE_FLARE = 30;
+
+/**
  * Standing in a crowd, as a cost rather than as an execution.
  *
  * Bodies pressed against the player used to deal their full contact damage on
@@ -1621,6 +1641,12 @@ export class Engine {
     this.flares.get(landing, 16 + this.sectors.current * 2, 260 + this.sectors.current * 30);
     SaveSystem.bumpTally('flaresLit');
     this.cameraJuice.addTrauma(0.2);
+
+    // A flare is not loud, it is *loud in the sense the meter means*: it is a
+    // thing you do to be noticed. Counting it here is the whole rule stated
+    // once — anything that advertises where you are is spent into the same
+    // pot, whether it went bang or not.
+    this.spendNoise(NOISE_FLARE);
     this.hud.showToast('Flare down — it will pull them in before it goes.');
   }
 
@@ -1867,6 +1893,7 @@ export class Engine {
     this.audio.playExplosion();
     this.cameraJuice.addTrauma(0.4);
     this.particles.emitExplosion(centre, radius, 0xd2622a);
+    this.spendNoise(NOISE_BLAST);
 
     // Snapshotted for the same reason as the rupture above: a kill in here can
     // set off another blast, and the query buffer is not the caller's to keep.
@@ -2187,6 +2214,7 @@ export class Engine {
     this.audio.playExplosion();
     this.cameraJuice.addTrauma(0.45);
     this.particles.emitExplosion(pos, 5.5, 0x9aa84a);
+    this.spendNoise(NOISE_BURST);
 
     if (ArcadePhysics.checkSphereOverlap(pos, 5.0, this.player.position, this.player.radius)) {
       this.player.takeDamage(30);

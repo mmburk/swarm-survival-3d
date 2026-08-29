@@ -118,7 +118,7 @@ export const ANIMALS: Record<AnimalId, AnimalDef> = {
     cost: 120,
     role: 'WATCH',
     roleName: 'Keeps you steady',
-    desc: 'Fights nothing and never will. While nothing has hit you for four seconds she brings back 2 condition a second.',
+    desc: 'Fights nothing and never will — she cannot pull a Clinger off you either, and will not try. While nothing has hit you for four seconds she brings back 2 condition a second.',
     flavor: 'Turned up at the grate one night and has never once been asked to stay.',
     speed: 7.0,
     radius: 0.3,

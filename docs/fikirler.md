@@ -38,6 +38,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 13 | **Faz 5 — uyanma anı.** `Profile.wake` bandı, gövde rastgele yönle doğup oyuncuyu buluyor, vurulunca uyanma kesiliyor | `145e466` | **AI planının beş fazı da bitti.** Bundan sonrası ayar, ve ayarın yeri masa değil oyun |
 | 14 | **Ses Faz 0 — temizlik ve kontrol.** 10 ölü metot silindi (692 → 436 satır), settings kartına ses kaydırıcısı (`DisplaySettings.volume`, kayıtta duruyor), `?audio=test` ile 24 olayı tuşa bağlayan dinleme tezgâhı | `a116ef9` | **Ses planının MVP maddesi bitti.** Kaydırıcı sesin yüksekliğine dokunan her işten önce gelmesi gerekendi; tezgâh da bundan sonraki her dinleme turunu kısaltan şey |
 | 15 | **Ses Faz 1 — varyasyon.** Tamponda rastgele offset (`bug.md` #11 kapandı) + atış başına sapma: frekans ±%6, seviye ±%8, süre ±%4, gecikmeli katmanlar ±%15. Hepsi `noiseBurst`/`thump`'ın içinde, yani 24 olayın hepsi aldı | `2823528` | 6 atışta 6 farklı offset, filtre 3079–3340 Hz (yazılı 3200). **Yazıldı, dinlenmedi** — dört sabit de tahmin, kabul kriteri kulakta |
+| 16 | **Üç küçük iş.** Gürültü kuralı genellendi (patlama 18, Burster 9, fişek 30); Çığlıkçı minimap'te içi boş kare oldu; kedinin kartı Clinger'ı alamadığını söylüyor | `TBD` | Üçü de "küçük ve bağımsız" listesinden. Gürültünün ikinci yarısı (sıra bütçesini açması) bilerek yapılmadı |
 
 ---
 
@@ -54,8 +55,11 @@ Bilinen pürüzler:
   oyuncu onu ancak menzilinin ucundan vurabiliyor. Şimdilik bilerek bırakıldı
   (çifte zaten az gürültü üretiyor, yani ona daha az Çığlıkçı geliyor) ama
   oynarken sinir bozucuysa `SCREAM_STANDOFF` 13'e inebilir.
-- **Minimap'te ayırt edilmiyor.** Bütün zombiler aynı blip. Çığlıkçı uzakta
-  durduğu için asıl bulunması gereken şey o — minimap'e ayrı renk iyi olur.
+- ~~**Minimap'te ayırt edilmiyor.**~~ **Yapıldı (16 numara):** Çığlıkçı artık
+  **içi boş** bir kare, diğerleri dolu. Ayrı renk değil — soğuk mavi
+  işaretlilerin, kehribar kapının; anahtar isteyen harita kimsenin okumadığı
+  haritadır. Aynı renk, farklı işaret: "hâlâ onlardan biri, ama ötekilerin
+  yaptığını yapmıyor."
 - Ekranda ayırt etme: sarkık çene (geometri) + kurulurken `hot` yanıp sönmesi.
   Kalabalıkta yeterli mi, oynayınca belli olacak.
 
@@ -71,9 +75,10 @@ Bilinen pürüzler:
   Beşi de sokakta ama sırası olan bir tanesi.
 - **Shove cooldown'u 5 sn, tutuş 1.5 sn.** Yani üst üste iki tutuşta ikinciye
   botu yetiştiremiyorsun. Bilerek: hayvanın ve silahın da bir işi olsun.
-- **Hayvan kurtarması strike'a bağlı.** Kedi (WATCH) hiç strike yapmadığı için
-  kurtaramıyor — karakterine uygun ama oyuncu bunu bilmiyor. Kedinin kartına
-  bir satır eklenebilir.
+- ~~**Hayvan kurtarması strike'a bağlı.**~~ **Yapıldı (16 numara):** kedinin
+  kartı artık "she cannot pull a Clinger off you either, and will not try"
+  diyor. Davranış değişmedi — değişen, oyuncunun bunu satın almadan önce
+  bilmesi.
 
 ### Sıradaki tip yok — kadro tamam sayılabilir
 7 tip + boss. [Roster araştırmasındaki](zombie-roster-research.md) yedi rolün
@@ -165,14 +170,21 @@ Dinleme listesi — `?audio=test` açıp:
 Cevap madde başına tek satır yeter; ayarı ben yaparım.
 
 ### Küçük ve bağımsız
-- **Ses "gürültü çeker" kuralı genellensin.** Gürültü sayacı artık var
-  (`Engine.noise`) ama sadece Çığlıkçı doğuruyor. Patlamalar ve fişek de
-  sayaca yazabilir; ya da yüksek gürültü doğrudan sıra bütçesini biraz
-  açabilir — "gürültü yaptın, daha fazlası seninle ilgileniyor".
+- ~~**Ses "gürültü çeker" kuralı genellensin.**~~ **Yapıldı (16 numara).**
+  Sayaca artık patlama (`NOISE_BLAST` 18), Burster (`NOISE_BURST` 9) ve fişek
+  (`NOISE_FLARE` 30) da yazıyor. Fişek en pahalısı, çünkü kural "ne kadar
+  yüksek" değil "kendini ne kadar belli ettin" — fişek zaten bunun için
+  atılıyor. Burster en ucuzu, çünkü üçü içinde oyuncunun karar vermediği tek
+  şey o.
+  **Yapılmadı:** aynı maddedeki ikinci seçenek — yüksek gürültünün doğrudan
+  **sıra bütçesini** açması. Madde "ya da" diyordu; ikisini birden yapmak
+  denenmemiş bir sistemde iki bilinmeyen demek. Bütçe versiyonu duruyor, ama
+  önce yukarıdakinin oynanması lazım.
 - **Gürültü göstergesi.** Şu an oyuncu sayacı görmüyor, sadece sonucunu
   (toast + Çığlıkçı). 7DTD de göstermiyor. Ama silah rafında artık
   "Silent / Quiet / Loud / Deafening" etiketi var, yani en azından seçim
-  bilinçli yapılabiliyor.
+  bilinçli yapılabiliyor. **Yeni sebep:** artık fişek ve patlama da yazıyor,
+  yani sayacı besleyen üç şey daha var ve hiçbirinin etiketi yok.
 - **Rook'un grit'i (60) izlensin.** 5 numaralı değişiklikten sonra daha hızlı
   yıpranıyor. Her sokakta yere yığılıyorsa ya grit yükselir ya da HARRY rolüne
   "kondisyon düşünce geri çekil" eklenir. Önce oynayıp bakılacak.
