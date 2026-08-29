@@ -61,6 +61,32 @@ const WET_BODY = 0.2;
 const WET_VOICE = 0.28;
 const WET_STEP = 0.15;
 
+/**
+ * The layer that is always on, and the reason it is the quietest thing here.
+ *
+ * A bed of weather is the cheapest way to stop five sectors being the same
+ * street with different props, and the cheapest way to ruin a mix. It is the
+ * only sound in the game the player never stops hearing, so anything loud
+ * enough to notice is loud enough to hate by the third sector.
+ *
+ * `AMBIENCE_BASE` is what an ordinary street costs; the sector's own figure
+ * scales it. The shelter uses the same machinery at a different setting — a
+ * stove and a room rather than wind — because there is nothing about a boarded
+ * basement that a slow, dark, moving noise floor does not say.
+ */
+const AMBIENCE_BASE = 0.028;
+
+const AMBIENCES = {
+  //            cutoff   Q     sway     rate   level
+  STREET:  { freq: 620, q: 0.7, sway: 260, rate: 0.09, level: 1 },
+  // Under the bridge the wind is not in it; what moves is further off.
+  UNDERPASS: { freq: 300, q: 1.1, sway: 90, rate: 0.05, level: 0.8 },
+  // The stove, and a room with boards on it. Almost nothing, and very low.
+  SHELTER: { freq: 150, q: 1.6, sway: 40, rate: 0.13, level: 0.75 }
+} as const;
+
+export type AmbienceId = keyof typeof AMBIENCES;
+
 /** Scratch for the world-to-screen trip, so panning allocates nothing. */
 const tmpPan = new THREE.Vector2();
 
@@ -88,6 +114,16 @@ const VARY_TIME = 0.04;
  */
 const VARY_DELAY = 0.15;
 
+/**
+ * How far ahead of now everything is scheduled.
+ *
+ * Twenty milliseconds, which is under the threshold where a trigger stops
+ * feeling connected to what it fired, and is there to buy the thump a piece of
+ * time *before* its own start — see `thump`. WebAudio clamps a start time in
+ * the past to now, and a phase trick that gets clamped is not a phase trick.
+ */
+const SCHEDULE_LEAD = 0.02;
+
 /** One number, jittered. `amount` is a fraction: 0.06 means ±6%. */
 function vary(value: number, amount: number): number {
   return value * (1 + (Math.random() * 2 - 1) * amount);
@@ -104,6 +140,13 @@ export class AudioManager {
   private bgFilter: BiquadFilterNode | null = null;
   /** The second layer's own level, breathing under `getBeatPulse`. */
   private bgPulse: GainNode | null = null;
+
+  /** The always-on layer. Four nodes, built once, retuned in place. */
+  private ambSrc: AudioBufferSourceNode | null = null;
+  private ambFilter: BiquadFilterNode | null = null;
+  private ambGain: GainNode | null = null;
+  private ambLfo: OscillatorNode | null = null;
+  private ambLfoGain: GainNode | null = null;
 
   private beatTime: number = 0;
   private beatRate: number = 0.55;
@@ -147,7 +190,12 @@ export class AudioManager {
         }
       }
     } else if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      // `resume` returns a promise and it can reject: a browser that has not
+      // seen a gesture yet will refuse, and an offline context — which the
+      // meter renders through — is *born* suspended and cannot be resumed at
+      // all. Neither is worth an unhandled rejection in the console, and
+      // neither is worth stopping for.
+      this.ctx.resume().catch(() => {});
     }
   }
 
@@ -217,6 +265,88 @@ export class AudioManager {
     // enough to be a rhythm — a rhythm is a promise the rest of the game does
     // not keep.
     this.beatRate = 0.55 + p * 1.15;
+  }
+
+  /**
+   * Starts the always-on layer, or retunes the one already running.
+   *
+   * One looping read of the shared noise buffer through a filter that is
+   * itself being moved by a very slow oscillator. That sway is the whole
+   * illusion: a fixed filter on noise is a hiss, and a moving one is weather.
+   * Nothing here is sampled and nothing here is scheduled — it runs until the
+   * run ends.
+   *
+   * `intensity` is the sector's own weather, 0 to about 1.5. It scales a base
+   * that is already almost inaudible on purpose.
+   */
+  public setAmbience(id: AmbienceId, intensity: number = 1): void {
+    this.initCtx();
+    if (!this.ctx || !this.masterGain) return;
+
+    const buf = this.getNoise();
+    if (!buf) return;
+
+    const preset = AMBIENCES[id];
+    const now = this.ctx.currentTime;
+
+    if (!this.ambSrc) {
+      this.ambSrc = this.ctx.createBufferSource();
+      this.ambSrc.buffer = buf;
+      this.ambSrc.loop = true;
+
+      this.ambFilter = this.ctx.createBiquadFilter();
+      this.ambFilter.type = 'bandpass';
+
+      this.ambGain = this.ctx.createGain();
+      this.ambGain.gain.setValueAtTime(0, now);
+
+      // The sway, as an oscillator on the filter's own frequency. Two nodes
+      // and no per-frame work — the alternative is a number this class would
+      // have to be told to update sixty times a second forever.
+      this.ambLfo = this.ctx.createOscillator();
+      this.ambLfo.type = 'sine';
+      this.ambLfoGain = this.ctx.createGain();
+      this.ambLfo.connect(this.ambLfoGain);
+      this.ambLfoGain.connect(this.ambFilter.frequency);
+
+      this.ambSrc.connect(this.ambFilter);
+      this.ambFilter.connect(this.ambGain);
+      this.ambGain.connect(this.masterGain);
+
+      this.ambSrc.start(now, Math.random() * buf.duration);
+      this.ambLfo.start();
+    }
+
+    if (!this.ambFilter || !this.ambGain || !this.ambLfo || !this.ambLfoGain) return;
+
+    // Everything crosses over a second and a half. A room change that snaps is
+    // a room change the player hears as a bug.
+    const t = now + 1.5;
+    this.ambFilter.Q.value = preset.q;
+    this.ambFilter.frequency.exponentialRampToValueAtTime(preset.freq, t);
+    this.ambLfoGain.gain.linearRampToValueAtTime(preset.sway, t);
+    this.ambLfo.frequency.linearRampToValueAtTime(preset.rate, t);
+    this.ambGain.gain.linearRampToValueAtTime(
+      AMBIENCE_BASE * preset.level * Math.max(0, intensity),
+      t
+    );
+  }
+
+  /** Fades the always-on layer out and lets go of it. */
+  public stopAmbience(): void {
+    if (!this.ctx || !this.ambGain) return;
+    this.ambGain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.8);
+    try {
+      this.ambSrc?.stop(this.ctx.currentTime + 1.0);
+      this.ambLfo?.stop(this.ctx.currentTime + 1.0);
+    } catch {
+      // Already stopped.
+    }
+    this.ambSrc = null;
+    this.ambFilter = null;
+    this.ambGain = null;
+    this.ambLfo = null;
+    this.ambLfoGain = null;
   }
 
   /**
@@ -522,7 +652,7 @@ export class AudioManager {
 
     // A delay of zero stays zero however it is jittered, which is what keeps
     // the shot itself on the trigger and moves only the layers behind it.
-    const t0 = this.ctx.currentTime + vary(opts.delay ?? 0, VARY_DELAY);
+    const t0 = this.ctx.currentTime + SCHEDULE_LEAD + vary(opts.delay ?? 0, VARY_DELAY);
 
     // One factor for both ends of the sweep: the filter is meant to travel the
     // same shape every time, just not from quite the same place. Two
@@ -568,23 +698,37 @@ export class AudioManager {
     const { pan, gain: reach } = this.place(at);
     if (reach < AUDIBLE_FLOOR) return;
 
-    const t0 = this.ctx.currentTime + vary(delay, VARY_DELAY);
+    const t0 = this.ctx.currentTime + SCHEDULE_LEAD + vary(delay, VARY_DELAY);
     const freqShift = vary(1, VARY_FREQ);
     const dur = vary(duration, VARY_TIME);
+    const hz = freq * freqShift;
 
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq * freqShift, t0);
+    osc.frequency.setValueAtTime(hz, t0);
     osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq * freqShift), t0 + dur);
 
+    // The thump starts early and silent, so that by the time the envelope
+    // opens the sine is at a random point in its own cycle.
+    //
+    // This is what phase 1 missed, and the measurement is unambiguous about
+    // it. Bursts of noise decorrelate shot to shot at 0.08; anything with one
+    // of these underneath sat at 0.65, because an oscillator always starts at
+    // phase zero and six per cent of frequency does not change that. The
+    // loudest part of a gunshot was the part that was identical every time.
+    //
+    // Capped at the scheduling lead: the lowest thumps in the game are longer
+    // than one cycle of 20ms and would have to start before now.
+    const phase = Math.random() * Math.min(1 / Math.max(1, hz), SCHEDULE_LEAD);
+    gain.gain.setValueAtTime(0, t0 - phase);
     gain.gain.setValueAtTime(vary(volume, VARY_GAIN) * reach, t0);
     gain.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
 
     osc.connect(gain);
     this.toOutput(gain, at ? pan : null, wet);
-    osc.start(t0);
+    osc.start(t0 - phase);
     osc.stop(t0 + dur + 0.02);
   }
 

@@ -41,6 +41,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 16 | **Üç küçük iş.** Gürültü kuralı genellendi (patlama 18, Burster 9, fişek 30); Çığlıkçı minimap'te içi boş kare oldu; kedinin kartı Clinger'ı alamadığını söylüyor | `1ac455f` | Üçü de "küçük ve bağımsız" listesinden. Gürültünün ikinci yarısı (sıra bütçesini açması) bilerek yapılmadı |
 | 17 | **`bug.md` #8 — 30 fps altı ağır çekim.** `planSteps()`: kare zamanı `maxDelta`'yı aşmayan eşit adımlara bölünüyor, `update()` o kadar kez çağrılıyor, `render()` bir kez. `MAX_SUBSTEPS` 3 | `6983f60` | 20 fps'te hız %66 → **%100**; 30 fps ve üstünde adım sayısı 1, yani sağlıklı makine hiçbir şey ödemiyor. **Bug listesi ilk kez boş** |
 | 18 | **Ses Faz 2, 3, 5 ve Faz 4'ün üçte ikisi.** Prosedürel oda (üç mekân, kuru/ıslak yolu); panning + mesafe zayıflaması; zombi vokalleri, dört ses tavanı, ölüm sesi; ayak sesi, spawn ve slam telegraph'ı; baskıya bağlı yatak | `7e2c658` | **Ses planının beş fazı da yazıldı.** Hiçbiri dinlenmedi — her fazın altında ölçüm var, hiçbirinin altında kulak yok |
+| 19 | **Ölçü aleti, ve bulduğu iki şey.** `AudioMeter.ts` her sesi offline render edip ölçüyor (seviye / tekrar / konum / oda), `?audio=test` → MEASURE. Artı sığınak ve hava ambiyansı (Faz 4 tamam) | `TBD` | **Faz 1 doğrulandı** — spektrum ve zarf atıştan atışa %13-24 oynuyor. İki bug: `thump()` her seferinde aynı fazdan başlıyordu, ve `ctx.resume()`'un promise'i hiç yakalanmıyordu |
 
 ---
 
@@ -122,12 +123,21 @@ Bilinen pürüzler:
 | Gürültünün sıra bütçesini açması | önce yeni gürültü kaynaklarının oynanması |
 | Ses Faz 6 (gerçek foley + beste) | MVP dışı, ve **karar** — 1–5 dinlenmeden verilemez |
 
-**Bu bir uyarıyla birlikte gelsin:** planın kendi yöntemi faz başına 2-3
-dinleme turu diyordu, ve beş faz üst üste dinlenmeden yazıldı. Yani şu an
-ortada beş katman var ve hangisinin diğerinin üstünü örttüğü bilinmiyor. Her
-fazın altında ne ölçüldüğü yazılı — ölçülen şey **aritmetik**, ses değil.
-İlk dinleme turunda bir şey yanlış geliyorsa, önce hangi katmanın olduğunu
-sormak gerekiyor.
+**Uyarı, ve uyarının yarısının kalkması.** Planın kendi yöntemi faz başına
+2-3 dinleme turu diyordu ve beş faz üst üste dinlenmeden yazıldı. Bunun
+üstüne bir **ölçü aleti** kondu (19 numara): `?audio=test` → MEASURE her sesi
+offline render edip ölçüyor. Artık "aritmetik doğru" demiyoruz, **sesin
+kendisi** ölçülüyor — sadece beğenilip beğenilmediği ölçülmüyor.
+
+Nesnel yarısı kapandı ve bir şey de yakaladı: dalga biçimi korelasyonuyla
+bakıldığında Faz 1 çalışmıyor gibi göründü (0.72). Metrik yanlıştı — rastgele
+fazlı iki sinüsün |korelasyon| beklentisi zaten 2/π ≈ 0.64, ve kulak fazı
+duymuyor. Doğru soru "aynı spektrum, aynı zarf mı" ve cevap **%13–24 oynuyor**,
+yani Faz 1 çalışıyor. *Yanlış ölçüm yine de gerçek bir bug buldu:* `thump()`
+her seferinde faz sıfırdan başlıyordu.
+
+**Kalan yarısı hâlâ kulakta.** Ölçüm dengesizliği gösterir, hangisinin doğru
+olduğunu söylemez — aşağıdaki liste bu yüzden duruyor.
 
 ### Ses için dinleme listesi *(tek oturum, `?audio=test`)*
 
@@ -144,6 +154,16 @@ zincirleme öldürmede fazla mı?
 
 **Faz 5 — yatak.** DRONE aç, BED'i 0'dan 100'e gezdir. Fark ediliyor mu
 (kötü), yoksa yalnız durduğunda mı (iyi)?
+
+**Ölçümün işaret ettiği, kararı sende olan iki denge.** MEASURE'ın Levels
+tablosunda duruyor:
+- **Harvester 20 dB sessiz** (tepe −27.5, Çifte −8.1). Kartına uygun ama
+  çatışmada kayboluyor mu?
+- **İsabet −35.6, ölüm −19.2.** Öldürme başına çok isabet düştüğü için
+  savunulabilir; zincirleme öldürmede fazla mı geliyor?
+
+İkisini de bilerek değiştirmedim. Ölçüm dengesizliği gösterdi, hangisinin
+doğru olduğunu söylemedi.
 
 ### AI planı bitti — sıra oynamakta
 Beş fazın beşi de yapıldı. **Ama son sekiz iş masa başında ayarlandı ve

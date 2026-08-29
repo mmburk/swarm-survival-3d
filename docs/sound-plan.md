@@ -334,11 +334,25 @@ hızı ne olursa olsun ayağın üstünde. Ses bilerek neredeyse hiç
 **Boss slam telegraph'ı.** 0.95 saniyelik hazırlık `playSlamWindup(at)` aldı.
 Yerdeki halka yalnızca o an oraya bakana bir şey söylüyordu.
 
-**Yapılmadı:** sığınak ambiyansı (soba, köpek, uzak damla) ve hava yatağı.
-İkisi de "sürekli çalan katman" ve sürekli çalan bir katmanın doğru seviyesi
-tanım gereği kulak kararı; üstelik ikisi de Faz 2'nin odasıyla etkileşiyor.
-Dinlenmemiş bir odanın üstüne sürekli bir yatak koymak, iki bilinmeyeni
-birbirine bağlamak olurdu.
+**Sığınak ambiyansı ve hava.** Önce ertelenmişti — "sürekli çalan katmanın
+doğru seviyesi kulak kararı" diye. Ölçü aleti (§7.5) o gerekçeyi ortadan
+kaldırdı: seviye artık ölçülebiliyor.
+
+Tek mekanizma, üç ayar: gürültü tamponundan sonsuz döngü → bandpass → gain,
+filtrenin frekansını çok yavaş bir osilatör süpürüyor. Sabit filtreli gürültü
+tıslamadır; **oynayan** filtreli gürültü havadır. Dört node, sıfır kare
+başına iş.
+
+| | STREET | UNDERPASS | SHELTER |
+|---|---|---|---|
+| kesim | 620 Hz | 300 Hz | 150 Hz |
+| süpürme | ±260 Hz | ±90 Hz | ±40 Hz |
+| hız | 0.09 Hz | 0.05 Hz | 0.13 Hz |
+
+Sokakta şiddet sektörle artıyor (`0.7 + sektör × 0.11`, tavan 1.5). Ölçülen
+seviye: sığınak −59.4 dBFS, sokak sektör 1 −48.7, sektör 5 −44.8 — bir silah
+sesinin (−30 RMS) **15 ile 29 dB altında.** Koşu bitince susuyor; üstünde
+rüzgâr olan bir debrief ekranı oyunun nerede olduğunu unutmuş demektir.
 
 ---
 
@@ -407,6 +421,77 @@ prosedürel hat projenin ayırt edici özelliği olarak kalır.
 
 ---
 
+## 7.5 ÖLÇÜ ALETİ — `?audio=test` → MEASURE
+
+Beş faz da kulak olmadan yazıldı. Ortaya çıkan boşluğu kapatan şey bu:
+`src/ui/AudioMeter.ts` her sesi **offline render edip ölçüyor**
+(`OfflineAudioContext`, gerçek zamandan hızlı, kimseye ihtiyacı yok).
+`AudioManager` kendi context'ini kendi kuruyor — meter ona sahte bir
+`window.AudioContext` veriyor, o yüzden test için sınıfta tek satır
+açılmadı.
+
+Dört tablo, dört soru:
+
+| Tablo | Cevapladığı soru |
+|---|---|
+| **Levels** | Öldürme, onu yapan atıştan yüksek mi? Arayüz sokağın üstüne mi bağırıyor? |
+| **Repetition** | Aynı ses iki kez çalınca aynı mı? |
+| **Placement** | Sol gerçekten sol mu, merkez gerçekten merkez mi? |
+| **Rooms** | Bodrum gerçekten kapanıyor mu, yoksa oda dekor mu? |
+
+### Bir yanlış ölçüm, ve düzeltmesi
+
+İlk denemede dalga biçimleri korele edildi ve **Faz 1 kalmış gibi göründü**:
+ardışık Ranger atışlarında |korelasyon| ortalama 0.72. Alarm yanlıştı.
+
+Sebep: metrik. Rastgele fazlı iki sinüsün |korelasyon| beklentisi
+`2/π ≈ 0.64`'tür — ne kadar farklı duyulurlarsa duyulsunlar. **Kulak fazı
+duymuyor.** Yani ölçülen şey tekrar değil, metriğin kendi tabanıydı.
+
+Doğru soru: *aynı spektrum, aynı zarf mı?* Ölçüldüğünde çıkan:
+
+| Ses | Spektrum | Zarf |
+|---|---|---|
+| Ranger | %16.7 | %17.0 |
+| Stutter | %16.9 | %12.9 |
+| Çifte | %13.8 | %14.4 |
+| Harvester | %23.1 | %18.2 |
+| Ölüm | %23.9 | %38.8 |
+| Shambler vokali | %13.7 | %31.9 |
+
+%5'in altı örneğin yeniden çalınmasıdır; onlu sayılar bir silahın iki kez
+ateşlenmesidir. **Faz 1 çalışıyor.**
+
+### Yanlış ölçümün yine de bulduğu şey
+
+Katman katman bakıldığında bir yapı farkı çıktı: yalnız gürültü olan sesler
+0.08'de dekoreleyken (`nail`, `swing`), altında `thump()` olan her şey
+0.65'teydi. Sebep gerçek — **osilatör her seferinde faz sıfırdan
+başlıyordu.** Frekansın %6'sı bunu değiştirmiyor.
+
+Düzeltildi: thump artık kendi periyodunun rastgele bir noktasından, sessizken
+başlıyor; zarf yine `t0`'da açılıyor. Bunun için `SCHEDULE_LEAD` (20 ms)
+eklendi — WebAudio geçmişteki başlangıcı "şimdi"ye kırpıyor ve kırpılan bir
+faz numarası faz numarası değildir. 20 ms tetikten kopukluk eşiğinin altında
+ve **her katmana aynı** uygulanıyor, yani transient dağılmıyor (ölçüldü:
+tepe 23 ms'de).
+
+Algısal etkisi küçük. Değeri, üst üste binen iki thump'ın artık birbirini
+comb-filter etmemesi — ve dosyada "aynı ses" olan tek şeyin kalmaması.
+
+### Ölçülen ama düzeltilmeyen iki denge
+
+- **Harvester diğerlerinden 20 dB sessiz** (tepe −27.5, Çifte −8.1). Kartına
+  uygun (gürültüsü 0.1) ama çatışmada duyulmama riski var.
+- **İsabet −35.6, ölüm −19.2** — arada 16 dB. Öldürme başına çok isabet
+  düştüğü için savunulabilir, ama zincirleme öldürmede fazla gelirse
+  bakılacak yer burası.
+
+İkisi de **bilerek** değiştirilmedi: ölçüm dengesizliği gösterir, hangisinin
+doğru olduğunu söylemez.
+
+---
+
 ## 8. ÇALIŞMA YÖNTEMİ — DÜRÜST KISIM
 
 **Kodu ben yazarım, sonucu duyamam.** DSP'yi kurabilirim, zarfı ve filtreyi
@@ -449,7 +534,7 @@ Faz 0.3'teki test sayfası bu döngünün her turunu kısaltır; o yüzden en ba
 | **1** | Varyasyon (`bug.md` #11 dahil) | yarım gün | evet, 1-2 tur | **yazıldı, dinlenmedi** |
 | **2** | Mekân / reverb | 1 gün | evet, 2-3 tur | **yazıldı, dinlenmedi** |
 | **3** | Konum + zombi vokalleri | 2 gün | evet, en çok burada | **yazıldı, dinlenmedi** |
-| **4** | Eksik olaylar | 1 gün | evet, 1 tur | **3/5 yapıldı** |
+| **4** | Eksik olaylar | 1 gün | evet, 1 tur | **yapıldı** |
 | **5** | Adaptif yatak | 1 gün | evet, 2 tur | **yazıldı, dinlenmedi** |
 | **6** | Gerçek foley + beste | — | MVP dışı, karar bekliyor | — |
 

@@ -624,6 +624,10 @@ export class Engine {
       // does the mix — the shelter and the street were coming out of the
       // speakers as the same place.
       this.audio.setSpace('BASEMENT');
+      // The stove, and a room with boards on it. Same four nodes, wound right
+      // down — what makes the shelter feel like the shelter is that the street
+      // stops, and something quieter does not.
+      this.audio.setAmbience('SHELTER', 1);
       this.cameraJuice.snapTo(this.player.position);
 
       this.hud.setShelterMode(true);
@@ -887,7 +891,16 @@ export class Engine {
   private placePlayerAtSectorStart(): void {
     this.player.resetPositionAndVelocity(new THREE.Vector3(0, 0, 16));
     CAMERA_RIG.useField();
-    this.audio.setSpace(this.sectors.isTraderSector ? 'UNDERPASS' : 'STREET');
+    const underpass = this.sectors.isTraderSector;
+    this.audio.setSpace(underpass ? 'UNDERPASS' : 'STREET');
+
+    // Weather picks up as the night goes on. Not a curve anybody will name —
+    // it is under the mix by design — but it is the difference between five
+    // sectors and the same street five times, and it costs four nodes.
+    this.audio.setAmbience(
+      underpass ? 'UNDERPASS' : 'STREET',
+      Math.min(1.5, 0.7 + this.sectors.current * 0.11)
+    );
     this.cameraJuice.snapTo(this.player.position);
 
     // Whatever came out of the pens is set down beside you at the mouth of
@@ -1200,6 +1213,9 @@ export class Engine {
     this.uiPaused = true;
 
     this.audio.stopBackgroundMusic();
+    // The street stops when the run does. A debrief with the wind still on it
+    // reads as the game having forgotten where it is.
+    this.audio.stopAmbience();
     this.sectors.clearFade();
     this.hud.setShelterMode(true);
     this.hud.hidePrompt();

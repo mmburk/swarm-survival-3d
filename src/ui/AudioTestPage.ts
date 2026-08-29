@@ -1,4 +1,5 @@
 import { AudioManager, type SpaceId } from '../core/AudioManager';
+import { runMeter } from './AudioMeter';
 import { injectTheme } from '../theme/Palette';
 
 /**
@@ -159,6 +160,25 @@ export function mountAudioTestPage(root: HTMLElement): void {
       .at-name { color: var(--bone); font-size: 13px; }
       .at-note { color: var(--steel); font-size: 11px; margin-top: 2px; }
       .at-bar { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+      .at-table { margin-top: 18px; }
+      .at-table h3 {
+        font-family: var(--stencil);
+        font-size: 15px;
+        letter-spacing: 1.6px;
+        text-transform: uppercase;
+        color: var(--amber);
+        margin: 0 0 4px;
+      }
+      .at-table table { border-collapse: collapse; margin-top: 8px; }
+      .at-table th, .at-table td {
+        padding: 3px 16px 3px 0;
+        text-align: right;
+        font-size: 12px;
+        color: var(--bone);
+        font-variant-numeric: tabular-nums;
+      }
+      .at-table th { color: var(--steel); font-weight: normal; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; }
+      .at-table td:first-child, .at-table th:first-child { text-align: left; color: var(--ash); }
       .at-slider {
         -webkit-appearance: none;
         appearance: none;
@@ -216,6 +236,15 @@ export function mountAudioTestPage(root: HTMLElement): void {
           all on its own.
         </div>
       </div>
+      <div class="at-bar">
+        <button id="at-meter" class="ll-btn-ghost">MEASURE</button>
+        <div class="at-note" style="max-width:520px;">
+          Renders every sound offline and measures it — levels, repetition,
+          placement, rooms. Answers the half of a listening pass that is
+          arithmetic, in about a second, and leaves the half that is taste.
+        </div>
+      </div>
+      <div id="at-meter-out"></div>
       <div class="at-grid">${cards}</div>
     </div>
   `;
@@ -284,6 +313,30 @@ export function mountAudioTestPage(root: HTMLElement): void {
     if (bgOn) audio.startBackgroundMusic();
     else audio.stopBackgroundMusic();
     bg.textContent = `DRONE: ${bgOn ? 'ON' : 'OFF'}`;
+  });
+
+  const meterBtn = root.querySelector<HTMLButtonElement>('#at-meter')!;
+  const meterOut = root.querySelector<HTMLElement>('#at-meter-out')!;
+  meterBtn.addEventListener('click', async () => {
+    meterBtn.disabled = true;
+    meterOut.innerHTML = '<div class="at-note" style="margin-top:14px;">rendering…</div>';
+    try {
+      const tables = await runMeter((n, total) => {
+        meterOut.innerHTML = `<div class="at-note" style="margin-top:14px;">rendering ${n}/${total}…</div>`;
+      });
+      meterOut.innerHTML = tables.map((t) => `
+        <div class="at-table">
+          <h3>${t.title}</h3>
+          <div class="at-note" style="max-width:640px;">${t.note}</div>
+          <table>
+            <tr>${t.head.map((h) => `<th>${h}</th>`).join('')}</tr>
+            ${t.rows.map((r) => `<tr><td>${r.label}</td>${r.cols.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}
+          </table>
+        </div>
+      `).join('');
+    } finally {
+      meterBtn.disabled = false;
+    }
   });
 
   // The breath is the one part of the bed that moves per frame rather than on
