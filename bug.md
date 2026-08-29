@@ -469,43 +469,77 @@ desibelle değil.
 
 ---
 
-## Açık olanlar
+### 21. Çığlık, kaçan oyuncuyu daha **güvenli** yapıyordu
 
-### 21. Çığlık, kaçan oyuncuyu daha **güvenli** yapıyor
-
-**Yer:** `src/core/Engine.ts` — `updateTurns()`, ve `Enemy.updateAI`'ın halka
-davranışı
-**Durum:** açık. Yapısal; ayarla kapanmıyor.
+**Yer:** `src/entities/Enemy.ts` — `updateAI()`, yeni `observePlayer()`
+**Commit:** `TBD`
 
 Çığlıkçının kartı ön safı 4'ten 10'a çıkardığını söylüyor ve kod bunu doğru
-yapıyor. Ama dövüş harness'ı hareket eden bir oyuncuya karşı ölçtüğünde:
+yapıyordu. Ama hareket eden bir oyuncuya karşı ölçüldüğünde şerit vermenin
+hiçbir işe yaramadığı, hatta ters çalıştığı çıktı.
 
-| Deney | Kaçan oyuncuda hasar |
-|---|---|
-| Gürültüyle +2 şerit | %1–4 |
-| Kalıcı açık +6 şerit (bitmeyen çığlık) | ~0, sektör 9'da **−%25** |
+**Kök neden: ölüler takip ediyordu, kesmiyordu.** `tempTarget.copy(playerPos)`
+— hiçbir öngörü yok. Saniyede 2.6 metre giden bir shambler'ın, 8.2 giden bir
+oyuncunun **bulunduğu yere** nişan alması, onu her seferinde **bulunduğu yere**
+götürür. Sonsuza kadar. Kendisinden hızlı bir şeye karşı saf takip
+seçilebilecek en kötü eğridir.
 
-Eksi işareti gürültü değil, **mekanizma.** Şeritler kimin *hücum edeceğine*
-karar veriyor. Devreye giren gövde halkayı bırakıp doğrudan geliyor ve
-hareketli bir hedefin **arkasına** diziliyor; halkada kalan gövde ise oyuncu
-daireyi tamamlarken **önüne** çıkıyor. Yani ön safı genişletmek, kaçan
-oyuncuyu gerçekten yaralayan şeyi (halkayı) boşaltıyor.
+Bunun sonucu şerit sistemine yansıyordu: şerit alan gövde halkayı bırakıp
+kovalamaya başlıyor ve hareketli hedefin **arkasına** diziliyor; halkada kalan
+gövde ise oyuncu daireyi tamamlarken **önüne** çıkıyor. Yani ön safı açmak,
+işi yapan şeyi (halkayı) boşaltıyordu.
 
-Aynı sebep, aynı ölçümün ikinci bulgusunu da açıklıyor: **Clinger ve Screamer
-kiting'i hiç cezalandırmıyor.** Kaçan oyuncuya karşı melee-only kadro ile tam
-kadro arasındaki fark ortalama sıfır (+17% / +86% / −20% / +15% / −3% / −13%),
-çünkü 34'lük tavan altında her uzman tip bir melee gövdenin yerini alıyor.
+**Düzeltme:** şeridi olan gövdeler artık köşeyi kesiyor. `observePlayer()`
+oyuncunun yönünü kare başına **bir kez** okuyup yumuşatıyor (34 gövde ayrı
+ayrı değil), ve şerit alan her gövde `min(1.1 sn, mesafe/hız)` kadar ileriye,
+yolun **%60'ı** kadar nişan alıyor.
 
-**Neden açık bırakıldı.** Düzeltmesi bir sabit değil: ya çığlığın kaçan
-oyuncuya karşı başka bir şey yapması (halkayı daraltmak, kesmek, öngörü) ya da
-kartın sözünün koşullu hâle getirilmesi gerekiyor. İkisi de tasarım kararı ve
-oynanmamış bir oyunda masadan verilecek karar değil.
+Tam çözüm (%100) telepatik durur ve juke'u oyundan siler. %60 "yolunu kesiyor"
+diye okunur — ki bir kalabalığın yaptığı, bir kovalamacanın yapmadığı şey
+budur. Sektör değişiminde oyuncu iki kare arasında haritanın öbür ucuna
+ışınlanıyor; okuma bu yüzden 12 m/s'de tavanlı ve `forgetPlayer()` her koşuda
+sıfırlıyor.
 
-**Bu arada yapılanlar:** kaçmaya karşı erişim kolu ölçülüp `STRIKE_LUNGE`
-6.0 → 8.5 yapıldı (kaçan +%6–23, duran +%1–2), ve "gürültü sıra bütçesini
-açsın" fikri ölçülüp reddedildi. İkisi de `docs/fikirler.md`'de.
+### Ölçüm — 30 tohum, 25 saniye, kaçan oyuncu
+
+Çığlığın (6 şerit, koşu boyunca açık) kaçan oyuncuya kazandırdığı:
+
+| Sektör | Öngörü **yokken** | Öngörü **varken** |
+|---|---|---|
+| 1 | **−16%** | **+23%** |
+| 2 | +1% | +6% |
+| 4 | +1% | +10% |
+| 6 | +8% | +14% |
+| 7 | 0% | +11% |
+| 9 | **−2%** | **+16%** |
+
+İşaret tutarlı şekilde döndü. Kartın sözü artık hareket eden oyuncuya karşı da
+doğru.
+
+Yan etkisi, ki istenen yöndeydi: kaçan oyuncunun aldığı hasar genel olarak
+%18–29 arttı (s9: 13.0 → 15.5 dps). **Duran oyuncunun sayıları birebir aynı**
+(18.1 / 39.6 / 88.4 / 110.5) — duran oyuncunun sürüklenmesi sıfır olduğu için
+öngörü ona hiçbir şey eklemiyor. Kaçmak hâlâ durmaktan %86 daha güvenli, yani
+doğru oyun olmaya devam ediyor; sadece bedava değil.
+
+### Denenip geri alınan: halkayı sıkıştırmak
+
+İlk hipotez "kaçan oyuncuyu yaralayan halkaysa, çığlık halkayı kapatsın"dı —
+`SCREAM_SQUEEZE`, bekleyen gövdelerin halkasını 0.55 ile çarpan bir sabit.
+Yazıldı, ölçüldü, **geri alındı**: tek başına +%3, ve şeritlerle birlikte
+şeritlerin tek başına verdiğinden daha iyi değil. Hissedilemeyen bir mekanizma
+kalmıyor.
+
+> **Ve bir düzeltme.** Bu bug ilk yazıldığında "sektör 9'da **−%25**" diyordu.
+> O sayı 5 tohumluk bir koşudan geliyordu ve **gürültüydü**; 30 tohumla aynı
+> ölçüm −%2 veriyor. Kalabalık dinamiği kaotik: tek hücre tohumdan tohuma %20
+> oynuyor. Bulgunun yönü doğruydu (şeritler işe yaramıyordu), büyüklüğü değil.
+> Harness'a `RUNS` değişkeni bu yüzden eklendi — %15'in altındaki hiçbir şeye
+> 5 tohumla inanmayın.
 
 ---
+
+## Açık olanlar
 
 ### 22. Mouser dövüşmediği hâlde sokağı yarı yarıya yıpranmış bitiriyor
 
@@ -513,9 +547,22 @@ açsın" fikri ölçülüp reddedildi. İkisi de `docs/fikirler.md`'de.
 **Durum:** açık. Bilerek mi değil mi, oynanmadan bilinmiyor.
 
 19 numaranın yan bulgusu. Kedi hiçbir şeye vurmuyor ve `winded` ondan sonra
-hiçbir şeyi değiştirmiyor (zaten çekiliyor), ama sektör 6–9'da sokağı %16–19
-kondisyonla bitiriyor. Sebep tasması: 3 metre, yani oyuncu kalabalığın içinde
-durduğunda o da orada.
+hiçbir şeyi değiştirmiyor (zaten çekiliyor), ama sokağı yıpranmış bitiriyor.
+Sebep tasması: 3 metre, yani oyuncu kalabalığın içinde durduğunda o da orada.
+
+**21 numaranın düzeltmesi bunu kötüleştirdi**, ve bu dürüstçe yazılmalı: ölüler
+köşe kesmeye başlayınca oyuncuyla birlikte hareket eden grubu daha iyi
+yakalıyorlar, ve kedi o grubun içinde.
+
+| | s2 | s6 | s9 |
+|---|---|---|---|
+| kondisyon kalan, öncesi | 57% | 25% | 19% |
+| kondisyon kalan, sonrası | 40% | **11%** | **11%** |
+| yere yığılma (s6/s9) | 0.2 / 0.3 | → | 0.4 / 0.4 |
+
+Rook'ta karşılığı yok (19→21%, 21→24%) çünkü o zaten içeri giriyor ve `winded`
+onu çekiyor; kedinin çekilecek bir yeri yok, çünkü tasması onu oyuncunun
+yanında tutuyor.
 
 Kartındaki iş — "seni dört saniye kimse vurmazsa saniyede 2 kondisyon geri
 verir" — yerde yatarken yapılamıyor. Yani destek hayvanı, tam ihtiyaç duyulan

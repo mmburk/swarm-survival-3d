@@ -187,6 +187,71 @@ const SWINGS: ReadonlySet<string> = new Set([
   EnemyType.SHAMBLER, EnemyType.SPRINTER, EnemyType.BUTCHER
 ]);
 
+/**
+ * Which way the player has been going, and how fast. `bug.md` 21.
+ *
+ * One fact about the world, shared by every body, updated once a frame by the
+ * street (`Engine.updateTurns`) rather than thirty-four times by the bodies.
+ *
+ * It exists because pure pursuit is the worst curve there is against something
+ * faster than you. A shambler at 2.6 metres a second aiming at where a player
+ * doing 8.2 *is* will arrive where they *were*, every time, for ever; the
+ * measurement bore that out, and it was why nothing the turn system did could
+ * touch a player who kept walking. What a crowd actually does to somebody
+ * circling it is cut across the circle.
+ *
+ * Smoothed hard on purpose. What a corpse can read is the way you have been
+ * going, not the way you turned this frame — and a crowd that re-aims
+ * instantly at every twitch is a crowd that cannot be juked, which would take
+ * the one answer the player has away from them.
+ */
+const playerDrift = new THREE.Vector3();
+const lastSeenPlayer = new THREE.Vector3();
+const tempDrift = new THREE.Vector3();
+let seenPlayer = false;
+
+/** Faster than any player; anything above this is a teleport, not a run. */
+const DRIFT_CEILING = 12;
+const DRIFT_SMOOTHING = 2.2;
+
+export function observePlayer(pos: THREE.Vector3, delta: number): void {
+  if (!seenPlayer || delta <= 0) {
+    lastSeenPlayer.copy(pos);
+    seenPlayer = true;
+    return;
+  }
+
+  tempDrift.subVectors(pos, lastSeenPlayer).setY(0).divideScalar(delta);
+  lastSeenPlayer.copy(pos);
+
+  // A sector change moves the player across the map between two frames. Read
+  // literally that is a hundred metres a second and the whole street would
+  // sprint at open ground.
+  if (tempDrift.lengthSq() > DRIFT_CEILING * DRIFT_CEILING) {
+    playerDrift.set(0, 0, 0);
+    return;
+  }
+
+  playerDrift.lerp(tempDrift, Math.min(1, delta * DRIFT_SMOOTHING));
+}
+
+/** Forgets the player between runs, so a new street does not inherit a sprint. */
+export function forgetPlayer(): void {
+  seenPlayer = false;
+  playerDrift.set(0, 0, 0);
+}
+
+/**
+ * How far ahead a body aims, and how much of the way it commits.
+ *
+ * A full solution would have them meet you exactly, which reads as psychic and
+ * removes juking from the game. Six tenths of the way, over at most a second
+ * of travel, reads as *heading you off* — which is the thing a crowd does that
+ * a chase does not.
+ */
+const LEAD_SECONDS = 1.1;
+const LEAD_SHARE = 0.6;
+
 /** Added to a body's own radius to get the distance it will swing from. */
 const SWING_REACH = 1.45;
 /** How long the arm is actually travelling. Short: this is the committed part. */
@@ -803,6 +868,15 @@ export class Enemy implements IPoolable {
     const toPlayerX = playerPos.x - this.position.x;
     const toPlayerZ = playerPos.z - this.position.z;
     const distance = Math.hypot(toPlayerX, toPlayerZ) || 0.0001;
+
+    // Anything with a lane cuts the corner instead of following the player
+    // around it. Held to bodies that are actually coming — a body waiting its
+    // turn is walking a ring and has nothing to intercept.
+    if ((this.engaged || this.pressAttack) &&
+        this.type !== EnemyType.BLOATER && this.type !== EnemyType.SCREAMER) {
+      const closeTime = Math.min(LEAD_SECONDS, distance / Math.max(2, this.moveSpeed));
+      tempTarget.addScaledVector(playerDrift, closeTime * LEAD_SHARE);
+    }
 
     // Screamers back away to their own working distance and stay there. They
     // never take an attack lane — see `closingIn` below.

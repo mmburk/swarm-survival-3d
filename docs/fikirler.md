@@ -44,10 +44,11 @@ Uzun araştırmalar kendi dosyalarında:
 | 19 | **Ölçü aleti, ve bulduğu iki şey.** `AudioMeter.ts` her sesi offline render edip ölçüyor (seviye / tekrar / konum / oda), `?audio=test` → MEASURE. Artı sığınak ve hava ambiyansı (Faz 4 tamam) | `060c713` | **Faz 1 doğrulandı** — spektrum ve zarf atıştan atışa %13-24 oynuyor. İki bug: `thump()` her seferinde aynı fazdan başlıyordu, ve `ctx.resume()`'un promise'i hiç yakalanmıyordu |
 | 20 | **Sahne ölçümü, ve Harvester'ın düzeltilmesi.** Metre artık gerçek bir çatışma parçasını tek seferde render ediyor (hava + dört vokal + ateş) ve katman çıkararak ölçüyor. Harvester sokağın üstüne %0.2 dB çıkıyordu — Q açıldı, seviye kalktı, altına vuruş kondu | `5aff88d` | **0.2 → 3.4 dB**, Stutter'la aynı yerde. Ölüm/isabet dengesine dokunulmadı: ölçüldü, ölüm karışıma 1 dB ekliyor |
 | 21 | **Dövüş harness'ı.** `npm run combat` — sokağı oyunun kendi kurallarıyla koşturuyor (`Enemy.updateAI`, `SectorManager.plan`, `Engine.updateTurns`, yeni ayrılan `Engine.pressBodies`). Oyuncu bir kural: duruyor ya da daire çiziyor | `e6e3657` | Hiçbir kural kopyalanmadı, hepsi prototip üzerinden çağrılıyor. Kopyalanan kural sessizce yanlışa döner |
-| 22 | **`STRIKE_LUNGE` 6.0 → 8.5.** Kaçan oyuncuya ölçülen tek temiz kol | `23a2cae` | 14 tohumda: kaçan +%6–23, duran +%1–2. Şerit bütçesi hiçbir şey yapmıyor, `SWING_REACH` ise kaotik |
+| 22 | **`STRIKE_LUNGE` 6.0 → 8.5.** Kaçan oyuncuya ölçülen ilk temiz kol | `23a2cae` | 14 tohumda: kaçan +%6–23, duran +%1–2. `SWING_REACH` ise kaotik — duranı değere göre her iki yöne %30 savuruyor |
 | 23 | **Winded — hayvan nefesi kesilince çekiliyor.** %20'de bırakıyor, %50'de dönüyor (histerezis); geri çekilme oyuncuya değil **kalabalıktan uzağa** | `23a2cae` | Rook'un yere yığılması yarıya indi (0.4 → 0.2). Grit'e dokunulmadı: sorun "az dayanıyor" değil, **durmayı bilmiyor** idi |
 | 24 | **Gürültü uyarısı.** Sayaç hâlâ gizli; %75'te bir satır: "The street is listening." %40'a inince yeniden kurulur | `23a2cae` | Sayacı besleyen üç yeni şeyin (patlama, Burster, fişek) etiketi yoktu |
 | 25 | **Okunabilirliğin ölçülebilen yarısı.** Tint'ler arası algısal mesafe (CIE76) ve silüet farkının piksel karşılığı | `57aca65` | İşaretli vs Burster **ΔE 84** — karıştırılamaz. Çığlıkçının çenesi 1080p'de 10 px, diğerleri 4 px. Ve projeksiyon ortografik: **mesafe boyutu hiç değiştirmiyor**, zorluk kalabalıktan geliyor |
+| 26 | **Ölüler köşeyi kesiyor** (`bug.md` 21). `observePlayer()` oyuncunun yönünü kare başına bir kez okuyor; şeridi olan gövde `min(1.1 sn, mesafe/hız)` kadar ileriye, yolun %60'ına nişan alıyor | `TBD` | Çığlığın kaçan oyuncuya değeri **−%16…+%8 → +%6…+%23**. Kaçan oyuncunun hasarı genelinde +%18–29; **duran oyuncu birebir aynı**. %100 öngörü telepatik durur ve juke'u siler |
 
 ---
 
@@ -193,8 +194,8 @@ Oynarken bakılacak sıra (en çok şüphe duyulandan aza):
 1. ~~**Faz 1'in dengesi**~~ ve ~~**kaçan oyuncu**~~ — **ölçüldü** (21 numara).
    Aşağıdaki başlıkta duruyor.
 2. ~~**Clinger ve Screamer kiting'i telafi ediyor mu?**~~ **Hayır, ölçüldü.**
-   Ve nedeni fazın tasarımını ilgilendiriyor: şerit bütçesi kaçan oyuncuya
-   karşı bağlayıcı kısıt **değil**.
+   Nedeni fazın tasarımını ilgilendiriyordu ve düzeltildi: ölüler takip
+   ediyordu, kesmiyordu. Bkz. 26 numara ve `bug.md` 21.
 3. **Okunabilirlik** — yarısı ölçüldü (25 numara), yarısı göz istiyor.
 
    **Ölçülen:** renk ayrımı sorun değil. İşaretlinin soğuk rengiyle Burster'ın
@@ -234,17 +235,28 @@ melee-only kadro ile tam kadro arasında fark: +17% / +86% / −20% / +15% /
 −3% / −13%. Ortalama sıfır. **Sebep 34'lük tavan:** Çığlıkçı 15 metrede
 duruyor, Kapan ara sıra tutuyor, ikisi de yerini bir melee gövdeden alıyor.
 
-**Ve asıl bulgu:** altı ekstra şerit (kalıcı bir çığlık) kaçan oyuncuda hasarı
-sektör 9'da **%25 düşürüyor.** Şeritler kimin *hücum edeceğine* karar veriyor,
-ve hücum etmek hareketli hedefe karşı başarısız olan şey. Devreye giren gövde
-halkadan çıkıp arkanda diziliyor; halkadaki gövde ise sen dönerken **önüne**
-geliyor. Yani ön safı açmak, seni gerçekten yaralayan şeyi dağıtıyor.
+**Ve asıl bulgu — ki sonradan kök nedeni çıktı ve düzeltildi:** şerit vermek
+kaçan oyuncuya hiçbir şey yapmıyordu, hatta ters çalışıyordu.
 
-Bunun üç sonucu var ve üçü de yukarıdaki maddeleri kapatıyor:
-- Clinger/Screamer'ın kiting'i cezalandırmaması bir ayar hatası değil, **şerit
-  sisteminin yapısı.**
-- Gürültünün şerit bütçesini açması fikri **reddedildi** (aşağıdaki tabloda).
-- Kaçmaya karşı doğru kol **erişim**, ve ölçülen tek temizi `STRIKE_LUNGE`.
+Sebep şerit sistemi değil, **hedefleme**ydi: ölüler takip ediyordu, kesmiyordu.
+`updateAI` oyuncunun *bulunduğu yere* nişan alıyordu ve saf takip, kendinden
+hızlı bir hedefe karşı seçilebilecek en kötü eğridir. Şerit alan gövde halkayı
+bırakıp kovalamaya geçiyor ve arkanda diziliyor; halkadaki gövde ise sen
+dönerken önüne çıkıyor — yani ön safı açmak seni gerçekten yaralayan şeyi
+dağıtıyordu.
+
+Düzeltildi (`bug.md` 21, 26 numara): şeridi olan gövdeler artık köşeyi kesiyor.
+Çığlığın kaçan oyuncuya kazandırdığı **−%16…+%8'den +%6…+%23'e** çıktı, işaret
+tutarlı şekilde döndü. Duran oyuncunun sayıları değişmedi.
+
+Geriye kalan ve **hâlâ doğru** olan sonuçlar:
+- **34'lük tavan uzmanlaşmış tipleri seyreltiyor.** Çığlıkçı ve Kapan sokakta
+  bir melee gövdenin yerini alıyor. Bu ölçüm düzeltmeden etkilenmedi.
+- **Kaçmaya karşı ikinci kol erişim**, ve ölçülen tek temizi `STRIKE_LUNGE`.
+- **Gürültünün şerit bütçesini açması** hâlâ reddedilmiş durumda — ama artık
+  farklı bir sebeple: mekanizma çalışıyor, sadece iki şeridin etkisi
+  ölçülemeyecek kadar küçüktü. Yeniden denenirse **daha büyük bir sayıyla**
+  denenmeli, ve şimdi ölçülebilir.
 
 ### Faz 2'nin dengesi *(oynayıp bakılacak)*
 İki ayar noktası: `Enemy.ts` içindeki halka çarpanı (`standoff * 0.42`,
@@ -367,7 +379,8 @@ Cevap madde başına tek satır yeter; ayarı ben yaparım.
 | **İşaretlileri yüzdeyle dağıtmak** | %20 × 34 = 7 elit, Hades'in tüm odasından fazla. Oran değil **tavan** |
 | **Nitelik başına ayrı renk** | Ekranda 34 gövde var, dördü aynı anda sahnede olabilir, karışır. Hepsi tek renk — "bunda bir tuhaflık var" der, tuhaflığı davranışından okunur |
 | **Bristle'ın "en uzak hedef" mantığını değiştirmek** | Hücum koşu mesafesi ister. bug.md 14'ün düzeltmesiydi, yerinde duruyor |
-| **Gürültünün sıra bütçesini açması** | Yazıldı, ölçüldü, geri alındı. Dolu sayaçta iki ekstra şerit kaçan oyuncuda hasarı %1–4 oynattı; kalıcı açık tutulan altı şerit ise **hiç** oynatmadı, sektör 9'da %25 *düşürdü*. Şeritler kimin hücum edeceğine karar veriyor ve hücum, hareketli hedefe karşı başarısız olan şey. Premisi çürük, mekanizma değil |
+| **Gürültünün sıra bütçesini açması** | Yazıldı, ölçüldü, geri alındı: dolu sayaçta iki ekstra şerit kaçan oyuncuda hasarı %1–4 oynattı, yani hissedilmez. **Gerekçesi sonradan değişti:** o sırada şeritlerin hiçbir işe yaramadığı sanılıyordu; 26 numaradan sonra yarıyor. Yani mekanizma sağlam, sayı küçüktü. Yeniden önerilirse iki şeritle değil, daha büyük bir sayıyla ve ölçerek |
+| **Çığlığın halkayı sıkıştırması** (`SCREAM_SQUEEZE` 0.55) | 21 numaranın ilk hipoteziydi. Yazıldı, ölçüldü, geri alındı: tek başına +%3, şeritlerle birlikte şeritlerin tek başına verdiğinden iyi değil. Gerçek sebep hedeflemeydi |
 | **Rook'un grit'ini yükseltmek** | Ölçüm sorunu doğruladı ama sebebi dayanıklılık değildi. Sayı yerine davranış: `winded` (23 numara) |
 
 ---
@@ -385,7 +398,11 @@ Cevap madde başına tek satır yeter; ayarı ben yaparım.
 - **Dövüş harness'ı var:** `npm run combat`. Yeni bir denge sayısına dokunmadan
   önce çalıştır, sonra tekrar çalıştır. Oyuncu ateş etmiyor (opsiyonel
   `killEvery` dışında), yani mutlak sayılar stres testi — **karşılaştırma**
-  için kullan. Kalabalık dinamiği kaotik: 5 tohum gürültülü, 14 tohum oturuyor.
+  için kullan.
+- **Kalabalık kaotik, ve bu bir kez yanılttı.** `bug.md` 21 ilk yazıldığında
+  "sektör 9'da −%25" diyordu; 5 tohumluk gürültüymüş, 30 tohumla −%2. Bulgunun
+  yönü doğruydu, büyüklüğü değil. `RUNS=30 npm run combat` vermeden **%15'in
+  altındaki hiçbir farka inanma.**
 - **Grid bir broad phase.** `query()` hücreleri bütün döndürür; "şu yarıçaptaki
   her şey" diyen her yer mesafeyi **kendisi ölçmek zorunda**. bug.md 2, 15, 16
   bu yüzden çıktı.

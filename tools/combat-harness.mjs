@@ -268,7 +268,16 @@ function run({ sector, seconds = 25, kiting, exclude = [], noise = 0, forceScrea
 const SECTORS = [1, 2, 4, 6, 7, 9];
 
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
-const repeat = (opts, n = 5) => {
+/**
+ * How many seeded runs go into one cell.
+ *
+ * Five is enough to see a big effect and not enough to trust a small one — the
+ * crowd is chaotic and single cells move by twenty per cent between seeds. Set
+ * RUNS=20 before believing anything under about 15%.
+ */
+const RUNS = Number(process.env.RUNS || 5);
+
+const repeat = (opts, n = RUNS) => {
   const rs = [];
   for (let i = 0; i < n; i++) rs.push(run({ ...opts, seed: 7 + i * 13 }));
   return {
@@ -334,16 +343,18 @@ for (const sector of SECTORS) {
 }
 
 console.log('');
-console.log('IS THE LANE BUDGET WHAT IS ACTUALLY STOPPING THEM?');
-console.log('Six extra lanes held open for the whole run — a permanent scream.');
-console.log('sector   normal    scream held open   change');
+console.log('WHAT A SCREAM IS WORTH TO A MOVING PLAYER  (bug.md 21)');
+console.log('Six lanes held open for the whole run. Before the dead learned to');
+console.log('cut the corner this sat at about zero and went negative — opening');
+console.log('the front rank emptied the ring, and the ring was doing the work.');
+console.log('sector   quiet     screaming    change');
 for (const sector of SECTORS) {
-  const a = repeat({ sector, kiting: true });
-  const b = repeat({ sector, kiting: true, forceScream: true });
+  const base = repeat({ sector, kiting: true });
+  const yelling = repeat({ sector, kiting: true, forceScream: true });
   console.log(
-    '  ' + String(sector).padStart(2) + '      ' + a.dps.toFixed(2).padStart(6) + '          ' +
-    b.dps.toFixed(2).padStart(6) + '         ' +
-    (a.dps > 0.01 ? ((b.dps / a.dps - 1) * 100).toFixed(0) + '%' : '—')
+    '  ' + String(sector).padStart(2) + '     ' + base.dps.toFixed(2).padStart(6) + '      ' +
+    yelling.dps.toFixed(2).padStart(6) + '     ' +
+    (base.dps > 0.01 ? (((yelling.dps / base.dps - 1) * 100).toFixed(0) + '%').padStart(5) : '   — ')
   );
 }
 

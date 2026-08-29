@@ -15,7 +15,7 @@ import { ObjectPool } from '../pooling/ObjectPool';
 import { ArcadePhysics } from '../physics/ArcadePhysics';
 
 import { Player } from '../entities/Player';
-import { Enemy, EnemyType, SwingState } from '../entities/Enemy';
+import { Enemy, EnemyType, SwingState, observePlayer, forgetPlayer } from '../entities/Enemy';
 import { BossEnemy } from '../entities/BossEnemy';
 import { Projectile, ProjectileType } from '../entities/Projectile';
 import { Pickup, PickupType } from '../entities/Pickup';
@@ -1307,6 +1307,7 @@ export class Engine {
     this.noise = 0;
     this.noiseWarned = false;
     this.screamLanes = 0;
+    forgetPlayer();
     this.releaseGrab('spent');
 
     this.boss.deactivate();
@@ -1475,6 +1476,10 @@ export class Engine {
    */
   private updateTurns(active: Enemy[], delta: number): void {
     if (this.screamLanes > 0) this.screamLanes = Math.max(0, this.screamLanes - delta);
+
+    // One read of the player's heading for the whole street, before anything
+    // decides where to walk. See `observePlayer`.
+    observePlayer(this.player.position, delta);
 
     for (const e of active) {
       if (e.engaged) e.turnTimer += delta;

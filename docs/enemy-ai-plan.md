@@ -497,46 +497,71 @@ metre. Yoksa "ateş ettim, öylece durdu" hissi olurdu.
 
 ---
 
-## 8.5 SONRADAN ÖLÇÜLEN — ŞERİT SİSTEMİNİN SINIRI
+## 8.5 SONRADAN ÖLÇÜLEN — VE PLANIN GÖRMEDİĞİ EKSİK
 
-*Beş faz bittikten sonra bir dövüş harness'ı yazıldı (`npm run combat`) ve
-plandaki bir varsayımı çürüttü. Buraya yazılıyor çünkü planın kendisiyle
-ilgili, ayarla değil.*
+*Beş faz bittikten sonra bir dövüş harness'ı yazıldı (`npm run combat`). Önce
+planın bir varsayımını çürüttü, sonra çürüğün nedeni çıktı ve o neden planın
+kendisiyle ilgili — ayarla değil.*
 
-### Şerit bütçesi kaçan oyuncuya karşı bağlayıcı kısıt değil
+### Önce görünen: şerit bütçesi kaçan oyuncuya hiçbir şey yapmıyordu
 
 Hades'in `MaxAttackers`'ı ve bizim üç kuyruğumuz aynı soruyu cevaplıyor: *aynı
-anda kaç tanesi üstüne gelebilir?* Ölçüldüğünde çıkan şey: hareket eden bir
-oyuncu için bu sorunun cevabı **hiçbir şeyi değiştirmiyor.**
+anda kaç tanesi üstüne gelebilir?* Ölçüldüğünde, hareket eden bir oyuncu için
+bu sorunun cevabı hiçbir şeyi değiştirmiyordu. Kalıcı açık altı şerit — yani
+bitmeyen bir çığlık — sektör 1'de hasarı **%16 düşürüyordu**, 9'da hiç
+oynatmıyordu.
 
-| Deney | Kaçan oyuncuda hasar |
-|---|---|
-| Gürültüyle +2 şerit (dolu sayaç) | %1–4 |
-| Kalıcı açık +6 şerit (bitmeyen çığlık) | ~0, sektör 9'da **−%25** |
+### Nedeni: ölüler takip ediyordu, kesmiyordu
 
-Eksi işareti tesadüf değil, mekanizma. Şeritler kimin **hücum edeceğine** karar
-veriyor. Devreye giren gövde halkayı bırakıp doğrudan geliyor — ve hareketli
-bir hedefin **arkasına** diziliyor. Halkada kalan gövde ise oyuncu daireyi
-tamamlarken **önüne** çıkıyor. Yani ön safı genişletmek, kaçan oyuncuyu
-gerçekten yaralayan şeyi (halka) boşaltıyor.
+`updateAI` hedefi `tempTarget.copy(playerPos)` ile alıyordu. Hiçbir öngörü yok.
+Saniyede 2.6 metre giden bir shambler'ın 8.2 giden bir oyuncunun **bulunduğu
+yere** nişan alması, onu her seferinde **bulunduğu yere** götürür — saf takip,
+kendinden hızlı bir hedefe karşı seçilebilecek en kötü eğridir.
+
+Şerit sistemi bunun üstüne oturunca ters çalışıyordu: şerit alan gövde halkayı
+bırakıp kovalamaya geçiyor ve hareketli hedefin **arkasına** diziliyor; halkada
+kalan gövde ise oyuncu daireyi tamamlarken **önüne** çıkıyor. Ön safı açmak,
+işi yapan şeyi boşaltıyordu.
+
+**Plan bunu göremezdi, çünkü Hades'te bu sorun yok.** Zagreus bir odanın
+içinde dövüşür ve düşmanları onun hızına yakındır; bizim sokağımız 34 gövdeli
+ve oyuncu hepsinden hızlı. `MaxAttackers`'ı devralırken devralınmayan şey,
+onun altında yatan varsayımdı: *şerit verilen düşman hedefe ulaşabilir.*
+
+### Düzeltme (`bug.md` 21)
+
+`observePlayer()` oyuncunun yönünü kare başına bir kez okuyup yumuşatıyor, ve
+şeridi olan gövdeler `min(1.1 sn, mesafe/hız)` kadar ileriye, yolun %60'ı
+kadar nişan alıyor. Tam çözüm telepatik durur ve juke'u siler; %60 "yolunu
+kesiyor" diye okunur.
+
+| Çığlığın kaçan oyuncuya kazandırdığı | öncesi | sonrası |
+|---|---|---|
+| sektör 1 | −16% | **+23%** |
+| sektör 6 | +8% | **+14%** |
+| sektör 9 | −2% | **+16%** |
+
+Duran oyuncunun sayıları değişmedi — sürüklenmesi sıfır olduğu için öngörü ona
+hiçbir şey eklemiyor.
 
 ### Bunun plan için anlamı
 
-- **Faz 4'ün üç kuyruğu duran oyuncu için doğru, kaçan oyuncu için ilgisiz.**
-  Yanlış değil — Butcher+Burster'ın aynı anda basmasını hâlâ engelliyor — ama
-  "kiting'e karşı ne yapacağız" sorusunun cevabı burada değil.
-- **Çığlıkçının şoku duran oyuncuya karşı.** 4'ten 10'a çıkan ön saf, sen
-  yürüyorsan bir şey ifade etmiyor. Tipin kendisi hâlâ iş görüyor (uzakta
-  durur, bulunması gerekir) ama kartındaki söz koşullu.
-- **Kaçmaya karşı doğru kol erişim.** `STRIKE_LUNGE` 6.0 → 8.5 kaçanı %6–23
-  yukarı çekerken duranı %1–2'de bırakıyor. `SWING_REACH` bir kadran değil:
-  duran oyuncuyu değere göre her iki yöne %30 savuruyor.
-- **34'lük tavan uzmanlaşmış tipleri seyreltiyor.** Çığlıkçı ve Kapan sokakta
-  bir melee gövdenin yerini alıyor; kaçan oyuncuya karşı tam kadro ile
-  melee-only kadro arasında ortalama fark sıfır.
+- **Faz 4'ün üç kuyruğu artık kaçan oyuncu için de anlamlı.** Şeritler
+  gerçekten baskı üretiyor, çünkü şerit alan gövde artık varabiliyor.
+- **Çığlıkçının kartındaki söz doğrulandı.** Ön safın 4'ten 10'a çıkması artık
+  yürüyen oyuncuya karşı da bir şey ifade ediyor.
+- **34'lük tavan hâlâ uzmanlaşmış tipleri seyreltiyor.** Çığlıkçı ve Kapan
+  sokakta bir melee gövdenin yerini alıyor; bu ölçülmüş ve değişmedi.
+- **Denenip geri alınan:** çığlığın halkayı sıkıştırması (`SCREAM_SQUEEZE`
+  0.55). Tek başına +%3, şeritlerle birlikte şeritlerin tek başına verdiğinden
+  iyi değil. Hissedilemeyen mekanizma bırakılmadı.
 
-Bir sonraki kişi "kiting fazla güvenli" derse: bütçeye dokunma. Erişim,
-öngörü (nereye gideceğini kesmek) ya da menzil — hücum eden gövde sayısı değil.
+### Ve bir uyarı, harness'ı kullanacak olana
+
+Bu bug ilk yazıldığında "sektör 9'da −%25" diyordu. O sayı 5 tohumluk bir
+koşudandı ve **gürültüydü** — 30 tohumla −%2. Bulgunun yönü doğruydu,
+büyüklüğü değil. Kalabalık dinamiği kaotik: tek hücre tohumdan tohuma %20
+oynayabiliyor. `RUNS=30` vermeden %15'in altındaki hiçbir farka inanmayın.
 
 ---
 
