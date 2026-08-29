@@ -1335,6 +1335,64 @@ export class Engine {
   }
 
   /**
+   * What the crowd does to the player by standing on them.
+   *
+   * Two separate things happen against a body. A swing that lands is the hit —
+   * it flashes, it makes a noise, it takes a bite. Merely being in contact is
+   * friction, billed once every `FRICTION_INTERVAL` across everything touching
+   * at once rather than per body, because six of them leaning on you should be
+   * worse than one and not six times worse.
+   *
+   * Lifted out of `update` so it can be driven on its own. The balance of this
+   * game is mostly this function and `updateTurns`, and the numbers that decide
+   * whether a phase worked come from running the two of them against a made-up
+   * street — see the combat harness. A copy of these rules living in a test
+   * would be a copy that quietly stops being true.
+   */
+  private pressBodies(delta: number): void {
+    const near = this.grid.query(this.player.position, this.player.radius + 2.6);
+
+    let frictionLoad = 0;
+    let touching = 0;
+
+    for (const e of near) {
+      if (!e.active) continue;
+      // Whatever has hold is billed by the second in the run loop instead, and
+      // must not be pushed off the player by the crowd separation.
+      if (e.grabbing) continue;
+
+      // A body mid-swing is committed and does not get shouldered aside.
+      if (e.swing !== SwingState.STRIKE) {
+        ArcadePhysics.resolveSoftOverlap(
+          e.position, e.velocity, this.player.position, e.radius, this.player.radius, 11.0);
+      }
+
+      if (!ArcadePhysics.checkSphereOverlap(
+        this.player.position, this.player.radius, e.position, e.radius)) continue;
+
+      if (e.swing === SwingState.STRIKE && !e.swingLanded) {
+        e.swingLanded = true;
+        this.player.takeDamage(e.strikeDamage);
+        continue;
+      }
+
+      if (touching < FRICTION_MAX_BODIES) {
+        frictionLoad += e.contactDamage;
+        touching++;
+      }
+    }
+
+    this.frictionTimer -= delta;
+    if (touching > 0 && this.frictionTimer <= 0) {
+      this.frictionTimer = FRICTION_INTERVAL;
+      this.player.drain(frictionLoad * FRICTION_SHARE);
+      // Being ground down still counts as being hurt, or the cat would sit
+      // there healing you through it.
+      this.calm = 0;
+    }
+  }
+
+  /**
    * Who out there is making a noise.
    *
    * Every body carries its own clock and every clock runs, wherever it is
@@ -1955,52 +2013,7 @@ export class Engine {
       }
     }
 
-    // Bodies pressing on the player.
-    const near = this.grid.query(this.player.position, this.player.radius + 2.6);
-
-    // Two separate things happen against a body. A swing that lands is the
-    // hit — it flashes, it makes a noise, it takes a bite. Merely being in
-    // contact is friction, billed once every `FRICTION_INTERVAL` across
-    // everything touching at once rather than per body, because six of them
-    // leaning on you should be worse than one and not six times worse.
-    let frictionLoad = 0;
-    let touching = 0;
-
-    for (const e of near) {
-      if (!e.active) continue;
-      // Whatever has hold is billed by the second in the run loop instead, and
-      // must not be pushed off the player by the crowd separation.
-      if (e.grabbing) continue;
-
-      // A body mid-swing is committed and does not get shouldered aside.
-      if (e.swing !== SwingState.STRIKE) {
-        ArcadePhysics.resolveSoftOverlap(
-          e.position, e.velocity, this.player.position, e.radius, this.player.radius, 11.0);
-      }
-
-      if (!ArcadePhysics.checkSphereOverlap(
-        this.player.position, this.player.radius, e.position, e.radius)) continue;
-
-      if (e.swing === SwingState.STRIKE && !e.swingLanded) {
-        e.swingLanded = true;
-        this.player.takeDamage(e.strikeDamage);
-        continue;
-      }
-
-      if (touching < FRICTION_MAX_BODIES) {
-        frictionLoad += e.contactDamage;
-        touching++;
-      }
-    }
-
-    this.frictionTimer -= delta;
-    if (touching > 0 && this.frictionTimer <= 0) {
-      this.frictionTimer = FRICTION_INTERVAL;
-      this.player.drain(frictionLoad * FRICTION_SHARE);
-      // Being ground down still counts as being hurt, or the cat would sit
-      // there healing you through it.
-      this.calm = 0;
-    }
+    this.pressBodies(delta);
 
     if (this.boss.active &&
         ArcadePhysics.checkSphereOverlap(this.player.position, this.player.radius, this.boss.position, this.boss.radius)) {
