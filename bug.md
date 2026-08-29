@@ -6,6 +6,11 @@ buraya yazılır — düzeltilmese bile.
 
 Sıralama önem sırasına göre değil, bulunma sırasına göre.
 
+Buradaki bazı bug'lar oynanarak değil **ölçülerek** bulundu — ses metresi
+(`?audio=test` → MEASURE) ve dövüş harness'ı (`npm run combat`). Bir maddenin
+altında tablo varsa, o tabloyu üreten şey hâlâ repoda ve tekrar
+çalıştırılabilir.
+
 ---
 
 ## Düzeltilenler
@@ -342,16 +347,216 @@ tavanı.
 üretmiyor (bkz. `docs/fikirler.md` → BİLİNEN KISITLAR), o yüzden ölçüm
 `planSteps`'in aritmetiği üzerinden yapıldı, canlı döngüden değil.
 
+---
+
+### 17. `thump()` her seferinde aynı fazdan başlıyordu
+
+**Yer:** `src/core/AudioManager.ts` — `thump()`
+**Commit:** `060c713`
+
+Faz 1 gürültüyü dekorele etti (tamponda rastgele offset) ama altındaki sinüsü
+hiç ellemedi. Bir `OscillatorNode` **daima faz sıfırdan** başlar; frekansa
+verilen %6 sapma bunu değiştirmiyor. Yani her silah sesinin en yüksek parçası
+her seferinde birebir aynı dalga biçimiydi.
+
+Ölçüldü (offline render, katman katman): yalnız gürültü olan sesler (`nail`,
+`swing`) atıştan atışa 0.08'de dekoreleyken, altında thump olan her şey
+0.65'teydi.
+
+Düzeltme: thump kendi periyodunun rastgele bir noktasından, gain sıfırken
+başlıyor; zarf yine `t0`'da açılıyor. `SCHEDULE_LEAD` (20 ms) eklendi çünkü
+WebAudio geçmişteki bir başlangıcı "şimdi"ye kırpar ve kırpılan faz numarası
+faz numarası değildir. Lead **her katmana aynı** uygulanıyor, yani transient
+dağılmıyor — ölçüldü, tepe 23 ms'de.
+
+**Dürüst not:** algısal etkisi küçük. Bu bug'ı bulan ölçüm (dalga biçimi
+korelasyonu) tekrar için **yanlış** metrikti; doğrusuyla (spektrum + zarf)
+bakıldığında Faz 1 zaten çalışıyordu. Yanlış bir soru gerçek bir hata buldu.
+Değeri: üst üste binen iki thump artık birbirini comb-filter etmiyor.
+
+---
+
+### 18. `ctx.resume()`'un promise'i hiç yakalanmıyordu
+
+**Yer:** `src/core/AudioManager.ts` — `initCtx()`
+**Commit:** `060c713`
+
+`resume()` bir promise döndürüyor ve reddedilebiliyor: henüz kullanıcı hareketi
+görmemiş bir tarayıcı reddeder, `OfflineAudioContext` ise **doğuştan
+suspended**'dır ve hiç resume edilemez. İkisi de yakalanmadığı için konsola
+unhandled rejection düşüyordu.
+
+Ses metresi offline render ettiği için tek çalıştırmada 50+ hata olarak ortaya
+çıktı. Gerçek tarayıcıda da sessizce oluyordu, sadece kimse bakmıyordu.
+
+`this.ctx.resume().catch(() => {})`. Başarısız bir resume durulacak bir şey
+değil.
+
+---
+
+### 19. Rook her sokakta yere yığılıyordu — ve hiç dövüşmeyen kedi de
+
+**Yer:** `src/entities/Companion.ts` — `updateField()`
+**Commit:** `23a2cae`
+
+Defterde "Rook'un grit'i (60) izlensin" diye bir şüphe duruyordu: 5 numaralı
+değişiklikten (hayvanlar saldırana öncelik veriyor) sonra daha hızlı
+yıpranıyor gibiydi. Dövüş harness'ı (`npm run combat`) şüpheyi doğruladı.
+
+Oyuncunun 1.2 saniyede bir gövde indirdiği gerçekçi ölçümde, `winded` gelmeden
+önce:
+
+| Hayvan | kondisyon kalan (s2/s6/s9) | yere yığılma (s6/s9) |
+|---|---|---|
+| Rook | 48% / 24% / 12% | 0.4 / 0.2 |
+| Mouser | 56% / 16% / 19% | 0.2 / 0.4 |
+| Bristle | 85% / 60% / 63% | 0 / 0 |
+
+**Asıl tuhaflık Mouser'daydı.** Kartı "fights nothing and never will" diyor ve
+gerçekten hiç vurmuyor, ama sokağı Rook'tan çok da iyi bitirmiyordu. Sebebi
+kavga değil **duruş**: tasması 3 metre, yani oyuncu kalabalığın içinde durduğu
+için o da orada duruyor. Bu kendi başına bir madde oldu (22).
+
+Defter iki çözüm öneriyordu — grit'i yükseltmek ya da role "kondisyon düşünce
+geri çekil" eklemek. İkincisi seçildi: grit'i yükseltmek "bu köpek daha çok
+dayanır" demek olurdu, oysa yanlış olan dayanıklılığı değil, **durmayı
+bilmiyor olması**ydı.
+
+`WINDED_IN` (0.2) / `WINDED_OUT` (0.5). Tek eşik değil iki, çünkü tam eşiğin
+üstünde oturan bir hayvan saniyede bir dövüşe girip çıkar ve bu hiç
+çekilmemekten kötüdür.
+
+**İlk denenen düzeltme işe yaramadı, ve nedeni kayda değer.** Winded hayvan
+önce `followHeel` ile oyuncunun yanına çağrıldı; sonuç neredeyse sıfırdı.
+Çünkü oyuncu da kalabalığın içinde — onun yanı, aynı gövdelerin arası. Doğrusu
+Mouser'ın hep kullandığı numaraydı: **en yakın gövdenin tersine**, oyuncunun
+arkasına, tasmanın ucuna.
+
+Sonuç (aynı ölçüm, winded ile): Rook 48% / **28%** / **15%**, yığılma
+**0.2 / 0.0**. Bristle ve Mouser'da fark yok — biri o kadar düşmüyor, diğeri
+zaten çekiliyor. Doğru şekil: içeri giren hayvan için bir kural.
+
+---
+
+### 20. Harvester'ı ateş ederken duyamıyordunuz
+
+**Yer:** `src/core/AudioManager.ts` — `playGunshot('nail')`
+**Commit:** `5aff88d`
+
+Sesler tek tek ölçüldüğünde Harvester "kısık ama var" görünüyordu. Sahne
+ölçümü — üstünde hava ve konuşan dört gövde olan bir sokakta 4 saniyelik ateş
+— gerçeği söyledi:
+
+| Silah | Sokağın üstüne çıktığı |
+|---|---|
+| Stutter | +3.4 dB |
+| Ranger | +8.4 dB |
+| Çifte | +13.2 dB |
+| **Harvester** | **+0.2 dB** |
+
+0.2 dB duyulmaz. Ateş ederken kendi silahını duyamayan oyuncunun elinde sessiz
+bir silah değil, **bozuk bir geri besleme döngüsü** var.
+
+Sebep seviye değil **biçimdi**: Q 3.5'lik bir bandpass enerjinin neredeyse
+tamamını atıyor, ve bu raftaki tek alt ucu olmayan silahtı. Q açıldı (2.2),
+seviye 0.16 → 0.26, altına çivi çakan mekanizmanın vuruşu kondu. İnce ve tiz
+kaldı — nailer zaten odur. Şimdi +3.4 dB, Stutter'la birebir aynı yerde, ve
+rafın sıralaması bozulmadı.
+
+**Kurgu değişmedi.** Sokağın duyduğu şey `Weapons.noise` ve Harvester orada
+0.1'de duruyor — hâlâ hiç Çığlıkçı çağırmıyor. Kartın sözü sürüyle ilgiliydi,
+desibelle değil.
+
+---
+
 ## Açık olanlar
 
-*Şu an yok.* Bulunan on altı bug'ın on altısı kapalı. Bu listenin boş olması
-kod temiz demek değil — **oyunun hiç oynanmadığı** demek. Aşağıdaki "bug
-değil ama bilinsin" maddeleri ve `docs/fikirler.md`'deki "oynayıp bakılacak"
-başlıkları bir koşunun neye bakacağını söylüyor.
+### 21. Çığlık, kaçan oyuncuyu daha **güvenli** yapıyor
+
+**Yer:** `src/core/Engine.ts` — `updateTurns()`, ve `Enemy.updateAI`'ın halka
+davranışı
+**Durum:** açık. Yapısal; ayarla kapanmıyor.
+
+Çığlıkçının kartı ön safı 4'ten 10'a çıkardığını söylüyor ve kod bunu doğru
+yapıyor. Ama dövüş harness'ı hareket eden bir oyuncuya karşı ölçtüğünde:
+
+| Deney | Kaçan oyuncuda hasar |
+|---|---|
+| Gürültüyle +2 şerit | %1–4 |
+| Kalıcı açık +6 şerit (bitmeyen çığlık) | ~0, sektör 9'da **−%25** |
+
+Eksi işareti gürültü değil, **mekanizma.** Şeritler kimin *hücum edeceğine*
+karar veriyor. Devreye giren gövde halkayı bırakıp doğrudan geliyor ve
+hareketli bir hedefin **arkasına** diziliyor; halkada kalan gövde ise oyuncu
+daireyi tamamlarken **önüne** çıkıyor. Yani ön safı genişletmek, kaçan
+oyuncuyu gerçekten yaralayan şeyi (halkayı) boşaltıyor.
+
+Aynı sebep, aynı ölçümün ikinci bulgusunu da açıklıyor: **Clinger ve Screamer
+kiting'i hiç cezalandırmıyor.** Kaçan oyuncuya karşı melee-only kadro ile tam
+kadro arasındaki fark ortalama sıfır (+17% / +86% / −20% / +15% / −3% / −13%),
+çünkü 34'lük tavan altında her uzman tip bir melee gövdenin yerini alıyor.
+
+**Neden açık bırakıldı.** Düzeltmesi bir sabit değil: ya çığlığın kaçan
+oyuncuya karşı başka bir şey yapması (halkayı daraltmak, kesmek, öngörü) ya da
+kartın sözünün koşullu hâle getirilmesi gerekiyor. İkisi de tasarım kararı ve
+oynanmamış bir oyunda masadan verilecek karar değil.
+
+**Bu arada yapılanlar:** kaçmaya karşı erişim kolu ölçülüp `STRIKE_LUNGE`
+6.0 → 8.5 yapıldı (kaçan +%6–23, duran +%1–2), ve "gürültü sıra bütçesini
+açsın" fikri ölçülüp reddedildi. İkisi de `docs/fikirler.md`'de.
+
+---
+
+### 22. Mouser dövüşmediği hâlde sokağı yarı yarıya yıpranmış bitiriyor
+
+**Yer:** `src/config/Animals.ts` — `MOUSER.heel` (1.7) / `.leash` (3.0)
+**Durum:** açık. Bilerek mi değil mi, oynanmadan bilinmiyor.
+
+19 numaranın yan bulgusu. Kedi hiçbir şeye vurmuyor ve `winded` ondan sonra
+hiçbir şeyi değiştirmiyor (zaten çekiliyor), ama sektör 6–9'da sokağı %16–19
+kondisyonla bitiriyor. Sebep tasması: 3 metre, yani oyuncu kalabalığın içinde
+durduğunda o da orada.
+
+Kartındaki iş — "seni dört saniye kimse vurmazsa saniyede 2 kondisyon geri
+verir" — yerde yatarken yapılamıyor. Yani destek hayvanı, tam ihtiyaç duyulan
+sokakta kendini koruyamıyor.
+
+Çözüm ararsa: tasma 3.0 → 4.5 civarı, ya da WATCH rolünün kaçınma yarıçapını
+(`roleWatch` içinde 4.0) büyütmek. **Ölçmeden değiştirilmedi**, çünkü ikisi de
+kediyi oyuncudan uzaklaştırır ve iyileştirmenin menzili varsa oradan da bir
+şey kırılır.
 
 ---
 
 ## Bug değil, ama bilinsin
+
+**"On beş metreden seçiliyor mu" diye bir soru yok.** `InstancedEnemies`'in
+Çığlıkçı yorumu uzun süre "on beş metreden okunur ya da hiç okunmaz" diyordu ve
+kadro araştırması da tell'leri böyle tartışıyordu. Kamera **ortografik**:
+mesafe hiçbir şeyin ekrandaki boyutunu değiştirmiyor. Uzaktaki Çığlıkçı
+üstünüze çökenle aynı büyüklükte. Zor olan mesafe değil, **arada duran 33
+gövde** — yani her tell'in küçülmeye değil kalabalığa dayanması gerekiyor.
+Ölçüldü: çene 1080p'de 10 piksel, diğer tiplerde 4; kendi 0.92 ölçeğinden
+sonra 9. Yorum `57aca65`'te düzeltildi.
+
+**Dövüş harness'ının dummy'si ateş etmiyor** (`killEvery` verilmedikçe). Yani
+sokak hiç incelmiyor ve 34 gövde 25 saniye boyunca üstünde duruyor: mutlak
+sayılar **stres testi**, tahmin değil. Karşılaştırma için kullanın — aynı
+dummy'ye karşı iki AI sürümü ya da iki kadro adil bir dövüştür. Kalabalık
+dinamiği ayrıca kaotik: 5 tohum gürültülü, 14 tohum oturuyor.
+
+**`OfflineAudioContext.suspend()` render başlamadan **önce** kaydedilmeli.**
+Promise'i ancak render o noktaya vardığında çözülüyor, yani önce `await`
+etmek kilitlenmedir — render'a hiç başlanmamış olur. Doğrusu bütün suspend'leri
+`.then()` ile kurup sonra `startRendering()` çağırmak, ve zamanları 128
+örneklik render quantum'una yuvarlamak. Ses metresinin sahne tabloları bunun
+üstünde bir tur kaybetti.
+
+**Tekrarı dalga biçimi korelasyonuyla ölçmeyin.** Rastgele fazlı iki sönümlü
+sinüsün |korelasyon| beklentisi `2/π ≈ 0.64`'tür, ne kadar farklı
+duyulurlarsa duyulsunlar — ve kulak fazı hiç duymuyor. Bu metrik bir kez
+"Faz 1 çalışmıyor" dedirtti; doğrusu spektrum ve zarfı karşılaştırmak.
+(Yanlış soru yine de gerçek bir bug buldu: 17 numara.)
 
 **`.claude/launch.json` içinde `autoPort: true`.** 5173 başka bir oturumun dev
 server'ı tarafından tutulduğu için eklendi. Sabit port gerekiyorsa geri alın.

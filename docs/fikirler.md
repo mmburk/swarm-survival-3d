@@ -116,8 +116,13 @@ Bilinen pürüzler:
   hamle hâlâ okunabiliyor mu, yoksa işaretli olan tek haksız gövde mi.
 
 ### Masadan çıkacak iş kalmadı
-İki planın ikisi de bitti. AI planı beş fazın beşi, ses planı beş fazın beşi
-(Faz 4'ün ikisi hariç, sebebi aşağıda). Açık bug listesi boş.
+İki planın ikisi de bitti: AI planı beş fazın beşi, ses planı beş fazın beşi.
+
+**Açık bug listesi boş değil, ve olmaması iyi.** [`bug.md`](../bug.md) 21 ve
+22 — çığlığın kaçan oyuncuyu güvenli yapması, ve Mouser'ın dövüşmediği hâlde
+yıpranması. İkisi de ölçülerek bulundu, ikisi de bir sabit çevirmekle
+kapanmıyor, o yüzden açık duruyorlar. Bir bug kaydının boş olması genellikle
+bakılmadığı anlamına gelir.
 
 **Geriye kalan her şeyin ya kulağa ya oynanışa ihtiyacı var:**
 
