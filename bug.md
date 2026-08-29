@@ -287,7 +287,7 @@ olan 0.11), ama atışın kendisi tetikte duruyor — sıfır gecikme nasıl
 ### 8. 30 fps'in altında oyun ağır çekime düşüyor
 
 **Yer:** `src/core/Engine.ts` — `loop()`, `planSteps()`
-**Commit:** `TBD`
+**Commit:** `6983f60`
 
 ```ts
 const delta = Math.min(Math.max(raw, 0.001), 0.033);
