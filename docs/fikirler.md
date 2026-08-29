@@ -36,7 +36,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 12 | **Faz 2 — sırayı hamle bitiriyor.** `turnSpent`, sayaç güvenlik ağına indi (2× turn). Devredilen gövde `standoff × 0.42`'de asılı kalıyor | `8618ae8` | Devir 0.85 → 1.56/sn (hamle başına bir devir). Hasar %5–15 düştü, hâlâ Faz 1 bandında |
 
 | 13 | **Faz 5 — uyanma anı.** `Profile.wake` bandı, gövde rastgele yönle doğup oyuncuyu buluyor, vurulunca uyanma kesiliyor | `145e466` | **AI planının beş fazı da bitti.** Bundan sonrası ayar, ve ayarın yeri masa değil oyun |
-| 14 | **Ses Faz 0 — temizlik ve kontrol.** 10 ölü metot silindi (692 → 436 satır), settings kartına ses kaydırıcısı (`DisplaySettings.volume`, kayıtta duruyor), `?audio=test` ile 24 olayı tuşa bağlayan dinleme tezgâhı | `TBD` | **Ses planının MVP maddesi bitti.** Kaydırıcı sesin yüksekliğine dokunan her işten önce gelmesi gerekendi; tezgâh da bundan sonraki her dinleme turunu kısaltan şey |
+| 14 | **Ses Faz 0 — temizlik ve kontrol.** 10 ölü metot silindi (692 → 436 satır), settings kartına ses kaydırıcısı (`DisplaySettings.volume`, kayıtta duruyor), `?audio=test` ile 24 olayı tuşa bağlayan dinleme tezgâhı | `a116ef9` | **Ses planının MVP maddesi bitti.** Kaydırıcı sesin yüksekliğine dokunan her işten önce gelmesi gerekendi; tezgâh da bundan sonraki her dinleme turunu kısaltan şey |
 
 ---
 
