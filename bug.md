@@ -472,7 +472,7 @@ desibelle değil.
 ### 21. Çığlık, kaçan oyuncuyu daha **güvenli** yapıyordu
 
 **Yer:** `src/entities/Enemy.ts` — `updateAI()`, yeni `observePlayer()`
-**Commit:** `TBD`
+**Commit:** `6e7e387`
 
 Çığlıkçının kartı ön safı 4'ten 10'a çıkardığını söylüyor ve kod bunu doğru
 yapıyordu. Ama hareket eden bir oyuncuya karşı ölçüldüğünde şerit vermenin

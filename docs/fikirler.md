@@ -48,7 +48,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 23 | **Winded — hayvan nefesi kesilince çekiliyor.** %20'de bırakıyor, %50'de dönüyor (histerezis); geri çekilme oyuncuya değil **kalabalıktan uzağa** | `23a2cae` | Rook'un yere yığılması yarıya indi (0.4 → 0.2). Grit'e dokunulmadı: sorun "az dayanıyor" değil, **durmayı bilmiyor** idi |
 | 24 | **Gürültü uyarısı.** Sayaç hâlâ gizli; %75'te bir satır: "The street is listening." %40'a inince yeniden kurulur | `23a2cae` | Sayacı besleyen üç yeni şeyin (patlama, Burster, fişek) etiketi yoktu |
 | 25 | **Okunabilirliğin ölçülebilen yarısı.** Tint'ler arası algısal mesafe (CIE76) ve silüet farkının piksel karşılığı | `57aca65` | İşaretli vs Burster **ΔE 84** — karıştırılamaz. Çığlıkçının çenesi 1080p'de 10 px, diğerleri 4 px. Ve projeksiyon ortografik: **mesafe boyutu hiç değiştirmiyor**, zorluk kalabalıktan geliyor |
-| 26 | **Ölüler köşeyi kesiyor** (`bug.md` 21). `observePlayer()` oyuncunun yönünü kare başına bir kez okuyor; şeridi olan gövde `min(1.1 sn, mesafe/hız)` kadar ileriye, yolun %60'ına nişan alıyor | `TBD` | Çığlığın kaçan oyuncuya değeri **−%16…+%8 → +%6…+%23**. Kaçan oyuncunun hasarı genelinde +%18–29; **duran oyuncu birebir aynı**. %100 öngörü telepatik durur ve juke'u siler |
+| 26 | **Ölüler köşeyi kesiyor** (`bug.md` 21). `observePlayer()` oyuncunun yönünü kare başına bir kez okuyor; şeridi olan gövde `min(1.1 sn, mesafe/hız)` kadar ileriye, yolun %60'ına nişan alıyor | `6e7e387` | Çığlığın kaçan oyuncuya değeri **−%16…+%8 → +%6…+%23**. Kaçan oyuncunun hasarı genelinde +%18–29; **duran oyuncu birebir aynı**. %100 öngörü telepatik durur ve juke'u siler |
 
 ---
 
