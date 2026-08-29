@@ -307,6 +307,13 @@ export class Enemy implements IPoolable {
   public pressAttack: boolean = false;
 
   /**
+   * Seconds until this one makes a noise, if the street lets it (see
+   * `Engine.updateVocals`). Drawn afresh at spawn so twenty bodies arriving
+   * together do not arrive as a choir.
+   */
+  public vocalTimer: number = 0;
+
+  /**
    * Whether it is this one's turn to press the attack.
    *
    * A street of forty bodies all running the shortest line at the player is
@@ -426,6 +433,7 @@ export class Enemy implements IPoolable {
     this.recover = roll(p.recover);
     this.strikeDamage = Math.round(p.contact * STRIKE_MULTIPLIER);
     this.wakeTimer = roll(p.wake);
+    this.vocalTimer = 0.4 + Math.random() * 5.6;
 
     // What Hades takes off an elite is not thickness, it is time: its
     // `PreAttackDuration` drops from half a second to a quarter. Same body,
@@ -511,7 +519,7 @@ export class Enemy implements IPoolable {
     }
 
     this.particles.emitBurst(hitPoint || this.position, 6, HEX.gore, 5, 0.24);
-    this.audio.playImpact();
+    this.audio.playImpact(this.position);
 
     if (this.health < this.maxHealth && this.health > 0) {
       this.hpVisible = true;
@@ -572,7 +580,7 @@ export class Enemy implements IPoolable {
       if (!this.isSwelling && this.position.distanceToSquared(playerPos) <= 5.0) {
         this.isSwelling = true;
         this.swellTimer = this.windup;
-        this.audio.playSwell();
+        this.audio.playSwell(this.position);
       }
       if (this.isSwelling) {
         this.velocity.multiplyScalar(0.8);
@@ -643,7 +651,7 @@ export class Enemy implements IPoolable {
         if (tempSteer.lengthSq() > 0) tempSteer.normalize();
         this.velocity.x = tempSteer.x * 13;
         this.velocity.z = tempSteer.z * 13;
-        this.audio.playSwell();
+        this.audio.playSwell(this.position);
         return;
       }
     }
@@ -687,7 +695,7 @@ export class Enemy implements IPoolable {
       if (this.screamCooldown <= 0 && gap > this.standoff * 0.6) {
         this.isScreaming = true;
         this.screamTimer = this.windup;
-        this.audio.playSwell();
+        this.audio.playSwell(this.position);
         return;
       }
     }

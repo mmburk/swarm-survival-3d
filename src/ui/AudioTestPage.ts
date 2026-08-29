@@ -1,4 +1,4 @@
-import { AudioManager } from '../core/AudioManager';
+import { AudioManager, type SpaceId } from '../core/AudioManager';
 import { injectTheme } from '../theme/Palette';
 
 /**
@@ -17,6 +17,16 @@ import { injectTheme } from '../theme/Palette';
  * holds an `AudioManager` and nothing else, so a sound that misbehaves here is
  * the sound's fault.
  */
+
+/**
+ * Where a positioned sound is put when it is fired from the bench.
+ *
+ * Moved by the pan slider rather than pinned, because the thing worth hearing
+ * about phase 3 is not that a sound has a place — it is whether the place is
+ * the right one. Slide it left, press 5, and the Shambler had better be on the
+ * left.
+ */
+const HERE = { x: 0, z: 0 };
 
 interface Row {
   /** The key that fires it, lowercase. */
@@ -53,13 +63,26 @@ const GROUPS: { title: string; rows: Row[] }[] = [
   {
     title: 'The dead',
     rows: [
-      { key: 'q', label: 'Impact', note: 'a round finding a body', fire: (a) => a.playImpact() },
+      { key: 'q', label: 'Impact', note: 'a round finding a body', fire: (a) => a.playImpact(HERE) },
+      { key: 'c', label: 'Death', note: 'a body going down', fire: (a) => a.playDeath(HERE) },
       { key: 'w', label: 'Swing', note: 'a wind-up that came up empty', fire: (a) => a.playSwing() },
       { key: 'a', label: 'Swell', note: 'a Burster filling up', fire: (a) => a.playSwell() },
       { key: 's', label: 'Scream', note: 'the Screamer opening the lanes', fire: (a) => a.playScream() },
       { key: 'g', label: 'Explosion', note: 'Burster, Swollen, barrels', fire: (a) => a.playExplosion() },
       { key: 'd', label: 'Boss roar', note: 'the thing at the end of a sector', fire: (a) => a.playBossRoar() },
-      { key: 'f', label: 'Slam', note: 'the boss bringing it down', fire: (a) => a.playSlam() }
+      { key: 'f', label: 'Slam', note: 'the boss bringing it down', fire: (a) => a.playSlam(HERE) },
+      { key: 'v', label: 'Slam wind-up', note: 'the 0.95s before it lands', fire: (a) => a.playSlamWindup(HERE) }
+    ]
+  },
+  {
+    title: 'Voices',
+    rows: [
+      { key: '5', label: 'Shambler', note: 'low and wet', fire: (a) => a.playVocal('SHAMBLER', HERE) },
+      { key: '6', label: 'Sprinter', note: 'thin and clipped', fire: (a) => a.playVocal('SPRINTER', HERE) },
+      { key: '7', label: 'Butcher', note: 'almost nothing, all underneath', fire: (a) => a.playVocal('BUTCHER', HERE) },
+      { key: '8', label: 'Bloater', note: 'a rattle in two passes', fire: (a) => a.playVocal('BLOATER', HERE) },
+      { key: '9', label: 'Screamer', note: 'one winding up to the shout', fire: (a) => a.playVocal('SCREAMER', HERE) },
+      { key: '0', label: 'Clinger', note: 'the one that wants hold of you', fire: (a) => a.playVocal('CLINGER', HERE) }
     ]
   },
   {
@@ -70,7 +93,9 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { key: 'k', label: 'Gate open', note: 'the way into the next sector', fire: (a) => a.playGateOpen() },
       { key: 'l', label: 'Sector clear', note: 'the street going quiet', fire: (a) => a.playSectorClear() },
       { key: 'z', label: 'Purchase', note: 'the trader taking scrap', fire: (a) => a.playPurchase() },
-      { key: 'x', label: 'Error', note: 'a button that will not do it', fire: (a) => a.playError() }
+      { key: 'x', label: 'Error', note: 'a button that will not do it', fire: (a) => a.playError() },
+      { key: 'b', label: 'Footstep', note: 'twice a second, all game', fire: (a) => a.playFootstep() },
+      { key: 'n', label: 'Spawn swell', note: 'under the ring, before it comes up', fire: (a) => a.playSpawnSwell(HERE) }
     ]
   }
 ];
@@ -165,6 +190,32 @@ export function mountAudioTestPage(root: HTMLElement): void {
         <div id="at-vol-lbl" class="at-key" style="width:52px;">30%</div>
         <button id="at-bg" class="ll-btn-ghost">DRONE: OFF</button>
       </div>
+      <div class="at-bar">
+        <div class="at-key">POS</div>
+        <input id="at-pan" class="at-slider" type="range" min="-30" max="30" step="1" value="0" />
+        <div id="at-pan-lbl" class="at-key" style="width:88px;">centre</div>
+        <div class="at-note" style="max-width:340px;">
+          Where the world sounds are put, in metres across the frame. Everything
+          in Guns, The player and most of The street is meant to stay dry and
+          centred however far this is dragged.
+        </div>
+      </div>
+      <div class="at-bar">
+        <div class="at-key">ROOM</div>
+        <button class="ll-btn-ghost at-space" data-space="STREET">STREET</button>
+        <button class="ll-btn-ghost at-space" data-space="UNDERPASS">UNDERPASS</button>
+        <button class="ll-btn-ghost at-space" data-space="BASEMENT">BASEMENT</button>
+      </div>
+      <div class="at-bar">
+        <div class="at-key">BED</div>
+        <input id="at-pressure" class="at-slider" type="range" min="0" max="100" step="1" value="0" />
+        <div id="at-pressure-lbl" class="at-key" style="width:52px;">0%</div>
+        <div class="at-note" style="max-width:340px;">
+          How badly it is going, as the bed hears it. Turn the drone on first —
+          this moves the filter, the root and the breath, and does nothing at
+          all on its own.
+        </div>
+      </div>
       <div class="at-grid">${cards}</div>
     </div>
   `;
@@ -197,6 +248,36 @@ export function mountAudioTestPage(root: HTMLElement): void {
     volLbl.textContent = `${vol.value}%`;
   });
 
+  const pan = root.querySelector<HTMLInputElement>('#at-pan')!;
+  const panLbl = root.querySelector<HTMLElement>('#at-pan-lbl')!;
+  pan.addEventListener('input', () => {
+    // Screen-right on this rig is world +x/-z, so one slider walks the sound
+    // straight across the frame.
+    const m = parseInt(pan.value, 10);
+    HERE.x = m * 0.7071;
+    HERE.z = -m * 0.7071;
+    panLbl.textContent = m === 0 ? 'centre' : `${Math.abs(m)}m ${m < 0 ? 'left' : 'right'}`;
+  });
+
+  const spaces = root.querySelectorAll<HTMLButtonElement>('.at-space');
+  const litSpace = (id: string) => {
+    spaces.forEach((el) => { el.style.color = el.dataset.space === id ? 'var(--amber)' : ''; });
+  };
+  spaces.forEach((el) => {
+    el.addEventListener('click', () => {
+      audio.setSpace(el.dataset.space as SpaceId);
+      litSpace(el.dataset.space!);
+    });
+  });
+  litSpace('STREET');
+
+  const pressure = root.querySelector<HTMLInputElement>('#at-pressure')!;
+  const pressureLbl = root.querySelector<HTMLElement>('#at-pressure-lbl')!;
+  pressure.addEventListener('input', () => {
+    audio.setPressure(parseInt(pressure.value, 10) / 100);
+    pressureLbl.textContent = `${pressure.value}%`;
+  });
+
   const bg = root.querySelector<HTMLButtonElement>('#at-bg')!;
   bg.addEventListener('click', () => {
     bgOn = !bgOn;
@@ -204,6 +285,17 @@ export function mountAudioTestPage(root: HTMLElement): void {
     else audio.stopBackgroundMusic();
     bg.textContent = `DRONE: ${bgOn ? 'ON' : 'OFF'}`;
   });
+
+  // The breath is the one part of the bed that moves per frame rather than on
+  // a ramp, so the bench has to drive it the way the game does.
+  let last = performance.now();
+  const tick = (now: number) => {
+    const delta = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (bgOn) audio.tickBed(delta);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;

@@ -40,6 +40,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 15 | **Ses Faz 1 — varyasyon.** Tamponda rastgele offset (`bug.md` #11 kapandı) + atış başına sapma: frekans ±%6, seviye ±%8, süre ±%4, gecikmeli katmanlar ±%15. Hepsi `noiseBurst`/`thump`'ın içinde, yani 24 olayın hepsi aldı | `2823528` | 6 atışta 6 farklı offset, filtre 3079–3340 Hz (yazılı 3200). **Yazıldı, dinlenmedi** — dört sabit de tahmin, kabul kriteri kulakta |
 | 16 | **Üç küçük iş.** Gürültü kuralı genellendi (patlama 18, Burster 9, fişek 30); Çığlıkçı minimap'te içi boş kare oldu; kedinin kartı Clinger'ı alamadığını söylüyor | `1ac455f` | Üçü de "küçük ve bağımsız" listesinden. Gürültünün ikinci yarısı (sıra bütçesini açması) bilerek yapılmadı |
 | 17 | **`bug.md` #8 — 30 fps altı ağır çekim.** `planSteps()`: kare zamanı `maxDelta`'yı aşmayan eşit adımlara bölünüyor, `update()` o kadar kez çağrılıyor, `render()` bir kez. `MAX_SUBSTEPS` 3 | `6983f60` | 20 fps'te hız %66 → **%100**; 30 fps ve üstünde adım sayısı 1, yani sağlıklı makine hiçbir şey ödemiyor. **Bug listesi ilk kez boş** |
+| 18 | **Ses Faz 2, 3, 5 ve Faz 4'ün üçte ikisi.** Prosedürel oda (üç mekân, kuru/ıslak yolu); panning + mesafe zayıflaması; zombi vokalleri, dört ses tavanı, ölüm sesi; ayak sesi, spawn ve slam telegraph'ı; baskıya bağlı yatak | `TBD` | **Ses planının beş fazı da yazıldı.** Hiçbiri dinlenmedi — her fazın altında ölçüm var, hiçbirinin altında kulak yok |
 
 ---
 
@@ -108,18 +109,41 @@ Bilinen pürüzler:
   hamle hâlâ okunabiliyor mu, yoksa işaretli olan tek haksız gövde mi.
 
 ### Masadan çıkacak iş kalmadı
-Ses planının Faz 0 ve 1'i, üç küçük iş ve `bug.md` #8 bitti; açık bug listesi
-ilk kez boş. **Geriye kalan her şeyin ya kulağa ya oynanışa ihtiyacı var:**
+İki planın ikisi de bitti. AI planı beş fazın beşi, ses planı beş fazın beşi
+(Faz 4'ün ikisi hariç, sebebi aşağıda). Açık bug listesi boş.
+
+**Geriye kalan her şeyin ya kulağa ya oynanışa ihtiyacı var:**
 
 | Ne | Ne lazım |
 |---|---|
 | Sekiz "oynayıp bakılacak" başlığı (aşağıda) | bir koşu |
-| Ses Faz 1'in dört sabiti | `?audio=test`, üç soruluk liste |
-| Ses Faz 2–5 (mekân, konum, eksik olaylar, adaptif) | Faz 1 dinlenmeden başlamamalı — plan faz başına 2-3 tur diyor |
+| Ses Faz 1–5'in bütün sabitleri | `?audio=test`, aşağıdaki liste |
+| Sığınak ambiyansı + hava yatağı (Faz 4'ün kalanı) | önce odanın dinlenmesi |
 | Gürültünün sıra bütçesini açması | önce yeni gürültü kaynaklarının oynanması |
+| Ses Faz 6 (gerçek foley + beste) | MVP dışı, ve **karar** — 1–5 dinlenmeden verilemez |
 
-Ses Faz 2'yi şimdiden yazmak, dinlenmemiş bir Faz 1'in üstüne ikinci bir
-dinlenmemiş katman koymak olurdu. Planın kendi yöntemi buna hayır diyor.
+**Bu bir uyarıyla birlikte gelsin:** planın kendi yöntemi faz başına 2-3
+dinleme turu diyordu, ve beş faz üst üste dinlenmeden yazıldı. Yani şu an
+ortada beş katman var ve hangisinin diğerinin üstünü örttüğü bilinmiyor. Her
+fazın altında ne ölçüldüğü yazılı — ölçülen şey **aritmetik**, ses değil.
+İlk dinleme turunda bir şey yanlış geliyorsa, önce hangi katmanın olduğunu
+sormak gerekiyor.
+
+### Ses için dinleme listesi *(tek oturum, `?audio=test`)*
+
+**Faz 1 — varyasyon.** 1'e üst üste hızlı bas: tekrar duyuluyor mu?
+(`VARY_FREQ`/`VARY_GAIN` yükselir.) 3'e bas: slap-back dağıldı mı? Ters yön:
+Ranger'la Marksman hâlâ iki ayrı silah mı? (Değilse sayılar yüksek.)
+
+**Faz 2 — oda.** ROOM düğmeleriyle aynı sesi üç mekânda çal. BASEMENT gerçekten
+kapanıyor mu, UNDERPASS açılıyor mu? Silahın odası fazla mı? (`WET_GUN`.)
+
+**Faz 3 — konum.** POS kaydırıcısını sola al, 5'e bas: sol mu? Merkeze al,
+tekrar: merkez mi? Sonra oyunda: dört ses bilgi mi çamur mu, ölüm sesi
+zincirleme öldürmede fazla mı?
+
+**Faz 5 — yatak.** DRONE aç, BED'i 0'dan 100'e gezdir. Fark ediliyor mu
+(kötü), yoksa yalnız durduğunda mı (iyi)?
 
 ### AI planı bitti — sıra oynamakta
 Beş fazın beşi de yapıldı. **Ama son sekiz iş masa başında ayarlandı ve

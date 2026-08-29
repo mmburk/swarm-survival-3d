@@ -897,7 +897,18 @@ export class Player {
     this.breathCycle += delta;
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
     if (speed > 0.6) {
+      const before = this.walkCycle;
       this.walkCycle += delta * (5.5 + speed * 0.55);
+
+      // A boot lands where the swing passes through zero, which is every half
+      // turn of the cycle. Reading the animation rather than running a timer
+      // beside it means the step is on the foot however fast he is going, and
+      // it costs a floor and a compare. The game is called the long walk home
+      // and the walk had no sound in it.
+      if (Math.floor(before / Math.PI) !== Math.floor(this.walkCycle / Math.PI)) {
+        this.audio.playFootstep();
+      }
+
       const swing = Math.sin(this.walkCycle) * 0.38;
       this.leftLeg.rotation.x = swing;
       this.rightLeg.rotation.x = -swing;

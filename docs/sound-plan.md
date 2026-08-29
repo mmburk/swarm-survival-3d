@@ -174,7 +174,7 @@ tahmin ve kabul kriteri kulakta. Dinleme turu `?audio=test` → 1/2/3/4 tuşlar�
 
 ---
 
-## 3. FAZ 2 — MEKÂN
+## 3. FAZ 2 — MEKÂN *(yazıldı, dinlenmedi)*
 
 Işık kuralının ses karşılığı. Şu anda sığınak — tahtalarla kapatılmış bir
 bodrum — açık sokakla birebir aynı sesleniyor.
@@ -195,9 +195,45 @@ oyunu anında ucuzlatır.
 **Kabul:** merdivenlerden inince ses kapanıyor, köprü altında açılıyor.
 **Sönüm süreleri tamamen zevk meselesi — kulak gerekir, muhtemelen 2-3 tur.**
 
+### Nasıl yapıldı
+
+**2.1** — `buildIR(id)`: gürültü × üstel sönüm, üstünde tek kutuplu bir alçak
+geçiren. `tone` düşükse tepe **gittikçe** kayboluyor, baştan boğuk başlamıyor
+— duvarın kuyruktan aldığı ilk şey tiz. İki kanal bağımsız gürültü, yoksa
+kuyruk mono oluyor. Tampon `SPACES` sabitinden geliyor ve `irCache`'te
+duruyor; ses dosyası yok, hâlâ tek bir ses dosyası yok.
+
+| Mekân | `decay` | `tone` | `predelay` | Ölçülen kuyruk |
+|---|---|---|---|---|
+| STREET | 0.9 | 0.65 | 0.012 | 0.912 sn |
+| UNDERPASS | 1.8 | 0.30 | 0.035 | 1.835 sn |
+| BASEMENT | 0.35 | 0.22 | 0.004 | 0.354 sn |
+
+**2.2** — `toOutput(node, pan, wet)`. Kuru yol her zaman var; ıslak yol sesin
+kendi verdiği `wet` kadar. **Varsayılan sıfır**, çünkü kapatılması gereken bir
+varsayılan açık kalır. Beş oran: `WET_GUN` 0.38, `WET_BLAST` 0.5, `WET_BODY`
+0.2, `WET_VOICE` 0.28, `WET_STEP` 0.15. Arayüz hiçbir şey göndermiyor.
+
+Send **panner'dan önce** alınıyor: odanın sağı solu yoktur, şekli vardır.
+Kaynağıyla birlikte salınan bir kuyruk mekân değil, stereo efekt gibi duyulur.
+
+Mekân `Engine`'den geliyor: sığınak → BASEMENT, Vic'in köprü altı →
+UNDERPASS, geri kalan → STREET. Kamera zaten yeri biliyordu (`useShelter`),
+karışım bilmiyordu.
+
+### Ölçüm — headless harness
+
+Kuyruk enerjisi %10 → %60 noktalarında: STREET 0.3002 → 0.0330, UNDERPASS
+0.1866 → 0.0212, BASEMENT 0.1308 → 0.0137. Sol/sağ 2000 örneklik pencerede
+**0 aynı örnek** (kuyruk geniş). Odaya giden katman sayısı: çifte 2, patlama
+3, isabet 1, vokal 2, ayak sesi 1, **arayüz 0**.
+
+**Doğrulanmadı:** sönüm sürelerinin doğru olup olmadığı. Üçü de tahmin ve
+kabul kriteri kulakta — `?audio=test` sayfasında ROOM düğmeleri var.
+
 ---
 
-## 4. FAZ 3 — KONUM *(oynanışa en çok dokunan faz)*
+## 4. FAZ 3 — KONUM *(oynanışa en çok dokunan faz — yazıldı, dinlenmedi)*
 
 Sürüyü bir bilgi kanalına çeviren şey. Şu anda sürü **tamamen sessiz.**
 
@@ -224,9 +260,56 @@ Zincirleme öldürmenin "ısırması" hit-stop'la görsel olarak var, sesle yok.
 **Kabul:** gözler kapalı, soldan gelen sprinter'ın soldan geldiği anlaşılıyor.
 **Karışım dengesi kulak istiyor ve bu fazda en çok tur burada gider.**
 
+### Nasıl yapıldı
+
+**3.1** — `setListener(x, z)` her karede oyuncudan; `place(at)` kaynağın
+oyuncuya göre farkını `CAMERA_RIG.toScreen` ile ekran eksenlerine çeviriyor ve
+`halfFrameWidth()`'e bölüyor. Yani pan'in uçları ekranın uçları. Minimap'le
+**aynı singleton**, o yüzden ikisi "sol neresi" konusunda ayrışamaz.
+
+**3.2** — `1 / (1 + (d/10)²)`. Tekilliği alınmış ters kare. 34 metrede %7.5 —
+sıfır değil, çünkü kadraj dışından gelen sprinter'ı duymak bu fazın **varlık
+sebebi.** Kesme yalnız `AUDIBLE_FLOOR` (0.02) altında ve o bir node sayısı
+kararı, karışım kararı değil.
+
+**3.3** — `playVocal(type, at)`. Yedi karakter, aynı iki ilkelden: shambler
+alçak ve ıslak, sprinter ince ve kesik, butcher **neredeyse hiç** ve tamamen
+altta (sokağın en büyüğü, üstüne gelene kadar en sessizi).
+
+**3.4** — `Engine.updateVocals`. Saati **herkes** işletiyor, ama saati dolan
+gövde konuşmadan önce "benden yakın kaç kişi var" diye sayıyor; dörtten
+fazlaysa susup 1.2 sn sonra tekrar deniyor. Sayım kısmi seçim, sıralama değil
+— 34 gövdeyi dört maddelik bir soru için sıralamak saniyede bir sort demek.
+Saatlerin hepsinin işlemesi, oyuncu yürüdükçe sokağın anahtar gibi
+açılıp kapanmasını engelliyor.
+
+**3.5** — `playDeath(at)`: kısa ıslak bir çatırtı, arkasından ağırlığın yola
+inmesi. `playImpact`'i yükseltmek değil — bir öldürmenin anlamını yitirmesinin
+yolu odur.
+
+### Ölçüm — headless harness, dinleyici (0,0)
+
+Kadraj yarı genişliği 24.889 birim (28 × 16:9).
+
+| Yer | dünya (x,z) | pan | erim |
+|---|---|---|---|
+| tam merkez | (0, 0) | 0.000 | 0.99 |
+| ekranda sağ, 10 m | (7.07, −7.07) | **+0.402** | 0.53 |
+| ekranda sol, 10 m | (−7.07, 7.07) | **−0.402** | 0.46 |
+| ekranda yukarı, 10 m | (−7.07, −7.07) | **−0.000** | 0.50 |
+| sağ, 28 m | (20, −20) | 1.000 (sınır) | 0.12 |
+
+Mesafe: 0 m %100, 10 m %49, 20 m %21, 34 m %7.5, 50 m %3.6, 80 m'de node bile
+üretilmiyor. Merkezde kalması gerekenler — silah, ayak sesi, arayüz, reload —
+**hiçbiri panner'a bağlanmıyor.**
+
+**Doğrulanmadı:** karışımın kendisi. Dört sesin çamur mu bilgi mi olduğu,
+ölüm sesinin zincirleme öldürmede fazla mı geldiği, vokal aralığının (3–6 sn)
+doğru olup olmadığı. Hepsi kulakta.
+
 ---
 
-## 5. FAZ 4 — SESİ OLMAYAN OLAYLAR
+## 5. FAZ 4 — SESİ OLMAYAN OLAYLAR *(kısmen yapıldı)*
 
 | Olay | Neden önemli | Not |
 |---|---|---|
@@ -236,9 +319,30 @@ Zincirleme öldürmenin "ısırması" hit-stop'la görsel olarak var, sesle yok.
 | **Sığınak ambiyansı** | Soba, köpek, uzak damla — çatışma uğultusu değil | §12'nin "burası güvenli" hissini taşıyan şey |
 | **Hava** | Sektör başına rüzgâr/yağmur yatağı | Beş bölgeyi kozmetikten çıkaran ucuz kanal |
 
+### Nasıl yapıldı — üçü yapıldı, ikisi durdu
+
+**Ayak sesi.** `Player`'ın yürüme döngüsü `walkCycle` tutuyordu; adım, salınım
+sıfırdan geçtiğinde, yani her yarım turda. Yanına sayaç koymak yerine
+animasyonu okumak: `Math.floor(önce/π) !== Math.floor(sonra/π)`. Böylece adım
+hızı ne olursa olsun ayağın üstünde. Ses bilerek neredeyse hiç
+(`volume: 0.045`) — saniyede iki kere, bütün oyun boyunca çalıyor.
+
+**Spawn telegraph'ı.** 0.45 saniyelik kanlı halka artık sessiz değil:
+`playSpawnSwell(at)`, alçak bir kabarma. Karışımın *içinde* değil *altında* —
+önce hissedilip sonra aranan bir şey.
+
+**Boss slam telegraph'ı.** 0.95 saniyelik hazırlık `playSlamWindup(at)` aldı.
+Yerdeki halka yalnızca o an oraya bakana bir şey söylüyordu.
+
+**Yapılmadı:** sığınak ambiyansı (soba, köpek, uzak damla) ve hava yatağı.
+İkisi de "sürekli çalan katman" ve sürekli çalan bir katmanın doğru seviyesi
+tanım gereği kulak kararı; üstelik ikisi de Faz 2'nin odasıyla etkileşiyor.
+Dinlenmemiş bir odanın üstüne sürekli bir yatak koymak, iki bilinmeyeni
+birbirine bağlamak olurdu.
+
 ---
 
-## 6. FAZ 5 — ADAPTİF KATMAN
+## 6. FAZ 5 — ADAPTİF KATMAN *(yazıldı, dinlenmedi)*
 
 `setWaveIntensity()` ve `getBeatPulse()` **zaten yazılmış ve hiç
 çağrılmıyor.** Adaptif yatak tasarlanmış, bağlanmamış. Yapılacak iş bağlamak:
@@ -251,6 +355,40 @@ Zincirleme öldürmenin "ısırması" hit-stop'la görsel olarak var, sesle yok.
 - Boss'un kendi yatağı olsun, faz 2'de değişsin.
 
 Bu faz **müzik değil.** Müzik Faz 6'da ve MVP dışında.
+
+### Nasıl yapıldı
+
+`setWaveIntensity` gitti, yerine **`setPressure(0..1)`** geldi. Tek sayı, iki
+değil: "kaç tanesi ayakta" ile "oyuncudan ne kaldı" bir yatağa **aynı şeyi**
+söylüyor, ikisini ayrı tutmak fazladan basamaklı tek bir kadran olurdu.
+
+`Engine` yarım saniyede bir hesaplıyor (her değer 1 saniyede ramp'liyor, 60
+Hz'de sormak birbirini iptal eden 60 ramp demek):
+`min(1, min(1, ayakta/22) × 0.65 + (1 − can oranı) × 0.5)`, boss varken taban
+0.7 — boss kendi havasıdır, oda dolu olmasa da yatak bunu bilerek yanlış
+bilsin.
+
+`getBeatPulse()` de artık çağrılıyor: ikinci osilatörün önüne bir gain kondu
+(`bgPulse`) ve nefes onu sürüyor. Hız `beatRate`, baskıyla 0.55 → 1.7. Ritim
+değil — ritim oyunun tutmadığı bir söz.
+
+`setBedRoot(hz)`: Long Night kademesi başına ×0.94. Zorluk tahtada seçilip bir
+daha hiç duyulmuyordu.
+
+### Ölçüm
+
+| Baskı | Kesim | Seviye | Kök |
+|---|---|---|---|
+| 0.0 | 250 Hz | 0.045 | 90.0 Hz |
+| 0.5 | 525 Hz | 0.073 | 97.2 Hz |
+| 1.0 | 800 Hz | 0.100 | 104.4 Hz |
+
+Long Night kökü 90 → 75 Hz (ikinci katman 37.5). Nefes 2 saniyede sessizken
+0, baskı altında 3 dönüş.
+
+**Doğrulanmadı:** yatağın fark edilir mi yoksa rahatsız edici mi olduğu.
+Amaç yalnızca **durduğunda** fark edilmesi. `?audio=test` → DRONE aç, BED
+kaydırıcısını gezdir.
 
 ---
 
@@ -309,10 +447,10 @@ Faz 0.3'teki test sayfası bu döngünün her turunu kısaltır; o yüzden en ba
 |---|---|---|---|---|
 | **0** | Ölü kod, ses kaydırıcısı, test sayfası | yarım gün | hayır | **yapıldı** |
 | **1** | Varyasyon (`bug.md` #11 dahil) | yarım gün | evet, 1-2 tur | **yazıldı, dinlenmedi** |
-| **2** | Mekân / reverb | 1 gün | evet, 2-3 tur | — |
-| **3** | Konum + zombi vokalleri | 2 gün | evet, en çok burada | — |
-| **4** | Eksik olaylar | 1 gün | evet, 1 tur | — |
-| **5** | Adaptif yatak | 1 gün | evet, 2 tur | — |
+| **2** | Mekân / reverb | 1 gün | evet, 2-3 tur | **yazıldı, dinlenmedi** |
+| **3** | Konum + zombi vokalleri | 2 gün | evet, en çok burada | **yazıldı, dinlenmedi** |
+| **4** | Eksik olaylar | 1 gün | evet, 1 tur | **3/5 yapıldı** |
+| **5** | Adaptif yatak | 1 gün | evet, 2 tur | **yazıldı, dinlenmedi** |
 | **6** | Gerçek foley + beste | — | MVP dışı, karar bekliyor | — |
 
 **MVP için gereken Faz 0 bitti.** Gerisi oyunu belirgin şekilde iyileştirir ama

@@ -147,7 +147,7 @@ export class BossEnemy {
     this.telegraphMesh.visible = false;
     this.active = true;
 
-    this.audio.playBossRoar();
+    this.audio.playBossRoar(this.position);
     this.particles.emitBurst(this.position, 40, HEX.gore, 12, 1.0);
   }
 
@@ -161,7 +161,7 @@ export class BossEnemy {
       this.phase = 2;
       this.hideMat.color.setHex(0x53503c);
       this.growthMat.color.setHex(0xa33030);
-      this.audio.playBossRoar();
+      this.audio.playBossRoar(this.position);
       this.particles.emitBurst(this.position, 70, 0xa33030, 16, 1.2);
     }
 
@@ -192,6 +192,9 @@ export class BossEnemy {
       if (this.slamTimer >= (this.phase === 2 ? 3.2 : 4.2)) {
         this.isTelegraphing = true;
         this.telegraphTimer = 0.95;
+        // The ring on the ground only warns whoever happens to be looking at
+        // that patch of road. This warns everyone.
+        this.audio.playSlamWindup(this.position);
         tempSlamPos.copy(playerPos); // it aims where you are, so keep moving
         this.telegraphMesh.position.set(
           tempSlamPos.x,
@@ -218,7 +221,7 @@ export class BossEnemy {
         this.leftArm.rotation.x = 0.35;
         this.rightArm.rotation.x = 0.35;
 
-        this.audio.playSlam();
+        this.audio.playSlam(this.position);
         this.particles.emitBurst(tempSlamPos, 45, HEX.dirt, 13, 0.9);
         this.particles.emitShockwave(tempSlamPos, 8.0, HEX.smoke);
 

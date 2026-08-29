@@ -94,6 +94,41 @@ const SCREAM_LANE_DURATION = 5.0;
  * decay of 2.5. The Ranger held down nets about 6 a second and buys a Screamer
  * roughly every twenty seconds of continuous fire.
  */
+/**
+ * How many of the dead are allowed to have a voice at once, and how often each
+ * of them uses it.
+ *
+ * A mix decision rather than a budget one, and the phase turns on it. Thirty
+ * bodies groaning is not thirty times as frightening as four; it is a texture,
+ * and a texture carries no information. Four means a player can count them,
+ * place them, and notice when a fifth arrives.
+ *
+ * The four are the four nearest, so what you hear is what is about to matter.
+ * Everything further out keeps it to itself — not silenced by distance, which
+ * the falloff would do anyway, but never asked to speak.
+ */
+/**
+ * How the bed is told what kind of night it is having.
+ *
+ * One number, not two. How many are up and how little of the player is left
+ * both mean the same thing to a bed — that it is going badly — and a second
+ * dial saying the same thing is a dial with extra steps. The crowd is measured
+ * against a street that is genuinely full rather than against the pool size,
+ * because twenty-two bodies up at once is already the bad end of a sector.
+ *
+ * Re-read on a slow cadence: every value ramps over a second inside the
+ * AudioManager, so asking it sixty times a second would be sixty ramps
+ * cancelling each other.
+ */
+const PRESSURE_CROWD = 22;
+const PRESSURE_INTERVAL = 0.5;
+
+const VOCAL_VOICES = 4;
+const VOCAL_GAP: [number, number] = [3.0, 6.0];
+
+/** What a body that was not picked waits before trying again. */
+const VOCAL_RETRY = 1.2;
+
 const NOISE_THRESHOLD = 120;
 const NOISE_DECAY = 2.5;
 
@@ -296,6 +331,7 @@ export class Engine {
   private screamLanes: number = 0;
   /** How much gunfire this street has heard lately. See `NOISE_THRESHOLD`. */
   private noise: number = 0;
+  private pressureTimer: number = 0;
 
   /** Counts down to the next friction tick. See `FRICTION_INTERVAL`. */
   private frictionTimer: number = 0;
@@ -584,6 +620,10 @@ export class Engine {
 
       this.player.resetPositionAndVelocity(new THREE.Vector3(0, 0, 8));
       CAMERA_RIG.useShelter();
+      // Boards and a low ceiling. The rig already knows it is a room; now so
+      // does the mix — the shelter and the street were coming out of the
+      // speakers as the same place.
+      this.audio.setSpace('BASEMENT');
       this.cameraJuice.snapTo(this.player.position);
 
       this.hud.setShelterMode(true);
@@ -833,6 +873,10 @@ export class Engine {
       this.hud.setShelterMode(false);
       this.hud.setWeapon(this.player.weaponDef.name, this.player.weaponDef.model, this.player.weaponDef.alt.name);
       this.audio.startBackgroundMusic();
+      // The difficulty is chosen at the board and then never heard again. A
+      // fifth down for every step of the Long Night is the cheapest way to say
+      // it back, and it keeps saying it.
+      this.audio.setBedRoot(90 * Math.pow(0.94, this.sectors.night.level));
 
       this.uiPaused = false;
       this.interactLock = 0.4;
@@ -843,6 +887,7 @@ export class Engine {
   private placePlayerAtSectorStart(): void {
     this.player.resetPositionAndVelocity(new THREE.Vector3(0, 0, 16));
     CAMERA_RIG.useField();
+    this.audio.setSpace(this.sectors.isTraderSector ? 'UNDERPASS' : 'STREET');
     this.cameraJuice.snapTo(this.player.position);
 
     // Whatever came out of the pens is set down beside you at the mouth of
@@ -1269,7 +1314,56 @@ export class Engine {
 
     tmpSpawn.set(x, this.terrain.getHeightAt(x, z), z);
     this.particles.emitTelegraphRing(tmpSpawn, 0.45, HEX.bloodDark);
+    this.audio.playSpawnSwell(tmpSpawn);
     this.telegraphs.push({ pos: tmpSpawn.clone(), type, timer: 0.45 });
+  }
+
+  /**
+   * Who out there is making a noise.
+   *
+   * Every body carries its own clock and every clock runs, wherever it is
+   * standing — that is what keeps the street from sounding like a switch being
+   * thrown as the player walks about. What the distance decides is only
+   * whether a clock that has run out gets to be heard: the nearest few speak
+   * and the rest reset a short way back and try again.
+   *
+   * The ranking is a partial selection rather than a sort. Thirty-four bodies
+   * sorted every time one of them wanted to groan would be a sort a second for
+   * a question with a four-item answer.
+   */
+  private updateVocals(active: Enemy[], delta: number): void {
+    if (this.sectors.state !== 'COMBAT') return;
+
+    const px = this.player.position.x;
+    const pz = this.player.position.z;
+
+    for (const e of active) {
+      if (!e.active) continue;
+      e.vocalTimer -= delta;
+      if (e.vocalTimer > 0) continue;
+
+      const dx = e.position.x - px;
+      const dz = e.position.z - pz;
+      const d2 = dx * dx + dz * dz;
+
+      // How many are closer than this one. Stops at the cap, so the loop is
+      // over in four hits on a body at the back of the crowd.
+      let nearer = 0;
+      for (const other of active) {
+        if (other === e || !other.active) continue;
+        const ox = other.position.x - px;
+        const oz = other.position.z - pz;
+        if (ox * ox + oz * oz < d2 && ++nearer >= VOCAL_VOICES) break;
+      }
+
+      if (nearer >= VOCAL_VOICES) {
+        e.vocalTimer = VOCAL_RETRY;
+        continue;
+      }
+
+      this.audio.playVocal(e.type, e.position);
+      e.vocalTimer = VOCAL_GAP[0] + Math.random() * (VOCAL_GAP[1] - VOCAL_GAP[0]);
+    }
   }
 
   /**
@@ -1394,7 +1488,7 @@ export class Engine {
    * afterwards there is nothing to shoot that undoes it.
    */
   private onScream(screamer: Enemy): void {
-    this.audio.playScream();
+    this.audio.playScream(screamer.position);
     this.cameraJuice.addTrauma(0.28);
     this.particles.emitShockwave(screamer.position, 9.0, HEX.bloodDark);
 
@@ -1472,7 +1566,7 @@ export class Engine {
     if (this.whiffTimer > 0) return;
     if (!withinRadius(at.position, this.player.position, 4.5)) return;
     this.whiffTimer = 0.22;
-    this.audio.playSwing();
+    this.audio.playSwing(at.position);
     this.particles.emitTrail(at.position, HEX.smoke);
   }
 
@@ -1692,6 +1786,7 @@ export class Engine {
     this.hitStop = Math.max(this.hitStop, 0.022);
     this.streak++;
     this.streakTimer = 2.4;
+    this.audio.playDeath(enemy.position);
 
     // A swollen one is carrying the same gas a Burster walks over to you, and
     // it goes off wherever it happened to be standing when it stopped. Reuses
@@ -1804,7 +1899,7 @@ export class Engine {
           const killed = this.boss.takeDamage(b.damage, b.position);
           this.hud.spawnDamageNumber(b.position, b.damage, isCrit);
           this.hud.setBossBar(true, this.boss.health, this.boss.maxHealth);
-          this.audio.playImpact();
+          this.audio.playImpact(this.boss.position);
           if (killed) this.onBossKilled();
           b.deactivate();
         }
@@ -1925,7 +2020,7 @@ export class Engine {
     const centre = b.position.clone();
     const radius = b.blastRadius || 8;
 
-    this.audio.playExplosion();
+    this.audio.playExplosion(centre);
     this.cameraJuice.addTrauma(0.4);
     this.particles.emitExplosion(centre, radius, 0xd2622a);
     this.spendNoise(NOISE_BLAST);
@@ -2082,6 +2177,22 @@ export class Engine {
 
     // Whose turn it is to come at you.
     this.updateTurns(active, delta);
+
+    // And which of them you can hear.
+    this.updateVocals(active, delta);
+
+    // What kind of night the bed thinks it is having.
+    this.audio.tickBed(delta);
+    this.pressureTimer -= delta;
+    if (this.pressureTimer <= 0) {
+      this.pressureTimer = PRESSURE_INTERVAL;
+      const crowd = Math.min(1, active.length / PRESSURE_CROWD);
+      const hurt = 1 - this.player.health / Math.max(1, this.player.maxHealth);
+      // A boss is its own weather: the room is not full and the bed should be
+      // wrong about that on purpose.
+      const floor = this.boss.active ? 0.7 : 0;
+      this.audio.setPressure(Math.max(floor, Math.min(1, crowd * 0.65 + hurt * 0.5)));
+    }
 
     // Enemies.
     for (const e of active) {
@@ -2246,7 +2357,7 @@ export class Engine {
   /** A Burster going off: damages the player and everything near it. */
   private burstOpen(burster: Enemy): void {
     const pos = burster.position.clone();
-    this.audio.playExplosion();
+    this.audio.playExplosion(pos);
     this.cameraJuice.addTrauma(0.45);
     this.particles.emitExplosion(pos, 5.5, 0x9aa84a);
     this.spendNoise(NOISE_BURST);
@@ -2266,6 +2377,9 @@ export class Engine {
   private update(delta: number): void {
     this.frame++;
     this.input.update();
+
+    // Where the ears are, before anything is allowed to make a sound.
+    this.audio.setListener(this.player.position.x, this.player.position.z);
 
     if (this.input.justMuted) {
       const on = this.audio.toggleMute();

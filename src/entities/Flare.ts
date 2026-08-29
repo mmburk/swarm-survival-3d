@@ -134,7 +134,7 @@ export class Flare implements IPoolable {
 
     if (this.burnTime <= 0 && !this.detonated) {
       this.detonated = true;
-      this.audio.playExplosion();
+      this.audio.playExplosion(this.position);
       this.particles.emitExplosion(this.position, 12.0, 0xff6a1f);
 
       const blastSq = 12.0 * 12.0;
