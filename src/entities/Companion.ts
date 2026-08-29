@@ -84,6 +84,20 @@ const ENGAGED_HEAD_START = 5.0;
 const WINDED_IN = 0.2;
 const WINDED_OUT = 0.5;
 
+/**
+ * How far out an animal reads the crowd when it is looking for somewhere to
+ * not be, and how much of its leash it will spend getting there.
+ *
+ * `bug.md` 22. Mouser fights nothing and was still ending sectors 6 and 9 at a
+ * ninth of her condition, because "out of it" was being worked out from the
+ * single nearest body and then applied at heel distance — one and seven tenths
+ * of a metre, which in a street that has closed on the player is not out of
+ * anything. Stepping around one corpse in a crowd puts you in front of the
+ * next one.
+ */
+const AVOID_SENSE = 7.0;
+const AVOID_BACK = 0.95;
+
 /** XZ distance. Everything in this game is decided on the flat. */
 function flat(a: THREE.Vector3, b: THREE.Vector3): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
@@ -666,19 +680,25 @@ export class Companion {
     this.followHeel(delta, playerPos, def.speed);
   }
 
-  /** Mouser. Stays at your knee, keeps out of it, and you stop bleeding. */
+  /**
+   * Mouser. Stays at your knee, keeps out of it, and you stop bleeding.
+   *
+   * "Keeps out of it" used to mean stepping around the single nearest corpse
+   * and doing it at heel distance, which in a closed street is stepping in
+   * front of the next one. She reads the whole crowd now and spends the length
+   * of her leash instead of her heel — she is the one animal here with no way
+   * of fighting back, so being in the wrong place is the only mistake she can
+   * make. Her work does not have a range, so standing a metre further out
+   * costs the player nothing.
+   */
   private roleWatch(delta: number, playerPos: THREE.Vector3, world: CompanionWorld): void {
     const def = this.def!;
-    const threat = this.nearestTo(this.position, 4.0, world);
 
-    if (threat) {
-      // Puts you between her and it. Cats are not brave and this one knows it.
-      tmpAway.copy(playerPos).sub(threat.position).setY(0);
-      const len = Math.hypot(tmpAway.x, tmpAway.z) || 1;
+    if (this.emptiestSide(playerPos, world, AVOID_SENSE, tmpAway)) {
       tmpTarget.set(
-        playerPos.x + (tmpAway.x / len) * def.heel,
+        playerPos.x + tmpAway.x * def.leash * AVOID_BACK,
         0,
-        playerPos.z + (tmpAway.z / len) * def.heel
+        playerPos.z + tmpAway.z * def.leash * AVOID_BACK
       );
       this.steer(tmpTarget, def.speed, delta, 0.35);
     } else {
@@ -767,6 +787,45 @@ export class Companion {
   }
 
   /**
+   * The side of the player the crowd is not on, as a unit vector in `out`.
+   *
+   * Every body within `radius` votes, weighted by how close it is — the one
+   * about to touch you counts for more than the one at the edge of the ring —
+   * and the answer is the opposite of where they are pushing. Returns false
+   * when there is nothing out there, and also when the player is ringed evenly
+   * enough that the votes cancel: an animal that picks a direction out of an
+   * even crowd is picking one at random, and standing still beats that.
+   */
+  private emptiestSide(
+    playerPos: THREE.Vector3,
+    world: CompanionWorld,
+    radius: number,
+    out: THREE.Vector3
+  ): boolean {
+    const near = world.enemiesNear(playerPos, radius);
+    out.set(0, 0, 0);
+
+    for (let i = 0; i < near.length; i++) {
+      const e = near[i];
+      if (!e.active) continue;
+      const dx = e.position.x - playerPos.x;
+      const dz = e.position.z - playerPos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > radius || d < 1e-3) continue;
+      const weight = 1 - d / radius;
+      out.x += (dx / d) * weight;
+      out.z += (dz / d) * weight;
+    }
+
+    const len = Math.hypot(out.x, out.z);
+    if (len < 0.35) return false;
+
+    out.x = -out.x / len;
+    out.z = -out.z / len;
+    return true;
+  }
+
+  /**
    * Out of it, but not out of the street.
    *
    * Heeling was tried first and did almost nothing, for a reason that is
@@ -782,21 +841,18 @@ export class Companion {
    */
   private fallBack(delta: number, playerPos: THREE.Vector3, world: CompanionWorld): void {
     const def = this.def!;
-    const threat = this.nearestTo(this.position, def.leash, world);
 
-    if (!threat) {
+    if (!this.emptiestSide(playerPos, world, AVOID_SENSE, tmpAway)) {
       this.followHeel(delta, playerPos, def.speed);
       return;
     }
 
-    tmpAway.copy(playerPos).sub(threat.position).setY(0);
-    const len = Math.hypot(tmpAway.x, tmpAway.z) || 1;
-    // As far behind the player as the leash allows, on the line away from what
-    // is closest — and a shade quicker than a walk, because this is a retreat.
+    // As far behind the player as the leash allows, on the emptiest line out —
+    // and a shade quicker than a walk, because this is a retreat.
     tmpTarget.set(
-      playerPos.x + (tmpAway.x / len) * def.leash * 0.9,
+      playerPos.x + tmpAway.x * def.leash * AVOID_BACK,
       0,
-      playerPos.z + (tmpAway.z / len) * def.leash * 0.9
+      playerPos.z + tmpAway.z * def.leash * AVOID_BACK
     );
     this.steer(tmpTarget, def.speed * 1.1, delta, 0.3);
   }

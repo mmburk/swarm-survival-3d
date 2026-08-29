@@ -539,39 +539,77 @@ kalmıyor.
 
 ---
 
-## Açık olanlar
+### 22. Mouser dövüşmediği hâlde sokağı yıpranmış bitiriyordu
 
-### 22. Mouser dövüşmediği hâlde sokağı yarı yarıya yıpranmış bitiriyor
+**Yer:** `src/entities/Companion.ts` — `roleWatch()`, yeni `emptiestSide()`
+**Commit:** `TBD`
 
-**Yer:** `src/config/Animals.ts` — `MOUSER.heel` (1.7) / `.leash` (3.0)
-**Durum:** açık. Bilerek mi değil mi, oynanmadan bilinmiyor.
+19 numaranın yan bulgusuydu. Kedi hiçbir şeye vurmuyor, kartı da "fights
+nothing and never will" diyor, ama sektör 6–9'da sokağı %11 kondisyonla
+bitiriyordu — üstelik gerçekten dövüşen köpekten daha kötü durumda.
 
-19 numaranın yan bulgusu. Kedi hiçbir şeye vurmuyor ve `winded` ondan sonra
-hiçbir şeyi değiştirmiyor (zaten çekiliyor), ama sokağı yıpranmış bitiriyor.
-Sebep tasması: 3 metre, yani oyuncu kalabalığın içinde durduğunda o da orada.
+**"Kalabalıktan uzak durma" kodu iki yerden birden yanlıştı.**
 
-**21 numaranın düzeltmesi bunu kötüleştirdi**, ve bu dürüstçe yazılmalı: ölüler
-köşe kesmeye başlayınca oyuncuyla birlikte hareket eden grubu daha iyi
-yakalıyorlar, ve kedi o grubun içinde.
+`roleWatch` yönü **tek** gövdeden hesaplıyordu (`nearestTo`), ve bulduğu noktayı
+**heel** mesafesinde uyguluyordu (1.7 m, tasması 3.0 olduğu hâlde). Kapanmış
+bir sokakta tek cesedin etrafından dolanmak, bir sonrakinin önüne çıkmaktır; ve
+1.7 metre zaten "dışarısı" değil.
+
+Yeni `emptiestSide()`: yarıçap içindeki **her** gövde oy veriyor, yakınlığıyla
+ağırlıklı — üstüne gelmek üzere olan, halkanın kenarındakinden fazla sayar — ve
+sonuç onların ittiği yönün tersi. Oylar birbirini götürüyorsa (oyuncu eşit
+şekilde çevrilmişse) `false` dönüyor: eşit bir kalabalıktan yön seçen hayvan
+rastgele seçiyordur, ve öylesi yerinde durmaktan kötüdür.
+
+Aynı yardımcıyı Rook'un `fallBack`'i de kullanıyor (19 numara), yani kaçınma
+mantığı artık tek yerde.
+
+### Ölçüm — 30 tohum, oyuncu 1.2 saniyede bir gövde indiriyor
+
+| | s2 | s6 | s9 | yığılma (s6/s9) |
+|---|---|---|---|---|
+| öncesi | 40% | **11%** | **11%** | 0.4 / 0.4 |
+| sonrası | 63% | **26%** | **30%** | 0.3 / 0.3 |
+
+Rook etkilenmedi (45% / 21% / 23%). Kedi artık gerçekten dövüşen hayvandan
+**daha iyi** durumda bitiriyor, ki bir savaşçı olmayan için doğrusu bu.
+
+### Hangi parçanın işi yaptığı — ve beklenmedik olan
+
+İki sabit ayrı ayrı ölçüldü, ve **görüş yarıçapı mesafeden daha belirleyici**
+çıktı:
 
 | | s2 | s6 | s9 |
 |---|---|---|---|
-| kondisyon kalan, öncesi | 57% | 25% | 19% |
-| kondisyon kalan, sonrası | 40% | **11%** | **11%** |
-| yere yığılma (s6/s9) | 0.2 / 0.3 | → | 0.4 / 0.4 |
+| A. yeni hâli (7 m görüş, tasma boyu) | 63% | 26% | 30% |
+| B. aynı okuma, heel mesafesinde | 40% | 7% | 16% |
+| C. tam mesafe, eski 4 metrelik görüş | 33% | **0%** | **1%** |
 
-Rook'ta karşılığı yok (19→21%, 21→24%) çünkü o zaten içeri giriyor ve `winded`
-onu çekiyor; kedinin çekilecek bir yeri yok, çünkü tasması onu oyuncunun
-yanında tutuyor.
+C'nin eski koddan bile kötü olması sebebi açıklıyor: **4 metrede, kapanmış bir
+sokağın içinde her yön eşit derecede kötüdür.** Oylar birbirini götürüyor,
+`emptiestSide` "boş taraf yok" diyor, ve kedi hiç kaçınmadan heel'de oturuyor.
+Boş tarafın görülebilmesi için kalabalığın **kenarını** görecek kadar uzağa
+bakmak gerekiyor.
 
-Kartındaki iş — "seni dört saniye kimse vurmazsa saniyede 2 kondisyon geri
-verir" — yerde yatarken yapılamıyor. Yani destek hayvanı, tam ihtiyaç duyulan
-sokakta kendini koruyamıyor.
+**Kalan:** s6–9'da hâlâ %26–30 ile bitiriyor ve 25 saniyede 0.3 kez yığılıyor.
+Kapanmış bir sokakta gerçekten boş taraf kalmadığında yapacak bir şeyi yok —
+vuramıyor, ve tasması onu oyuncunun yanında tutuyor. Kartın işi (4 saniye
+sakinlikte saniyede 2 kondisyon) menzilsiz olduğu için uzaklaşmasının oyuncuya
+maliyeti yok; daha fazlası tasmayı uzatmak olurdu, ve o zaman "at your knee"
+sözü bozulur.
 
-Çözüm ararsa: tasma 3.0 → 4.5 civarı, ya da WATCH rolünün kaçınma yarıçapını
-(`roleWatch` içinde 4.0) büyütmek. **Ölçmeden değiştirilmedi**, çünkü ikisi de
-kediyi oyuncudan uzaklaştırır ve iyileştirmenin menzili varsa oradan da bir
-şey kırılır.
+---
+
+## Açık olanlar
+
+*Şu an yok* — yirmi iki bug'ın yirmi ikisi kapalı.
+
+Bu, kodun temiz olduğu anlamına gelmiyor. Buradaki son altı madde **oynanarak
+değil ölçülerek** bulundu, yani bulunmalarının tek sebebi birinin o soruyu
+sormuş olması. Oyun hâlâ bir kez baştan sona oynanmadı, ve oynandığında
+buraya yazılacak şeyler çıkacak. Aşağıdaki "bug değil ama bilinsin" maddeleri
+ve `docs/fikirler.md`'deki "oynayıp bakılacak" başlıkları bir koşunun neye
+bakacağını söylüyor.
 
 ---
 
