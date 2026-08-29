@@ -47,6 +47,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 22 | **`STRIKE_LUNGE` 6.0 → 8.5.** Kaçan oyuncuya ölçülen tek temiz kol | `23a2cae` | 14 tohumda: kaçan +%6–23, duran +%1–2. Şerit bütçesi hiçbir şey yapmıyor, `SWING_REACH` ise kaotik |
 | 23 | **Winded — hayvan nefesi kesilince çekiliyor.** %20'de bırakıyor, %50'de dönüyor (histerezis); geri çekilme oyuncuya değil **kalabalıktan uzağa** | `23a2cae` | Rook'un yere yığılması yarıya indi (0.4 → 0.2). Grit'e dokunulmadı: sorun "az dayanıyor" değil, **durmayı bilmiyor** idi |
 | 24 | **Gürültü uyarısı.** Sayaç hâlâ gizli; %75'te bir satır: "The street is listening." %40'a inince yeniden kurulur | `23a2cae` | Sayacı besleyen üç yeni şeyin (patlama, Burster, fişek) etiketi yoktu |
+| 25 | **Okunabilirliğin ölçülebilen yarısı.** Tint'ler arası algısal mesafe (CIE76) ve silüet farkının piksel karşılığı | `TBD` | İşaretli vs Burster **ΔE 84** — karıştırılamaz. Çığlıkçının çenesi 1080p'de 10 px, diğerleri 4 px. Ve projeksiyon ortografik: **mesafe boyutu hiç değiştirmiyor**, zorluk kalabalıktan geliyor |
 
 ---
 
@@ -189,10 +190,27 @@ Oynarken bakılacak sıra (en çok şüphe duyulandan aza):
 2. ~~**Clinger ve Screamer kiting'i telafi ediyor mu?**~~ **Hayır, ölçüldü.**
    Ve nedeni fazın tasarımını ilgilendiriyor: şerit bütçesi kaçan oyuncuya
    karşı bağlayıcı kısıt **değil**.
-3. **Okunabilirlik** — 34 gövde varken kolların geri çekilmesi hamleyi
-   anlatıyor mu? İşaretlilerin soğuk rengi Burster'ın sıcak sarısından
-   ayrılıyor mu? Çığlıkçının sarkık çenesi 15 metreden seçiliyor mu?
-   *Bu ölçülemez — göz gerekiyor.*
+3. **Okunabilirlik** — yarısı ölçüldü (25 numara), yarısı göz istiyor.
+
+   **Ölçülen:** renk ayrımı sorun değil. İşaretlinin soğuk rengiyle Burster'ın
+   sıcak sarısı arasında **ΔE 84** var (üç ten tonunda 72–84); 2.3 "kimse
+   ayırt edemez", 10 "bir bakışta belli". Yani kartın sözü — *"bir şey
+   patlayacak" ile "bunda bir tuhaflık var" asla karışmasın"* — tutuyor.
+   İşaretli düz gövdeden ΔE 28 ayrı: fark edilir ama bağırmıyor, ki niyet
+   buydu.
+
+   **Ölçülen 2:** Çığlıkçının sarkık çenesi 1080p'de **10 piksel**, diğer her
+   tipte 4; 5 piksel daha aşağıda duruyor. Kendi 0.92 ölçeğinden sonra 9.
+   720p'de 7'ye 3.
+
+   **Ve bir düzeltme:** "15 metreden seçiliyor mu" sorusu yanlış kurulmuş.
+   Kamera **ortografik** — mesafe hiçbir şeyin ekrandaki boyutunu
+   değiştirmiyor. Uzaktaki Çığlıkçı yakındakiyle aynı büyüklükte; zor olan
+   arada duran 33 gövde. Yani tell'in **küçülmeye** değil **kalabalığa**
+   dayanması gerekiyor.
+
+   **Göz isteyen kısım:** 9 piksel 34 gövdenin arasında yeter mi, ve kolların
+   geri çekilmesi hamleyi anlatıyor mu.
 4. **Çığlık + gürültü** — bir sokakta kaç Çığlıkçı geliyor, ön safın 4'ten
    10'a çıkması panik mi yaratıyor yoksa duvar mı? *Sayısı ölçüldü (etkisi
    yok), ama "panik mi duvar mı" bir his ve o oynanarak bilinir.*

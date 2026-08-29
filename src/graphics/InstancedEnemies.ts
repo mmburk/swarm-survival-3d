@@ -62,9 +62,21 @@ function bodyGeometryFor(type: EnemyType): THREE.BufferGeometry {
   const rightSocket = new THREE.BoxGeometry(0.09, 0.07, 0.05).translate(0.09, 1.59 - stoop, -0.25 + lean);
   parts.push(tint(leftSocket, SOCKET_COLOR), tint(rightSocket, SOCKET_COLOR));
 
-  // A Screamer is read at fifteen metres or not at all, and at fifteen metres
-  // a colour is nothing. What carries is the outline: the jaw is unhinged and
-  // hanging, twice the drop of anything else on the street.
+  // A Screamer has to be picked out of a crowd, and in a crowd a colour is
+  // nothing. What carries is the outline: the jaw is unhinged and hanging,
+  // more than twice the drop of anything else on the street.
+  //
+  // Note what "at fifteen metres" does and does not mean here. The rig is
+  // orthographic, so distance changes the size of nothing — a Screamer holding
+  // its standoff is exactly as big on screen as one standing on you. What is
+  // actually hard about reading it at range is the thirty-three other bodies
+  // in between, so the tell has to survive clutter, not shrinking.
+  //
+  // Measured: at 1080p one world unit is 38.6 pixels, so this jaw is 10 pixels
+  // tall against 4 for every other type, hanging 5 pixels lower — and 9 after
+  // the Screamer's own 0.92 scale. At 720p that is 7 against 3. It is a real
+  // difference and it is not a large one; whether it survives a full street is
+  // the one question here that needs an eye.
   const jaw = type === EnemyType.SCREAMER
     ? new THREE.BoxGeometry(0.24, 0.26, 0.14).translate(0, 1.3, -0.21)
     : new THREE.BoxGeometry(0.2, 0.1, 0.12).translate(0, 1.42 - stoop, -0.2 + lean);
