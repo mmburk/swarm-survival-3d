@@ -284,37 +284,70 @@ olan 0.11), ama atışın kendisi tetikte duruyor — sıfır gecikme nasıl
 
 ---
 
-## Açık olanlar
-
 ### 8. 30 fps'in altında oyun ağır çekime düşüyor
 
-**Yer:** `src/core/Engine.ts` — `loop()`
-**Durum:** frame ceiling yolu düzeltildi, genel hâli açık.
+**Yer:** `src/core/Engine.ts` — `loop()`, `planSteps()`
+**Commit:** `TBD`
 
 ```ts
 const delta = Math.min(Math.max(raw, 0.001), 0.033);
 ```
 
-Bu kırpma sekme dışına çıkıldığında her şeyin duvarlardan geçmesini önlemek için
-var, ama tavanı 1/30. Yani makine gerçekten 30 fps'in altına düşerse geçen
-gerçek zamanın bir kısmı her karede yere düşüyor: **oyun yavaşlıyor, kare
-atlamıyor.**
+Bu kırpma sekme dışına çıkıldığında her şeyin duvarlardan geçmesini önlemek
+için vardı, ama tavanı 1/30'du. Yani makine gerçekten 30 fps'in altına
+düşerse geçen gerçek zamanın bir kısmı her karede yere düşüyordu: **oyun
+yavaşlıyor, kare atlamıyordu.** Ölçüm: 20 fps'lik bir akışta 2 saniyelik
+gerçek zamana karşılık oyun 1.32 saniye ilerliyordu — %66 hız.
 
-Ölçüldü (kare akışı sentetik zaman damgalarıyla sürülerek): 20 fps'lik bir
-akışta 2 saniyelik gerçek zamana karşılık oyun **1.32 saniye** ilerliyor —
-%66 hız.
+**Düzeltme, bug'ı yazarken sanılandan küçük çıktı.** Not "doğrusu sabit
+adımlı bir birikimli döngü, ama `update(delta)` sözleşmesini baştan yazmak
+demek" diyordu. Sözleşmeyi yazmaya gerek yok: adımın tavanı kalıyor, sadece
+tavanın üstünde kalan zaman **düşürülmek yerine ikinci bir adımda
+yürünüyor.**
 
-Frame ceiling ayarı bunu kendi yolunda düzeltiyor: `maxDelta` artık tavandan
-türetiliyor (30 tavanı → 0.0533), yoksa "30 fps'e kilitle" seçeneği oyunu
-doğrudan ağır çekime alırdı. Ayar 30 tavanında 2 saniyeye karşılık 1.979 saniye
-oyun zamanı veriyor.
+`planSteps(raw, maxDelta)` bir karenin gerçek zamanını `maxDelta`'yı aşmayan
+**eşit** dilimlere bölüyor (0.05 sn = 2 × 0.025; "bir tam adım + artık"
+değil, çünkü delta üzerinden integral alan her şey eşit eli tercih eder).
+`update()` o kadar kez çağrılıyor, `render()` yine bir kez. Mermi hâlâ
+kontrol edemeyeceği bir adım atmıyor, çünkü adım boyu değişmedi — sayısı
+değişti.
 
-Kalan hâli — tavansız çalışan zayıf bir makine — açık. Düzeltmenin bedeli var:
-tabanı yükseltmek (mesela 1/15) mermilerin adım başına kat ettiği yolu iki
-katına çıkarır, mermi geçişi de grid'i merminin o anki konumunda sorguladığı
-için ince zombilerin içinden geçme riski doğar. Doğrusu sabit adımlı bir
-birikimli döngü, ama bu şu anki `update(delta)` sözleşmesini baştan yazmak
-demek.
+`MAX_SUBSTEPS = 3` bunun kendini yemesini engelliyor: bir karede üç
+güncellemeyi kaldıramayan makineye dört verilirse beş ister. Tavanın
+üstündeki zaman **bilerek** düşürülüyor — oyun yavaşlar, ki kötüdür; spirale
+girmez, ki bitmiştir. `HARD_STOP = 0.1` eskisiyle aynı sekme-dışı koruması.
+
+### Ölçüm — sentetik kare akışı, 2 saniyelik gerçek zaman
+
+| Akış | Eski | Yeni | Kare başına `update` | En büyük adım |
+|---|---|---|---|---|
+| 20 fps | %66 | **%100.0** | 2 | 0.0250 |
+| 24 fps | — | %100.0 | 2 | 0.0208 |
+| 30 fps | %100 | %100.0 | 1 | 0.0167 |
+| 60 fps | %100 | %100.0 | 1 | 0.0167 |
+| 120 fps | %100 | %100.0 | 1 | 0.0083 |
+| 10 fps | %33 | %99.0 | 3 | 0.0330 |
+
+30 fps ve üstünde adım sayısı 1 — sağlıklı makine hiçbir şey ödemiyor.
+30 saniyelik bir sekme-dışı 3 × 0.033 = 0.099 sn olarak geliyor, yani eski
+0.1 tavanıyla aynı.
+
+**Bedeli, ve dürüst kısmı:** 20 fps'te `update` saniyede 20 yerine 40 kez
+çalışıyor. Yani zaten zorlanan makinede iş **artıyor**; takas "ağır çekim"i
+"daha düşük kare hızı"na çevirmek. Doğru takas — bir oyunun yavaşlaması,
+kare atlamasından kötüdür — ama bedava değil, ve `MAX_SUBSTEPS` o bedelin
+tavanı.
+
+**Doğrulanmadı:** gerçek bir yavaş makinede koşusu. Bu ortamda rAF kare
+üretmiyor (bkz. `docs/fikirler.md` → BİLİNEN KISITLAR), o yüzden ölçüm
+`planSteps`'in aritmetiği üzerinden yapıldı, canlı döngüden değil.
+
+## Açık olanlar
+
+*Şu an yok.* Bulunan on altı bug'ın on altısı kapalı. Bu listenin boş olması
+kod temiz demek değil — **oyunun hiç oynanmadığı** demek. Aşağıdaki "bug
+değil ama bilinsin" maddeleri ve `docs/fikirler.md`'deki "oynayıp bakılacak"
+başlıkları bir koşunun neye bakacağını söylüyor.
 
 ---
 

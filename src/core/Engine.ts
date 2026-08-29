@@ -126,6 +126,41 @@ const NOISE_FLARE = 30;
  * fifty-odd a second. Now the spike is the swing, and being in the middle of
  * them is a steady grind you can feel coming and walk out of.
  */
+/**
+ * bug.md #8. How many times `update()` may run for one drawn frame, and the
+ * most real time a single frame is allowed to consume.
+ *
+ * The step handed to `update()` has a ceiling, because a bullet that moves its
+ * whole path in one go queries the grid where it *is* and misses everything it
+ * passed through. That ceiling used to be the end of it: time above it was
+ * dropped, so a machine at 20fps ran the game at two thirds speed rather than
+ * dropping frames. Now the leftover is walked off in more steps of the same
+ * safe size, so real time and game time stay together and the bullet still
+ * never takes a stride it cannot check.
+ *
+ * The cap is what keeps that from eating itself. A machine too slow to afford
+ * three updates in a frame would otherwise be given four, then five. Past the
+ * cap the time is dropped on purpose: the game goes slow, which is bad, rather
+ * than into a spiral, which is over. `HARD_STOP` is the same tab-out guard as
+ * before — an alt-tabbed hour must not arrive as one enormous frame.
+ */
+const MAX_SUBSTEPS = 3;
+const HARD_STOP = 0.1;
+
+/**
+ * Slices one frame's real time into equal steps no larger than `maxDelta`.
+ *
+ * Equal rather than "full steps plus a remainder": a 0.05s frame is two steps
+ * of 0.025 rather than 0.033 and 0.017, and everything that integrates over
+ * delta prefers an even hand. Exported for the harness — the arithmetic is the
+ * whole fix and it is worth being able to measure it without a browser.
+ */
+export function planSteps(raw: number, maxDelta: number): { steps: number; delta: number } {
+  const budget = Math.min(Math.max(raw, 0.001), HARD_STOP, maxDelta * MAX_SUBSTEPS);
+  const steps = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(budget / maxDelta - 1e-9)));
+  return { steps, delta: budget / steps };
+}
+
 const FRICTION_INTERVAL = 1.1;
 const FRICTION_SHARE = 0.25;
 /** However many are pressed against you, only this many are billed. */
@@ -2344,11 +2379,10 @@ export class Engine {
     this.frameIntervalMs = s.fpsCap > 0 ? 1000 / s.fpsCap : 0;
     this.nextFrame = 0;
 
-    // A 30fps ceiling hands over steps of 1/30 and a late frame slightly more.
-    // Clamping those back to 1/30 would drop game time on the floor every
-    // frame, so the ceiling on a step follows the ceiling on frames — with the
-    // old 1/30 as the floor and 1/10 as the hard stop that keeps a tab-out
-    // from teleporting everything through walls.
+    // A 30fps ceiling hands over steps of 1/30 and a late frame slightly more,
+    // so the ceiling on a step follows the ceiling on frames rather than
+    // forcing every capped frame into a substep it does not need. 1/30 is the
+    // floor; `planSteps` owns what happens above the ceiling now.
     const capped = s.fpsCap > 0 ? (1 / s.fpsCap) * 1.6 : 0;
     this.maxDelta = Math.min(0.1, Math.max(0.033, capped));
 
@@ -2370,7 +2404,7 @@ export class Engine {
 
     const raw = (now - this.lastTime) / 1000;
     this.lastTime = now;
-    const delta = Math.min(Math.max(raw, 0.001), this.maxDelta);
+    const { steps, delta } = planSteps(raw, this.maxDelta);
 
     // Measured on real time, not the clamped step, and over a window rather
     // than per frame — a number that changes 120 times a second is unreadable.
@@ -2387,7 +2421,10 @@ export class Engine {
     }
 
     try {
-      this.update(delta);
+      // Input is cleared at the end of `update`, so a click pressed during a
+      // frame that took three steps still fires on the first of them and only
+      // on the first — a slow machine must not double up the trigger.
+      for (let i = 0; i < steps; i++) this.update(delta);
     } catch (err) {
       console.warn('Recovered from an error in the update loop:', err);
     }

@@ -39,6 +39,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 14 | **Ses Faz 0 — temizlik ve kontrol.** 10 ölü metot silindi (692 → 436 satır), settings kartına ses kaydırıcısı (`DisplaySettings.volume`, kayıtta duruyor), `?audio=test` ile 24 olayı tuşa bağlayan dinleme tezgâhı | `a116ef9` | **Ses planının MVP maddesi bitti.** Kaydırıcı sesin yüksekliğine dokunan her işten önce gelmesi gerekendi; tezgâh da bundan sonraki her dinleme turunu kısaltan şey |
 | 15 | **Ses Faz 1 — varyasyon.** Tamponda rastgele offset (`bug.md` #11 kapandı) + atış başına sapma: frekans ±%6, seviye ±%8, süre ±%4, gecikmeli katmanlar ±%15. Hepsi `noiseBurst`/`thump`'ın içinde, yani 24 olayın hepsi aldı | `2823528` | 6 atışta 6 farklı offset, filtre 3079–3340 Hz (yazılı 3200). **Yazıldı, dinlenmedi** — dört sabit de tahmin, kabul kriteri kulakta |
 | 16 | **Üç küçük iş.** Gürültü kuralı genellendi (patlama 18, Burster 9, fişek 30); Çığlıkçı minimap'te içi boş kare oldu; kedinin kartı Clinger'ı alamadığını söylüyor | `1ac455f` | Üçü de "küçük ve bağımsız" listesinden. Gürültünün ikinci yarısı (sıra bütçesini açması) bilerek yapılmadı |
+| 17 | **`bug.md` #8 — 30 fps altı ağır çekim.** `planSteps()`: kare zamanı `maxDelta`'yı aşmayan eşit adımlara bölünüyor, `update()` o kadar kez çağrılıyor, `render()` bir kez. `MAX_SUBSTEPS` 3 | `TBD` | 20 fps'te hız %66 → **%100**; 30 fps ve üstünde adım sayısı 1, yani sağlıklı makine hiçbir şey ödemiyor. **Bug listesi ilk kez boş** |
 
 ---
 
@@ -105,6 +106,20 @@ Bilinen pürüzler:
   spawn'da). Yani "elit" hissi kalınlıktan değil, okumak için daha az zaman
   bırakmaktan geliyor. **Oynarken bakılacak:** kalabalıkta %40 kısalmış bir
   hamle hâlâ okunabiliyor mu, yoksa işaretli olan tek haksız gövde mi.
+
+### Masadan çıkacak iş kalmadı
+Ses planının Faz 0 ve 1'i, üç küçük iş ve `bug.md` #8 bitti; açık bug listesi
+ilk kez boş. **Geriye kalan her şeyin ya kulağa ya oynanışa ihtiyacı var:**
+
+| Ne | Ne lazım |
+|---|---|
+| Sekiz "oynayıp bakılacak" başlığı (aşağıda) | bir koşu |
+| Ses Faz 1'in dört sabiti | `?audio=test`, üç soruluk liste |
+| Ses Faz 2–5 (mekân, konum, eksik olaylar, adaptif) | Faz 1 dinlenmeden başlamamalı — plan faz başına 2-3 tur diyor |
+| Gürültünün sıra bütçesini açması | önce yeni gürültü kaynaklarının oynanması |
+
+Ses Faz 2'yi şimdiden yazmak, dinlenmemiş bir Faz 1'in üstüne ikinci bir
+dinlenmemiş katman koymak olurdu. Planın kendi yöntemi buna hayır diyor.
 
 ### AI planı bitti — sıra oynamakta
 Beş fazın beşi de yapıldı. **Ama son sekiz iş masa başında ayarlandı ve
