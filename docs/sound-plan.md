@@ -118,7 +118,7 @@ gerçekten oynattığı kod yolundan okundu, duyularak değil.
 
 ---
 
-## 2. FAZ 1 — VARYASYON
+## 2. FAZ 1 — VARYASYON *(yazıldı, dinlenmedi)*
 
 Sesin "ucuz" duyulmasının birinci sebebi burada, ve düzeltmesi en ucuz olan da bu.
 
@@ -135,6 +135,42 @@ atış" kalıbı olmaktan çıkıyor.
 
 **Kabul:** Ranger'la üç saniye kesintisiz ateş edildiğinde tekrar duyulmuyor.
 **Bu maddeye karar veren kulak, kod değil.**
+
+### Nasıl yapıldı
+
+Üçü de `noiseBurst()` ve `thump()`'ın içine kondu, yani çağıran hiçbir yer
+değişmedi — 24 olayın hepsi sapmayı bedavaya aldı.
+
+**1.1** — `src.start(t0, Math.random() * (tampon - süre))`. `loop` zaten
+açıktı, o yüzden geç başlayan patlama tamponun başına sarıp devam ediyor.
+`bug.md` #11 kapandı.
+
+**1.2** — modül tepesinde `vary(değer, oran)` ve dört sabit: `VARY_FREQ`
+(0.06), `VARY_GAIN` (0.08), `VARY_TIME` (0.04), `VARY_DELAY` (0.15).
+Filtrenin iki ucu **aynı** çarpanı alıyor: süpürme aynı şekli çizmeli, sadece
+aynı yerden başlamamalı. İki ayrı zar silahın karakterini değiştirirdi, atışını
+değil.
+
+**1.3** — ayrı bir iş çıkmadı. Gecikme de `vary()`'den geçince sıfır gecikme
+sıfır kalıyor (çarpım), yani atışın kendisi tetikte duruyor ve yalnız arkasına
+binen katmanlar geziniyor. Slap-back'e geniş bant (`VARY_DELAY` 0.15) verildi:
+sokağın karşı duvarına olan mesafe buradaki tek gerçek sebebi olan sayı, ve
+0.11 saniyenin %6'sı 7 milisaniye, yani hiç.
+
+### Ölçüm — headless harness, 6 ardışık `playGunshot('light')`
+
+| | Yazılı | Ölçülen aralık |
+|---|---|---|
+| Tampon offset'i | (yoktu) | 6 atışta 6 farklı yer |
+| Filtre başlangıcı | 3200 Hz | 3079 – 3340 Hz |
+| Patlama seviyesi | 0.16 | 0.1519 – 0.1711 |
+| Çifte'nin slap-back'i | 0.11 sn | 0.0965 – 0.1240 sn |
+
+Çifte'nin ilk iki katmanı altı atışın hepsinde `0.0000`'da: atış tetikte.
+
+**Doğrulanmadı:** tekrarın gerçekten duyulmaz olup olmadığı. Dört sabit de
+tahmin ve kabul kriteri kulakta. Dinleme turu `?audio=test` → 1/2/3/4 tuşlarına
+üst üste basmak.
 
 ---
 
@@ -272,7 +308,7 @@ Faz 0.3'teki test sayfası bu döngünün her turunu kısaltır; o yüzden en ba
 | Faz | İş | Maliyet (tahmin) | Kulak gerekir mi | Durum |
 |---|---|---|---|---|
 | **0** | Ölü kod, ses kaydırıcısı, test sayfası | yarım gün | hayır | **yapıldı** |
-| **1** | Varyasyon (`bug.md` #11 dahil) | yarım gün | evet, 1-2 tur | sırada |
+| **1** | Varyasyon (`bug.md` #11 dahil) | yarım gün | evet, 1-2 tur | **yazıldı, dinlenmedi** |
 | **2** | Mekân / reverb | 1 gün | evet, 2-3 tur | — |
 | **3** | Konum + zombi vokalleri | 2 gün | evet, en çok burada | — |
 | **4** | Eksik olaylar | 1 gün | evet, 1 tur | — |

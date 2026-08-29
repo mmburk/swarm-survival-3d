@@ -1,3 +1,32 @@
+/**
+ * How far a single firing is allowed to drift from the written number.
+ *
+ * The point is not that anyone notices the drift — it is that nobody notices
+ * the repetition. The Ranger puts out 8.7 rounds a second and every one of
+ * them used to be the same sample played twice, which the ear reads as one
+ * long buzz rather than as gunfire.
+ *
+ * These four are guesses and the first listening pass is what sets them. Too
+ * much and the gun stops having a character; too little and it is the buzz
+ * again.
+ */
+const VARY_FREQ = 0.06;
+const VARY_GAIN = 0.08;
+const VARY_TIME = 0.04;
+
+/**
+ * The slap-back gets a wider band than the rest. A reflection off the far side
+ * of a street is the one number here with a real-world reason to move — you
+ * are not standing in the same place twice — and 6% of 0.11 seconds is under
+ * seven milliseconds, which is nothing.
+ */
+const VARY_DELAY = 0.15;
+
+/** One number, jittered. `amount` is a fraction: 0.06 means ±6%. */
+function vary(value: number, amount: number): number {
+  return value * (1 + (Math.random() * 2 - 1) * amount);
+}
+
 export class AudioManager {
   private ctx: AudioContext | null = null;
   private enabled: boolean = true;
@@ -257,7 +286,16 @@ export class AudioManager {
     const buf = this.getNoise();
     if (!buf) return;
 
-    const t0 = this.ctx.currentTime + (opts.delay ?? 0);
+    // A delay of zero stays zero however it is jittered, which is what keeps
+    // the shot itself on the trigger and moves only the layers behind it.
+    const t0 = this.ctx.currentTime + vary(opts.delay ?? 0, VARY_DELAY);
+
+    // One factor for both ends of the sweep: the filter is meant to travel the
+    // same shape every time, just not from quite the same place. Two
+    // independent rolls would change the character of the gun, not the take.
+    const freqShift = vary(1, VARY_FREQ);
+    const duration = vary(opts.duration, VARY_TIME);
+
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.loop = true;
@@ -265,21 +303,26 @@ export class AudioManager {
     const filter = this.ctx.createBiquadFilter();
     filter.type = opts.type ?? 'lowpass';
     filter.Q.value = opts.q ?? 1;
-    filter.frequency.setValueAtTime(opts.startFreq, t0);
+    filter.frequency.setValueAtTime(opts.startFreq * freqShift, t0);
     if (opts.endFreq !== undefined) {
-      filter.frequency.exponentialRampToValueAtTime(Math.max(30, opts.endFreq), t0 + opts.duration);
+      filter.frequency.exponentialRampToValueAtTime(Math.max(30, opts.endFreq * freqShift), t0 + duration);
     }
 
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(opts.volume, t0);
-    gain.gain.exponentialRampToValueAtTime(0.0008, t0 + opts.duration);
+    gain.gain.setValueAtTime(vary(opts.volume, VARY_GAIN), t0);
+    gain.gain.exponentialRampToValueAtTime(0.0008, t0 + duration);
 
     src.connect(filter);
     filter.connect(gain);
     gain.connect(this.masterGain);
 
-    src.start(t0);
-    src.stop(t0 + opts.duration + 0.02);
+    // bug.md #11. The buffer is 1.2 seconds of noise and every burst used to
+    // read it from the top, so a burst of 0.07 seconds was not "some noise",
+    // it was one particular seventieth of a second, over and over. Starting
+    // somewhere else in the buffer costs one argument. `loop` is already on,
+    // so a late start still has material to run into.
+    src.start(t0, Math.random() * Math.max(0, buf.duration - duration));
+    src.stop(t0 + duration + 0.02);
   }
 
   /** Low sine thump layered under a noise burst — gives a shot its weight. */
@@ -288,21 +331,24 @@ export class AudioManager {
     this.initCtx();
     if (!this.ctx || !this.masterGain) return;
 
-    const t0 = this.ctx.currentTime + delay;
+    const t0 = this.ctx.currentTime + vary(delay, VARY_DELAY);
+    const freqShift = vary(1, VARY_FREQ);
+    const dur = vary(duration, VARY_TIME);
+
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, t0);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), t0 + duration);
+    osc.frequency.setValueAtTime(freq * freqShift, t0);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq * freqShift), t0 + dur);
 
-    gain.gain.setValueAtTime(volume, t0);
-    gain.gain.exponentialRampToValueAtTime(0.0008, t0 + duration);
+    gain.gain.setValueAtTime(vary(volume, VARY_GAIN), t0);
+    gain.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
 
     osc.connect(gain);
     gain.connect(this.masterGain);
     osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
+    osc.stop(t0 + dur + 0.02);
   }
 
   public playGunshot(kind: 'light' | 'medium' | 'heavy' | 'nail'): void {

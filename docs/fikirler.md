@@ -37,6 +37,7 @@ Uzun araştırmalar kendi dosyalarında:
 
 | 13 | **Faz 5 — uyanma anı.** `Profile.wake` bandı, gövde rastgele yönle doğup oyuncuyu buluyor, vurulunca uyanma kesiliyor | `145e466` | **AI planının beş fazı da bitti.** Bundan sonrası ayar, ve ayarın yeri masa değil oyun |
 | 14 | **Ses Faz 0 — temizlik ve kontrol.** 10 ölü metot silindi (692 → 436 satır), settings kartına ses kaydırıcısı (`DisplaySettings.volume`, kayıtta duruyor), `?audio=test` ile 24 olayı tuşa bağlayan dinleme tezgâhı | `a116ef9` | **Ses planının MVP maddesi bitti.** Kaydırıcı sesin yüksekliğine dokunan her işten önce gelmesi gerekendi; tezgâh da bundan sonraki her dinleme turunu kısaltan şey |
+| 15 | **Ses Faz 1 — varyasyon.** Tamponda rastgele offset (`bug.md` #11 kapandı) + atış başına sapma: frekans ±%6, seviye ±%8, süre ±%4, gecikmeli katmanlar ±%15. Hepsi `noiseBurst`/`thump`'ın içinde, yani 24 olayın hepsi aldı | `TBD` | 6 atışta 6 farklı offset, filtre 3079–3340 Hz (yazılı 3200). **Yazıldı, dinlenmedi** — dört sabit de tahmin, kabul kriteri kulakta |
 
 ---
 
@@ -148,15 +149,20 @@ Bilinen pürüzler:
 - **Hamle sesi sadece ıskalayınca çalıyor** (0.22 sn'de bir, 4.5 m içinde).
   İsabet edenin sesi zaten `playPlayerHurt`. Kalabalıkta yeterli mi belirsiz.
 
-### Ses — sırada Faz 1 *(varyasyon)*
-Faz 0 bitti (14 numara). Sıradaki `bug.md` #11'in düzeltmesi ve en ucuz
-kazanç: gürültü tamponundan rastgele offset (tek satır), atış başına ±%6/±%8/±%4
-sapma, ağır silahlarda slap-back gecikmesinin de sapması. Detay
-[`sound-plan.md`](sound-plan.md) Faz 1'de.
+### Ses Faz 1'in dinlenmesi *(dinlenecek — koddan geçti, kulaktan geçmedi)*
+Yazıldı (15 numara) ama **bu ortamda kulak yok.** Dört sabit `AudioManager.ts`
+tepesinde: `VARY_FREQ` (0.06), `VARY_GAIN` (0.08), `VARY_TIME` (0.04),
+`VARY_DELAY` (0.15). Hepsi tahmin.
 
-**Bu maddeye karar veren kulak, kod değil** — ve artık kulağın oturacağı yer
-var: `?audio=test`. 1/2/3/4 dört tüfek karakteri, üst üste basıldığında
-tekrarın duyulup duyulmadığı orada belli oluyor.
+Dinleme listesi — `?audio=test` açıp:
+1. **1** tuşuna üst üste hızlı bas (Ranger). Tekrar hâlâ duyuluyor mu? Duyuluyorsa
+   `VARY_FREQ` ve `VARY_GAIN` yükselir.
+2. **3** tuşuna bas (Çifte). Slap-back tek bir "çifte atış" kalıbı gibi mi
+   duruyor, yoksa dağıldı mı?
+3. Ters yön: silahın **karakteri** bozuldu mu? Ranger'la Marksman hâlâ iki ayrı
+   silah gibi mi? Bozulduysa sayılar yüksek demektir.
+
+Cevap madde başına tek satır yeter; ayarı ben yaparım.
 
 ### Küçük ve bağımsız
 - **Ses "gürültü çeker" kuralı genellensin.** Gürültü sayacı artık var

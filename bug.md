@@ -254,6 +254,36 @@ hayvandan).
 
 ---
 
+### 11. Bütün gürültü patlamaları aynı sesi çalıyor
+
+**Yer:** `src/core/AudioManager.ts` — `noiseBurst()`, `getNoise()`
+**Commit:** `TBD`
+
+`getNoise()` 1.2 saniyelik tek bir gürültü tamponu üretip önbelleğe alıyordu —
+buraya kadar doğru, amaç zaten her atışta yeniden rastgele sayı üretmemek. Ama
+`noiseBurst()` kaynağı hep `src.start(t0)` ile, yani **offset vermeden**
+başlatıyordu. Dolayısıyla her patlama tamponun aynı ilk dilimini okuyordu:
+Ranger'ın 0.115 saniyede bir attığı her mermi birebir aynı örnek, üstüne
+sadece farklı bir filtre zarfı. Tamponun kalan 1.1 saniyesi hiç çalınmıyordu.
+
+Düzeltme iki parça, çünkü offset tek başına yetmiyordu:
+
+1. `src.start(t0, Math.random() * (tampon - süre))` — `loop` zaten açık, yani
+   geç başlayan bir patlama tamponun başına sarıp devam ediyor.
+2. Atış başına sapma (`vary()`): filtre frekansına ±%6, ses seviyesine ±%8,
+   süreye ±%4, gecikmeli katmanlara ±%15. Frekansın iki ucu **aynı** çarpanı
+   alıyor — süpürme aynı şekli çizsin, sadece aynı yerden başlamasın.
+
+Ölçüm (headless harness, 6 ardışık `playGunshot('light')`): tamponda 6 farklı
+offset, filtre 3079–3340 Hz (yazılı olan 3200), seviye 0.1519–0.1711 (yazılı
+olan 0.16). Çifte'nin slap-back'i 0.0965–0.1240 sn arasında geziniyor (yazılı
+olan 0.11), ama atışın kendisi tetikte duruyor — sıfır gecikme nasıl
+çarpılırsa çarpılsın sıfır kalıyor.
+
+**Kalan:** sayılar tahmin. Doğrulaması kulakta, ve `?audio=test` o iş için var.
+
+---
+
 ## Açık olanlar
 
 ### 8. 30 fps'in altında oyun ağır çekime düşüyor
@@ -285,28 +315,6 @@ katına çıkarır, mermi geçişi de grid'i merminin o anki konumunda sorgulad�
 için ince zombilerin içinden geçme riski doğar. Doğrusu sabit adımlı bir
 birikimli döngü, ama bu şu anki `update(delta)` sözleşmesini baştan yazmak
 demek.
-
-### 11. Bütün gürültü patlamaları aynı sesi çalıyor
-
-**Yer:** `src/core/AudioManager.ts` — `noiseBurst()`, `getNoise()`
-**Durum:** açık. Ses planının 1. fazında düzeltilecek.
-
-`getNoise()` 1.2 saniyelik tek bir gürültü tamponu üretip önbelleğe alıyor —
-buraya kadar doğru, amaç zaten her atışta yeniden rastgele sayı üretmemek. Ama
-`noiseBurst()` kaynağı hep `src.start(t0)` ile, yani **offset vermeden**
-başlatıyor. Dolayısıyla her patlama tamponun aynı ilk dilimini okuyor.
-
-Sonuç: Ranger'ın 0.115 saniyede bir attığı her mermi *birebir aynı örnek*,
-üstüne sadece farklı bir filtre zarfı biniyor. Silah seslerinin sentetik
-duyulmasının asıl sebebi bu — 656 satırda yalnızca iki `Math.random` olması
-değil, olanın da tek seferlik olması.
-
-Yan etki: tamponun 1.2 saniyesinin büyük kısmı hiç çalınmıyor. En uzun patlama
-1.3 sn (boss kükremesi), geri kalan her şey 0.75 sn'nin altında.
-
-Düzeltmesi tek satır — `src.start(t0, Math.random() * (1.2 - süre))` — ama
-tek başına yeterli değil; filtre ve ses seviyesine de atış başına küçük bir
-sapma gerekiyor. İkisi birlikte planlandı.
 
 ---
 
