@@ -257,7 +257,7 @@ hayvandan).
 ### 11. Bütün gürültü patlamaları aynı sesi çalıyor
 
 **Yer:** `src/core/AudioManager.ts` — `noiseBurst()`, `getNoise()`
-**Commit:** `TBD`
+**Commit:** `2823528`
 
 `getNoise()` 1.2 saniyelik tek bir gürültü tamponu üretip önbelleğe alıyordu —
 buraya kadar doğru, amaç zaten her atışta yeniden rastgele sayı üretmemek. Ama
