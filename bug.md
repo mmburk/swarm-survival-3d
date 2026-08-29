@@ -542,7 +542,7 @@ kalmıyor.
 ### 22. Mouser dövüşmediği hâlde sokağı yıpranmış bitiriyordu
 
 **Yer:** `src/entities/Companion.ts` — `roleWatch()`, yeni `emptiestSide()`
-**Commit:** `TBD`
+**Commit:** `8ee91af`
 
 19 numaranın yan bulgusuydu. Kedi hiçbir şeye vurmuyor, kartı da "fights
 nothing and never will" diyor, ama sektör 6–9'da sokağı %11 kondisyonla
