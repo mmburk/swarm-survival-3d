@@ -47,7 +47,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 22 | **`STRIKE_LUNGE` 6.0 → 8.5.** Kaçan oyuncuya ölçülen tek temiz kol | `23a2cae` | 14 tohumda: kaçan +%6–23, duran +%1–2. Şerit bütçesi hiçbir şey yapmıyor, `SWING_REACH` ise kaotik |
 | 23 | **Winded — hayvan nefesi kesilince çekiliyor.** %20'de bırakıyor, %50'de dönüyor (histerezis); geri çekilme oyuncuya değil **kalabalıktan uzağa** | `23a2cae` | Rook'un yere yığılması yarıya indi (0.4 → 0.2). Grit'e dokunulmadı: sorun "az dayanıyor" değil, **durmayı bilmiyor** idi |
 | 24 | **Gürültü uyarısı.** Sayaç hâlâ gizli; %75'te bir satır: "The street is listening." %40'a inince yeniden kurulur | `23a2cae` | Sayacı besleyen üç yeni şeyin (patlama, Burster, fişek) etiketi yoktu |
-| 25 | **Okunabilirliğin ölçülebilen yarısı.** Tint'ler arası algısal mesafe (CIE76) ve silüet farkının piksel karşılığı | `TBD` | İşaretli vs Burster **ΔE 84** — karıştırılamaz. Çığlıkçının çenesi 1080p'de 10 px, diğerleri 4 px. Ve projeksiyon ortografik: **mesafe boyutu hiç değiştirmiyor**, zorluk kalabalıktan geliyor |
+| 25 | **Okunabilirliğin ölçülebilen yarısı.** Tint'ler arası algısal mesafe (CIE76) ve silüet farkının piksel karşılığı | `57aca65` | İşaretli vs Burster **ΔE 84** — karıştırılamaz. Çığlıkçının çenesi 1080p'de 10 px, diğerleri 4 px. Ve projeksiyon ortografik: **mesafe boyutu hiç değiştirmiyor**, zorluk kalabalıktan geliyor |
 
 ---
 
