@@ -42,6 +42,7 @@ Uzun araştırmalar kendi dosyalarında:
 | 17 | **`bug.md` #8 — 30 fps altı ağır çekim.** `planSteps()`: kare zamanı `maxDelta`'yı aşmayan eşit adımlara bölünüyor, `update()` o kadar kez çağrılıyor, `render()` bir kez. `MAX_SUBSTEPS` 3 | `6983f60` | 20 fps'te hız %66 → **%100**; 30 fps ve üstünde adım sayısı 1, yani sağlıklı makine hiçbir şey ödemiyor. **Bug listesi ilk kez boş** |
 | 18 | **Ses Faz 2, 3, 5 ve Faz 4'ün üçte ikisi.** Prosedürel oda (üç mekân, kuru/ıslak yolu); panning + mesafe zayıflaması; zombi vokalleri, dört ses tavanı, ölüm sesi; ayak sesi, spawn ve slam telegraph'ı; baskıya bağlı yatak | `7e2c658` | **Ses planının beş fazı da yazıldı.** Hiçbiri dinlenmedi — her fazın altında ölçüm var, hiçbirinin altında kulak yok |
 | 19 | **Ölçü aleti, ve bulduğu iki şey.** `AudioMeter.ts` her sesi offline render edip ölçüyor (seviye / tekrar / konum / oda), `?audio=test` → MEASURE. Artı sığınak ve hava ambiyansı (Faz 4 tamam) | `060c713` | **Faz 1 doğrulandı** — spektrum ve zarf atıştan atışa %13-24 oynuyor. İki bug: `thump()` her seferinde aynı fazdan başlıyordu, ve `ctx.resume()`'un promise'i hiç yakalanmıyordu |
+| 20 | **Sahne ölçümü, ve Harvester'ın düzeltilmesi.** Metre artık gerçek bir çatışma parçasını tek seferde render ediyor (hava + dört vokal + ateş) ve katman çıkararak ölçüyor. Harvester sokağın üstüne %0.2 dB çıkıyordu — Q açıldı, seviye kalktı, altına vuruş kondu | `TBD` | **0.2 → 3.4 dB**, Stutter'la aynı yerde. Ölüm/isabet dengesine dokunulmadı: ölçüldü, ölüm karışıma 1 dB ekliyor |
 
 ---
 
@@ -155,15 +156,21 @@ zincirleme öldürmede fazla mı?
 **Faz 5 — yatak.** DRONE aç, BED'i 0'dan 100'e gezdir. Fark ediliyor mu
 (kötü), yoksa yalnız durduğunda mı (iyi)?
 
-**Ölçümün işaret ettiği, kararı sende olan iki denge.** MEASURE'ın Levels
-tablosunda duruyor:
-- **Harvester 20 dB sessiz** (tepe −27.5, Çifte −8.1). Kartına uygun ama
-  çatışmada kayboluyor mu?
-- **İsabet −35.6, ölüm −19.2.** Öldürme başına çok isabet düştüğü için
-  savunulabilir; zincirleme öldürmede fazla mı geliyor?
+**Ölçümün işaret ettiği iki denge — ikisi de karara bağlandı (20 numara).**
+Tek başına ölçmek yetmedi; ikisi de "diğerlerinin yanında" sorusuydu, o yüzden
+metre'ye sahne tabloları eklendi.
 
-İkisini de bilerek değiştirmedim. Ölçüm dengesizliği gösterdi, hangisinin
-doğru olduğunu söylemedi.
+- **Harvester düzeltildi.** Hava ve dört gövdenin üstüne yalnız **+0.2 dB**
+  çıkıyordu, yani ateş ederken kendi silahını duyamıyordun. Sebep seviye değil
+  biçimdi: Q 3.5'lik bandpass enerjinin çoğunu atıyor ve bu, raftaki tek alt
+  ucu olmayan silahtı. Şimdi **+3.4 dB**, Stutter'la birebir aynı yerde.
+  *Kurgu değişmedi* — sokağın duyduğu `Weapons.noise` ve orası 0.1'de duruyor.
+- **Ölüm/isabet olduğu gibi bırakıldı.** Ölçüldü: ölüm karışıma **1 dB**
+  ekliyor ve üç saniyedeki dört ölüm bir el bombası kadar. Tek başına 18 dB'lik
+  fark karışımda görünmüyor, çünkü silah ikisini de bastırıyor.
+
+**Metre'nin kendi hatası:** tek atışlık tepeler koşudan koşuya ±2-3 dB oynuyor.
+3 dB'den küçük farklar için tabloları kullanma.
 
 ### AI planı bitti — sıra oynamakta
 Beş fazın beşi de yapıldı. **Ama son sekiz iş masa başında ayarlandı ve

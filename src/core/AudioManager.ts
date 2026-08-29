@@ -783,7 +783,22 @@ export class AudioManager {
         this.noiseBurst({ duration: 0.3, volume: 0.09, startFreq: 900, endFreq: 180, delay: 0.11, wet: WET_GUN });
         break;
       case 'nail': // compressed air
-        this.noiseBurst({ duration: 0.1, volume: 0.16, type: 'bandpass', startFreq: 1800, endFreq: 3400, q: 3.5, wet: WET_GUN * 0.5 });
+        // Measured at 0.2dB over a street with weather and four bodies on it,
+        // against 3.0 for the Stutter and 12.5 for the Boomstick. A gun whose
+        // own report is inaudible while it is being fired is not a quiet gun,
+        // it is a broken loop — the player cannot tell they are shooting.
+        //
+        // The cause was the shape, not the level: a bandpass at Q 3.5 throws
+        // away nearly everything, and this was the one gun in the rack with no
+        // low end at all. So the Q opens, the level comes up, and it gets the
+        // driver slamming home underneath. It stays thin and high, which is
+        // what a nailer is.
+        //
+        // None of this touches what the street hears. That is `Weapons.noise`,
+        // where the Harvester is 0.1 and still never calls a Screamer — the
+        // card's promise is about the herd, not about decibels.
+        this.noiseBurst({ duration: 0.1, volume: 0.26, type: 'bandpass', startFreq: 1800, endFreq: 3400, q: 2.2, wet: WET_GUN * 0.5 });
+        this.thump(190, 95, 0.05, 0.1);
         break;
       default: // carbine
         this.noiseBurst({ duration: 0.13, volume: 0.24, startFreq: 3000, endFreq: 320, q: 0.7, wet: WET_GUN });

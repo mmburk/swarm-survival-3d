@@ -125,6 +125,89 @@ function decayTime(d: Float32Array): number {
   return 0;
 }
 
+/**
+ * A stretch of an actual fight, rendered as one piece.
+ *
+ * The four tables above measure sounds on their own, and a sound on its own is
+ * not the thing anybody hears. Whether the nail gun is too quiet is not a
+ * question about the nail gun; it is a question about the nail gun against
+ * four bodies and the weather. Whether a kill is too loud is a question about
+ * four kills in a second against the gun that made them.
+ *
+ * So: schedule things the way the game would, render the lot, and measure what
+ * changes when one part is taken out. Difference in level with and without a
+ * layer is what "can you hear it" actually means.
+ */
+type Scene = (a: AudioManager, t: (fn: () => void, at: number) => void) => void;
+
+/**
+ * The manager schedules everything against `ctx.currentTime`, which does not
+ * move in an offline render until it is rendered. Suspending at a timestamp,
+ * firing, and resuming is how you get a sequence out of it rather than a pile
+ * of sounds all landing at zero.
+ */
+async function renderScene(seconds: number, scene: Scene): Promise<Float32Array> {
+  const off = new OfflineAudioContext(2, Math.ceil(RATE * seconds), RATE);
+  const real = window.AudioContext;
+  (window as any).AudioContext = function () { return off; };
+  try {
+    const a = new AudioManager();
+    a.setVolume(1);
+    a.setListener(0, 0);
+
+    const jobs: [number, () => void][] = [];
+    scene(a, (fn, at) => jobs.push([at, fn]));
+    jobs.sort((x, y) => x[0] - y[0]);
+
+    // Every suspend has to be registered *before* rendering starts, and its
+    // promise only settles once rendering reaches that point — awaiting one
+    // first is a deadlock, because rendering has not been asked to begin.
+    // Times are snapped to the 128-sample render quantum, which is the only
+    // place the graph is allowed to stop.
+    const quantum = 128 / RATE;
+    for (const [at, fn] of jobs) {
+      if (at <= 0) { fn(); continue; }
+      const when = Math.round(at / quantum) * quantum;
+      void off.suspend(when).then(() => {
+        fn();
+        void off.resume();
+      });
+    }
+
+    const buf = await off.startRendering();
+    return buf.getChannelData(0);
+  } finally {
+    (window as any).AudioContext = real;
+  }
+}
+
+/** A street with weather on it and four bodies talking, and nothing else. */
+const background: Scene = (a, t) => {
+  a.setAmbience('STREET', 1.25);
+  const voices: [string, number, number][] = [
+    ['SHAMBLER', 4, -3], ['SHAMBLER', -6, 5], ['SPRINTER', 9, 2], ['BUTCHER', -3, -8]
+  ];
+  voices.forEach(([type, x, z], i) => {
+    t(() => a.playVocal(type, { x, z }), 0.35 + i * 0.42);
+    t(() => a.playVocal(type, { x, z }), 2.1 + i * 0.4);
+  });
+};
+
+/** Eight rounds, six of them landing, four of those putting something down. */
+function fight(gun: 'light' | 'medium' | 'heavy' | 'nail', withBackground: boolean, parts: { shots: boolean; impacts: boolean; deaths: boolean }): Scene {
+  const rate = gun === 'nail' ? 0.34 : gun === 'heavy' ? 0.75 : 0.3;
+  return (a, t) => {
+    if (withBackground) background(a, t);
+    for (let i = 0; i < 8; i++) {
+      const at = 0.4 + i * rate;
+      if (at > 3.4) break;
+      if (parts.shots) t(() => a.playGunshot(gun), at);
+      if (parts.impacts && i % 4 !== 3) t(() => a.playImpact({ x: 2, z: -2 }), at + 0.04);
+      if (parts.deaths && i % 2 === 1) t(() => a.playDeath({ x: 2, z: -2 }), at + 0.06);
+    }
+  };
+}
+
 export interface MeterRow {
   label: string;
   cols: string[];
@@ -168,7 +251,7 @@ const REPEATS: [string, number, (a: AudioManager) => void][] = [
 ];
 
 export async function runMeter(onProgress?: (done: number, total: number) => void): Promise<MeterTable[]> {
-  const total = EVENTS.length + REPEATS.length * 6 + 3 + 3;
+  const total = EVENTS.length + REPEATS.length * 6 + 3 + 3 + 5;
   let done = 0;
   const step = () => onProgress?.(++done, total);
 
@@ -218,7 +301,46 @@ export async function runMeter(onProgress?: (done: number, total: number) => voi
     step();
   }
 
+  // ---- and now all of it at once -----------------------------------------
+  const mix: MeterRow[] = [];
+  const bgOnly = rmsOf(await renderScene(4, background));
+
+  for (const gun of ['light', 'medium', 'heavy', 'nail'] as const) {
+    const alone = rmsOf(await renderScene(4, fight(gun, false, { shots: true, impacts: false, deaths: false })));
+    const together = rmsOf(await renderScene(4, fight(gun, true, { shots: true, impacts: false, deaths: false })));
+    mix.push({
+      label: gun,
+      cols: [db(alone).toFixed(1), db(together).toFixed(1), (db(together) - db(bgOnly)).toFixed(1)]
+    });
+    step();
+  }
+
+  const chain: MeterRow[] = [];
+  const full = await renderScene(4, fight('medium', false, { shots: true, impacts: true, deaths: true }));
+  const noDeath = await renderScene(4, fight('medium', false, { shots: true, impacts: true, deaths: false }));
+  const noImpact = await renderScene(4, fight('medium', false, { shots: true, impacts: false, deaths: true }));
+  const gunOnly = await renderScene(4, fight('medium', false, { shots: true, impacts: false, deaths: false }));
+  const oneBlast = (await render(1.2, null, (a) => a.playExplosion({ x: 0, z: 0 }))).getChannelData(0);
+  chain.push({ label: 'gun only', cols: [db(peakOf(gunOnly)).toFixed(1), db(rmsOf(gunOnly)).toFixed(1), '—'] });
+  chain.push({ label: '+ impacts', cols: [db(peakOf(noDeath)).toFixed(1), db(rmsOf(noDeath)).toFixed(1), (db(rmsOf(noDeath)) - db(rmsOf(gunOnly))).toFixed(1)] });
+  chain.push({ label: '+ deaths', cols: [db(peakOf(noImpact)).toFixed(1), db(rmsOf(noImpact)).toFixed(1), (db(rmsOf(noImpact)) - db(rmsOf(gunOnly))).toFixed(1)] });
+  chain.push({ label: 'all of it', cols: [db(peakOf(full)).toFixed(1), db(rmsOf(full)).toFixed(1), (db(rmsOf(full)) - db(rmsOf(gunOnly))).toFixed(1)] });
+  chain.push({ label: 'one explosion', cols: [db(peakOf(oneBlast)).toFixed(1), db(rmsOf(oneBlast)).toFixed(1), '—'] });
+  step();
+
   return [
+    {
+      title: 'In the mix',
+      note: 'Four seconds of firing over a street with weather and four bodies talking. "over street" is how much the whole thing rises above that background — under about 3dB is a gun nobody can hear over the fight it is in.',
+      head: ['gun', 'alone', 'in it', 'over street'],
+      rows: mix
+    },
+    {
+      title: 'A chain of kills',
+      note: 'Eight rounds, six landing, four putting something down. Each line adds a layer to the one above it, and the last is one grenade for scale — if four kills in three seconds are louder than a grenade, the kill is too loud.',
+      head: ['layer', 'peak', 'rms', 'over gun'],
+      rows: chain
+    },
     {
       title: 'Levels',
       note: 'Every sound against every other one, in dBFS. This is the table that says whether a kill is louder than the shot that made it, and whether the interface is shouting over the street.',

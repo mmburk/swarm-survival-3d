@@ -479,16 +479,60 @@ tepe 23 ms'de).
 Algısal etkisi küçük. Değeri, üst üste binen iki thump'ın artık birbirini
 comb-filter etmemesi — ve dosyada "aynı ses" olan tek şeyin kalmaması.
 
-### Ölçülen ama düzeltilmeyen iki denge
+### İki denge — ve tek başına ölçmenin yetmediği yer
 
-- **Harvester diğerlerinden 20 dB sessiz** (tepe −27.5, Çifte −8.1). Kartına
-  uygun (gürültüsü 0.1) ama çatışmada duyulmama riski var.
-- **İsabet −35.6, ölüm −19.2** — arada 16 dB. Öldürme başına çok isabet
-  düştüğü için savunulabilir, ama zincirleme öldürmede fazla gelirse
-  bakılacak yer burası.
+İlk ölçüm iki şüphe bıraktı: Harvester çok sessiz mi, ölüm çok yüksek mi.
+İkisi de **tek bir sesi tek başına** ölçerek cevaplanamaz, çünkü ikisi de
+"diğerlerinin yanında" sorusudur. O yüzden metre'ye beşinci ve altıncı tablo
+eklendi: gerçek bir çatışma parçasını **tek seferde** render eden sahneler.
 
-İkisi de **bilerek** değiştirilmedi: ölçüm dengesizliği gösterir, hangisinin
-doğru olduğunu söylemez.
+`renderScene` işleri oyunun kuracağı gibi zamanlıyor (`OfflineAudioContext`'i
+suspend edip ateşleyip resume ederek). Bir katman **çıkarılıp** ölçüm
+tekrarlanıyor: bir şeyin duyulup duyulmadığının tanımı, onu çıkarınca
+seviyenin ne kadar düştüğüdür.
+
+#### In the mix — 4 sn ateş, üstünde hava ve konuşan dört gövde
+
+| Silah | Tek başına | Sahnede | **Sokağın üstüne** |
+|---|---|---|---|
+| Stutter | −41.3 | −38.9 | +3.4 dB |
+| Ranger | −33.9 | −33.9 | +8.4 dB |
+| Çifte | −29.6 | −29.1 | +13.2 dB |
+| Harvester *(önce)* | −52.4 | −41.6 | **+0.2 dB** |
+| Harvester *(sonra)* | −41.7 | −38.9 | **+3.4 dB** |
+
+**0.2 dB duyulmaz.** Ateş ederken kendi silahını duyamayan oyuncu sessiz bir
+silah kullanmıyor, **bozuk bir geri besleme döngüsü** kullanıyor.
+
+Sebep seviye değil **biçimdi**: Q 3.5'lik bir bandpass enerjinin neredeyse
+tamamını atıyor ve bu, raftaki tek alt ucu olmayan silahtı. Q açıldı (2.2),
+seviye 0.16 → 0.26, ve altına çivi çakan mekanizmanın vuruşu kondu. İnce ve
+tiz kaldı — nailer zaten odur. Şimdi Stutter'la **birebir aynı** yerde (3.4)
+ve sıralama bozulmadı.
+
+**Kurgu değişmedi:** sokağın duyduğu şey `Weapons.noise` (Harvester 0.1) ve
+oraya dokunulmadı. Kartın sözü sürüyle ilgili, desibelle değil.
+
+#### A chain of kills — 8 el, 6 isabet, 4 ölüm
+
+| Katman | Tepe | RMS | Silahın üstüne |
+|---|---|---|---|
+| yalnız silah | −10.0 | −34.0 | — |
+| + isabetler | −10.4 | −34.2 | −0.3 dB |
+| + ölümler | −9.8 | −33.0 | **+1.0 dB** |
+| hepsi | −10.3 | −32.9 | +1.0 dB |
+| *bir el bombası* | −12.8 | −31.5 | — |
+
+Ölüm sesi karışıma **1 dB** ekliyor ve üç saniyedeki dört ölüm bir el
+bombasıyla aynı büyüklükte. Tek başına ölçüldüğünde isabetle arasında 18 dB
+var, ama karışımda silah ikisini de bastırıyor.
+
+**Ölüm/isabet dengesine dokunulmadı** — ve bu artık "bilmiyorum" değil,
+ölçülmüş bir karar.
+
+**Metre'nin kendi hatası:** tek atışlık tepe değerleri koşudan koşuya ±2-3 dB
+oynuyor (Faz 1'in ±%8 seviye sapması + tampon offset'i). Yani 1 dB'lik farklar
+gürültüdür; tablolar 3 dB'den küçük farklar için kullanılmamalı.
 
 ---
 
