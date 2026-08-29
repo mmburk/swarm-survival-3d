@@ -497,6 +497,49 @@ metre. Yoksa "ateş ettim, öylece durdu" hissi olurdu.
 
 ---
 
+## 8.5 SONRADAN ÖLÇÜLEN — ŞERİT SİSTEMİNİN SINIRI
+
+*Beş faz bittikten sonra bir dövüş harness'ı yazıldı (`npm run combat`) ve
+plandaki bir varsayımı çürüttü. Buraya yazılıyor çünkü planın kendisiyle
+ilgili, ayarla değil.*
+
+### Şerit bütçesi kaçan oyuncuya karşı bağlayıcı kısıt değil
+
+Hades'in `MaxAttackers`'ı ve bizim üç kuyruğumuz aynı soruyu cevaplıyor: *aynı
+anda kaç tanesi üstüne gelebilir?* Ölçüldüğünde çıkan şey: hareket eden bir
+oyuncu için bu sorunun cevabı **hiçbir şeyi değiştirmiyor.**
+
+| Deney | Kaçan oyuncuda hasar |
+|---|---|
+| Gürültüyle +2 şerit (dolu sayaç) | %1–4 |
+| Kalıcı açık +6 şerit (bitmeyen çığlık) | ~0, sektör 9'da **−%25** |
+
+Eksi işareti tesadüf değil, mekanizma. Şeritler kimin **hücum edeceğine** karar
+veriyor. Devreye giren gövde halkayı bırakıp doğrudan geliyor — ve hareketli
+bir hedefin **arkasına** diziliyor. Halkada kalan gövde ise oyuncu daireyi
+tamamlarken **önüne** çıkıyor. Yani ön safı genişletmek, kaçan oyuncuyu
+gerçekten yaralayan şeyi (halka) boşaltıyor.
+
+### Bunun plan için anlamı
+
+- **Faz 4'ün üç kuyruğu duran oyuncu için doğru, kaçan oyuncu için ilgisiz.**
+  Yanlış değil — Butcher+Burster'ın aynı anda basmasını hâlâ engelliyor — ama
+  "kiting'e karşı ne yapacağız" sorusunun cevabı burada değil.
+- **Çığlıkçının şoku duran oyuncuya karşı.** 4'ten 10'a çıkan ön saf, sen
+  yürüyorsan bir şey ifade etmiyor. Tipin kendisi hâlâ iş görüyor (uzakta
+  durur, bulunması gerekir) ama kartındaki söz koşullu.
+- **Kaçmaya karşı doğru kol erişim.** `STRIKE_LUNGE` 6.0 → 8.5 kaçanı %6–23
+  yukarı çekerken duranı %1–2'de bırakıyor. `SWING_REACH` bir kadran değil:
+  duran oyuncuyu değere göre her iki yöne %30 savuruyor.
+- **34'lük tavan uzmanlaşmış tipleri seyreltiyor.** Çığlıkçı ve Kapan sokakta
+  bir melee gövdenin yerini alıyor; kaçan oyuncuya karşı tam kadro ile
+  melee-only kadro arasında ortalama fark sıfır.
+
+Bir sonraki kişi "kiting fazla güvenli" derse: bütçeye dokunma. Erişim,
+öngörü (nereye gideceğini kesmek) ya da menzil — hücum eden gövde sayısı değil.
+
+---
+
 ## 9. RİSKLER
 
 **Faz 1 dengeyi kesin bozar.** Hamleli saldırı ıskalanabildiği için düşmanın

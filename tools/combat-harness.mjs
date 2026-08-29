@@ -22,6 +22,7 @@ const { Engine } = await load('/src/core/Engine.ts');
 const { SectorManager } = await load('/src/core/SectorManager.ts');
 const { SpatialHashGrid } = await load('/src/utils/SpatialHashGrid.ts');
 const { NIGHT_TIERS } = await load('/src/config/Progression.ts');
+const { Companion } = await load('/src/entities/Companion.ts');
 
 const noop = () => {};
 const particles = new Proxy({}, { get: () => noop });
@@ -48,7 +49,7 @@ const GRAB_DAMAGE_PER_SECOND = 13;
 const SCREAM_LANE_DURATION = 5.0;
 const SCREAM_LANES = 6;
 
-function run({ sector, seconds = 25, kiting, exclude = [], dt = 1 / 60, seed = 7 }) {
+function run({ sector, seconds = 25, kiting, exclude = [], noise = 0, forceScream = false, animal = null, killEvery = 0, dt = 1 / 60, seed = 7 }) {
   let s = seed;
   const rnd = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const realRandom = Math.random;
@@ -99,12 +100,38 @@ function run({ sector, seconds = 25, kiting, exclude = [], dt = 1 / 60, seed = 7
       calm: 0,
       turnTimer: 0,
       screamLanes: 0,
+      // Held flat rather than decayed: this asks what a given noise level is
+      // worth, not how long it takes to get there.
+      noise,
       meleeOrder: [],
       heavyOrder: [],
       grabOrder: [],
       sectors: { current: sector },
       enemies: { getActiveItems: () => active }
     };
+
+    // The animal, if one came out of the pens with you. `scene` is only ever
+    // used to hang meshes off, and nothing here draws.
+    let dog = null;
+    let downs = 0;
+    let wasDown = false;
+    let conditionFloor = 1;
+    const world = {
+      groundAt: () => 0,
+      enemiesNear: (pos, radius) => grid.query(pos, radius).filter((e) => e.active),
+      hurt: (enemy, damage) => { enemy.health -= damage; if (enemy.health <= 0) enemy.active = false; },
+      scrapNear: () => null,
+      healPlayer: noop,
+      calmSeconds: () => ctx.calm,
+      spark: noop,
+      say: noop
+    };
+    if (animal) {
+      const scene = new THREE.Group();
+      dog = new Companion(scene);
+      dog.setAnimal(animal);
+      dog.enterField(player.position, () => 0);
+    }
 
     const updateTurns = Engine.prototype.updateTurns;
     const pressBodies = Engine.prototype.pressBodies;
@@ -130,6 +157,7 @@ function run({ sector, seconds = 25, kiting, exclude = [], dt = 1 / 60, seed = 7
 
     let frame = 0;
     let peak = 0;
+    let killTimer = killEvery;
     for (let t = 0; t < seconds; t += dt) {
       frame++;
 
@@ -147,6 +175,7 @@ function run({ sector, seconds = 25, kiting, exclude = [], dt = 1 / 60, seed = 7
       grid.clear();
       for (const e of active) if (e.active) grid.insert(e);
 
+      if (forceScream) ctx.screamLanes = 99;
       updateTurns.call(ctx, active, dt);
 
       for (const e of active) {
@@ -185,6 +214,35 @@ function run({ sector, seconds = 25, kiting, exclude = [], dt = 1 / 60, seed = 7
         }
       }
 
+      // The player shooting back, as a rate rather than a gun. Off by default:
+      // a street that thins is a street where two builds of the AI cannot be
+      // compared, because the second one is fighting a different crowd. Turned
+      // on only where the question is about surviving a real fight — which is
+      // every question about the animal, since the animal is the thing that
+      // has to stay standing while the street empties.
+      if (killEvery > 0) {
+        killTimer -= dt;
+        if (killTimer <= 0) {
+          killTimer = killEvery;
+          let best = null;
+          let bestD = Infinity;
+          for (const e of active) {
+            if (!e.active) continue;
+            const d = (e.position.x - player.position.x) ** 2 + (e.position.z - player.position.z) ** 2;
+            if (d < bestD) { bestD = d; best = e; }
+          }
+          if (best) best.active = false;
+        }
+      }
+
+      if (dog) {
+        ctx.calm += dt;
+        dog.update(dt, player.position, world);
+        if (dog.downed && !wasDown) downs++;
+        wasDown = dog.downed;
+        conditionFloor = Math.min(conditionFloor, dog.conditionRatio);
+      }
+
       pressBodies.call(ctx, dt);
       peak = Math.max(peak, active.filter((e) => e.active).length);
     }
@@ -195,7 +253,10 @@ function run({ sector, seconds = 25, kiting, exclude = [], dt = 1 / 60, seed = 7
       dps: damage / seconds,
       strikes: strikes / seconds,
       grabs,
-      engaged: active.filter((e) => e.active && e.engaged).length
+      engaged: active.filter((e) => e.active && e.engaged).length,
+      downs,
+      conditionLeft: conditionFloor,
+      killed: active.filter((e) => !e.active).length
     };
   } finally {
     Math.random = realRandom;
@@ -216,7 +277,10 @@ const repeat = (opts, n = 5) => {
     dps: mean(rs.map((r) => r.dps)),
     strikes: mean(rs.map((r) => r.strikes)),
     grabs: mean(rs.map((r) => r.grabs)),
-    engaged: Math.round(mean(rs.map((r) => r.engaged)))
+    engaged: Math.round(mean(rs.map((r) => r.engaged))),
+    downs: mean(rs.map((r) => r.downs)),
+    conditionLeft: mean(rs.map((r) => r.conditionLeft)),
+    killed: mean(rs.map((r) => r.killed))
   };
 };
 
@@ -251,6 +315,55 @@ for (const sector of SECTORS) {
     '  ' + String(sector).padStart(2) + '      ' + a.dps.toFixed(2).padStart(6) + '        ' +
     b.dps.toFixed(2).padStart(6) + '       ' + change.padStart(6) + '    ' + b.grabs.toFixed(1)
   );
+}
+
+console.log('');
+console.log('NOISE IN THE FRONT RANK — what being loud costs you');
+console.log('The meter fills at 120 and forgets at 2.5 a second; a held-down');
+console.log('Ranger nets about 6 a second. Held flat here to price the level.');
+console.log('sector   quiet     half full   full      full costs');
+for (const sector of SECTORS) {
+  const q = repeat({ sector, kiting: true, noise: 0 });
+  const h = repeat({ sector, kiting: true, noise: 60 });
+  const f = repeat({ sector, kiting: true, noise: 119 });
+  console.log(
+    '  ' + String(sector).padStart(2) + '      ' + q.dps.toFixed(2).padStart(6) + '     ' +
+    h.dps.toFixed(2).padStart(6) + '      ' + f.dps.toFixed(2).padStart(6) + '     ' +
+    (q.dps > 0.01 ? '+' + ((f.dps / q.dps - 1) * 100).toFixed(0) + '%' : '—')
+  );
+}
+
+console.log('');
+console.log('IS THE LANE BUDGET WHAT IS ACTUALLY STOPPING THEM?');
+console.log('Six extra lanes held open for the whole run — a permanent scream.');
+console.log('sector   normal    scream held open   change');
+for (const sector of SECTORS) {
+  const a = repeat({ sector, kiting: true });
+  const b = repeat({ sector, kiting: true, forceScream: true });
+  console.log(
+    '  ' + String(sector).padStart(2) + '      ' + a.dps.toFixed(2).padStart(6) + '          ' +
+    b.dps.toFixed(2).padStart(6) + '         ' +
+    (a.dps > 0.01 ? ((b.dps / a.dps - 1) * 100).toFixed(0) + '%' : '—')
+  );
+}
+
+console.log('');
+console.log('THE ANIMAL — is Rook on the floor every street?');
+console.log('Rook carries 60 grit and has been wearing it down faster since he');
+console.log('started going for whatever is actually on you.');
+console.log('animal   sector   condition left   times down   bodies put down');
+console.log('The player is putting one down every 1.2 seconds here, so the street');
+console.log('actually thins — an animal measured against a crowd that never');
+console.log('empties is being measured against a wall, not a street.');
+for (const animal of ['ROOK', 'BRISTLE', 'MOUSER']) {
+  for (const sector of [2, 6, 9]) {
+    const r = repeat({ sector, kiting: true, animal, killEvery: 1.2 });
+    console.log(
+      '  ' + animal.padEnd(8) + String(sector).padStart(2) + '        ' +
+      (r.conditionLeft * 100).toFixed(0).padStart(3) + '%            ' +
+      r.downs.toFixed(1).padStart(4) + '           ' + r.killed.toFixed(1)
+    );
+  }
 }
 
 console.log('');

@@ -74,6 +74,16 @@ const tmpAway = new THREE.Vector3();
  */
 const ENGAGED_HEAD_START = 5.0;
 
+/**
+ * When an animal breaks off, and when it goes back in.
+ *
+ * Two numbers rather than one on purpose. A single threshold makes an animal
+ * that sits exactly on it flicker in and out of the fight every second, which
+ * is worse to watch and worse to rely on than one that never leaves at all.
+ */
+const WINDED_IN = 0.2;
+const WINDED_OUT = 0.5;
+
 /** XZ distance. Everything in this game is decided on the flat. */
 function flat(a: THREE.Vector3, b: THREE.Vector3): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
@@ -88,6 +98,9 @@ export class Companion {
   /** Condition. Never reaches a state that removes the animal from the run. */
   public condition: number = 0;
   public downed: boolean = false;
+
+  /** Broken off and heeling until it has its wind back. See `updateField`. */
+  public winded: boolean = false;
 
   private scene: THREE.Scene;
   private body: THREE.Group | null = null;
@@ -154,6 +167,7 @@ export class Companion {
     this.group.add(this.body);
     this.condition = this.def.grit;
     this.downed = false;
+    this.winded = false;
   }
 
   private clearBody(): void {
@@ -185,6 +199,7 @@ export class Companion {
     this.position.set(x, groundAt(x, z), z);
     this.condition = this.def.grit;
     this.downed = false;
+    this.winded = false;
     this.strikeTimer = 0.8;
     this.windup = 0;
     this.chargeTimer = 0;
@@ -207,6 +222,7 @@ export class Companion {
     this.position.copy(at);
     this.wander.copy(at);
     this.downed = false;
+    this.winded = false;
     this.condition = this.def.grit;
     this.idleTimer = 0;
     // A bird in the shelter is on the perch rail, not hovering over the table.
@@ -228,6 +244,7 @@ export class Companion {
   public patchUp(): void {
     if (!this.def) return;
     this.downed = false;
+    this.winded = false;
     this.condition = this.def.grit;
     this.strikeTimer = 0.5;
     if (this.body) this.body.rotation.z = 0;
@@ -322,14 +339,40 @@ export class Companion {
 
     if (this.strikeTimer > 0) this.strikeTimer -= delta;
 
-    switch (def.role) {
-      case 'HARRY': this.roleHarry(delta, playerPos, world); break;
-      case 'STOOP': this.roleStoop(delta, playerPos, world); break;
-      case 'SLAM': this.roleSlam(delta, playerPos, world); break;
-      case 'FETCH': this.roleFetch(delta, playerPos, world); break;
-      case 'BAIT': this.roleBait(delta, playerPos, world); break;
-      case 'CHARGE': this.roleCharge(delta, playerPos, world); break;
-      case 'WATCH': this.roleWatch(delta, playerPos, world); break;
+    // Winded: it breaks off and comes back to you rather than working until it
+    // drops.
+    //
+    // Measured (`npm run combat`): Rook ended every street from sector 2
+    // onward on the floor, and so did Mouser, who does not fight at all — a
+    // small animal standing at a 3 metre heel is standing inside the crowd.
+    // Bristle came through the same streets at a quarter to a half, because a
+    // charge spends most of its time somewhere else.
+    //
+    // The fix is a behaviour rather than a bigger number. Raising grit would
+    // have said "this dog can take more", which is not the thing that was
+    // wrong; what was wrong is that nothing in the animal knew how to stop.
+    // At a fifth it heels and stays heeled until it is back to half, which is
+    // hysteresis and not a threshold — an animal that flickers in and out of
+    // the fight at exactly 20% is worse than one that never leaves.
+    if (!this.winded && this.conditionRatio <= WINDED_IN) {
+      this.winded = true;
+      world.say(`${def.name} is winded.`);
+    } else if (this.winded && this.conditionRatio >= WINDED_OUT) {
+      this.winded = false;
+    }
+
+    if (this.winded) {
+      this.fallBack(delta, playerPos, world);
+    } else {
+      switch (def.role) {
+        case 'HARRY': this.roleHarry(delta, playerPos, world); break;
+        case 'STOOP': this.roleStoop(delta, playerPos, world); break;
+        case 'SLAM': this.roleSlam(delta, playerPos, world); break;
+        case 'FETCH': this.roleFetch(delta, playerPos, world); break;
+        case 'BAIT': this.roleBait(delta, playerPos, world); break;
+        case 'CHARGE': this.roleCharge(delta, playerPos, world); break;
+        case 'WATCH': this.roleWatch(delta, playerPos, world); break;
+      }
     }
 
     // The ground, the street furniture, and the leash. A flyer skips all three
@@ -721,6 +764,41 @@ export class Companion {
       if (this.condition <= 0) this.knockDown(world);
       return;
     }
+  }
+
+  /**
+   * Out of it, but not out of the street.
+   *
+   * Heeling was tried first and did almost nothing, for a reason that is
+   * obvious once measured: the player is standing in the crowd too, so a spot
+   * beside the player is a spot inside the same bodies. What an animal needs
+   * when it is winded is the *other side* of you from whatever is nearest, at
+   * the far end of its leash — which is exactly the trick Mouser has always
+   * used to stay alive without fighting.
+   *
+   * It never leaves the leash. A dog that runs off to recover is a dog that is
+   * not in the fight and not on screen either, and the whole point of the pens
+   * is that something came out with you.
+   */
+  private fallBack(delta: number, playerPos: THREE.Vector3, world: CompanionWorld): void {
+    const def = this.def!;
+    const threat = this.nearestTo(this.position, def.leash, world);
+
+    if (!threat) {
+      this.followHeel(delta, playerPos, def.speed);
+      return;
+    }
+
+    tmpAway.copy(playerPos).sub(threat.position).setY(0);
+    const len = Math.hypot(tmpAway.x, tmpAway.z) || 1;
+    // As far behind the player as the leash allows, on the line away from what
+    // is closest — and a shade quicker than a walk, because this is a retreat.
+    tmpTarget.set(
+      playerPos.x + (tmpAway.x / len) * def.leash * 0.9,
+      0,
+      playerPos.z + (tmpAway.z / len) * def.leash * 0.9
+    );
+    this.steer(tmpTarget, def.speed * 1.1, delta, 0.3);
   }
 
   /** Walks to a spot `heel` metres off the player, on the side it is already on. */

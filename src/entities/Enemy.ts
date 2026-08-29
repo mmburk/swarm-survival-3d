@@ -191,8 +191,23 @@ const SWINGS: ReadonlySet<string> = new Set([
 const SWING_REACH = 1.45;
 /** How long the arm is actually travelling. Short: this is the committed part. */
 const STRIKE_TIME = 0.18;
-/** Forward speed during it, so a swing closes a little ground of its own. */
-const STRIKE_LUNGE = 6.0;
+/**
+ * Forward speed during the strike, so a swing closes a little ground of itself.
+ *
+ * Raised from 6.0 after the combat harness (`npm run combat`) put a number on
+ * the complaint that a fleeing player takes almost nothing. It is the only
+ * lever that measured clean: over fourteen seeded runs it lifts a moving
+ * player's damage by 6-23% while leaving a standing one within a point or two,
+ * which is the shape you want — the one who is already being ground down does
+ * not need more.
+ *
+ * The obvious alternatives both failed. Widening the turn budget does nothing
+ * whatever against somebody who keeps moving. Widening `SWING_REACH` swings the
+ * standing case around by thirty per cent in either direction depending on the
+ * value, which is not a dial, it is a coin. And past about 11 the lunge starts
+ * *reducing* damage to a standing player, because the body overshoots them.
+ */
+const STRIKE_LUNGE = 8.5;
 /**
  * What a landed swing costs, against the old contact figure.
  *

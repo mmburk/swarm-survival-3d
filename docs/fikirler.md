@@ -43,6 +43,10 @@ Uzun araştırmalar kendi dosyalarında:
 | 18 | **Ses Faz 2, 3, 5 ve Faz 4'ün üçte ikisi.** Prosedürel oda (üç mekân, kuru/ıslak yolu); panning + mesafe zayıflaması; zombi vokalleri, dört ses tavanı, ölüm sesi; ayak sesi, spawn ve slam telegraph'ı; baskıya bağlı yatak | `7e2c658` | **Ses planının beş fazı da yazıldı.** Hiçbiri dinlenmedi — her fazın altında ölçüm var, hiçbirinin altında kulak yok |
 | 19 | **Ölçü aleti, ve bulduğu iki şey.** `AudioMeter.ts` her sesi offline render edip ölçüyor (seviye / tekrar / konum / oda), `?audio=test` → MEASURE. Artı sığınak ve hava ambiyansı (Faz 4 tamam) | `060c713` | **Faz 1 doğrulandı** — spektrum ve zarf atıştan atışa %13-24 oynuyor. İki bug: `thump()` her seferinde aynı fazdan başlıyordu, ve `ctx.resume()`'un promise'i hiç yakalanmıyordu |
 | 20 | **Sahne ölçümü, ve Harvester'ın düzeltilmesi.** Metre artık gerçek bir çatışma parçasını tek seferde render ediyor (hava + dört vokal + ateş) ve katman çıkararak ölçüyor. Harvester sokağın üstüne %0.2 dB çıkıyordu — Q açıldı, seviye kalktı, altına vuruş kondu | `5aff88d` | **0.2 → 3.4 dB**, Stutter'la aynı yerde. Ölüm/isabet dengesine dokunulmadı: ölçüldü, ölüm karışıma 1 dB ekliyor |
+| 21 | **Dövüş harness'ı.** `npm run combat` — sokağı oyunun kendi kurallarıyla koşturuyor (`Enemy.updateAI`, `SectorManager.plan`, `Engine.updateTurns`, yeni ayrılan `Engine.pressBodies`). Oyuncu bir kural: duruyor ya da daire çiziyor | `TBD` | Hiçbir kural kopyalanmadı, hepsi prototip üzerinden çağrılıyor. Kopyalanan kural sessizce yanlışa döner |
+| 22 | **`STRIKE_LUNGE` 6.0 → 8.5.** Kaçan oyuncuya ölçülen tek temiz kol | `TBD` | 14 tohumda: kaçan +%6–23, duran +%1–2. Şerit bütçesi hiçbir şey yapmıyor, `SWING_REACH` ise kaotik |
+| 23 | **Winded — hayvan nefesi kesilince çekiliyor.** %20'de bırakıyor, %50'de dönüyor (histerezis); geri çekilme oyuncuya değil **kalabalıktan uzağa** | `TBD` | Rook'un yere yığılması yarıya indi (0.4 → 0.2). Grit'e dokunulmadı: sorun "az dayanıyor" değil, **durmayı bilmiyor** idi |
+| 24 | **Gürültü uyarısı.** Sayaç hâlâ gizli; %75'te bir satır: "The street is listening." %40'a inince yeniden kurulur | `TBD` | Sayacı besleyen üç yeni şeyin (patlama, Burster, fişek) etiketi yoktu |
 
 ---
 
@@ -179,15 +183,45 @@ notu ve hangi sabitin çevrileceği yazılı. Sıradaki en değerli şey yeni bi
 sistem değil, bir koşu oynayıp bu notları doldurmak.
 
 Oynarken bakılacak sıra (en çok şüphe duyulandan aza):
-1. **Faz 1'in dengesi** — duran oyuncu sektör 1'de 12–14 dps alıyor, eskiden
-   19.6'ydı. Fazla yumuşaksa `STRIKE_MULTIPLIER` 2.0.
-2. **Kaçan oyuncu neredeyse hiç hasar almıyor** (1.8 dps). Clinger ve Screamer
-   bunu gerçek sokakta telafi ediyor mu, ölçümde onlar yoktu.
+
+1. ~~**Faz 1'in dengesi**~~ ve ~~**kaçan oyuncu**~~ — **ölçüldü** (21 numara).
+   Aşağıdaki başlıkta duruyor.
+2. ~~**Clinger ve Screamer kiting'i telafi ediyor mu?**~~ **Hayır, ölçüldü.**
+   Ve nedeni fazın tasarımını ilgilendiriyor: şerit bütçesi kaçan oyuncuya
+   karşı bağlayıcı kısıt **değil**.
 3. **Okunabilirlik** — 34 gövde varken kolların geri çekilmesi hamleyi
    anlatıyor mu? İşaretlilerin soğuk rengi Burster'ın sıcak sarısından
    ayrılıyor mu? Çığlıkçının sarkık çenesi 15 metreden seçiliyor mu?
+   *Bu ölçülemez — göz gerekiyor.*
 4. **Çığlık + gürültü** — bir sokakta kaç Çığlıkçı geliyor, ön safın 4'ten
-   10'a çıkması panik mi yaratıyor yoksa duvar mı?
+   10'a çıkması panik mi yaratıyor yoksa duvar mı? *Sayısı ölçüldü (etkisi
+   yok), ama "panik mi duvar mı" bir his ve o oynanarak bilinir.*
+
+### Harness ne buldu *(`npm run combat`)*
+
+**Kural:** oyuncu ateş etmiyor, yani sokak hiç incelmiyor ve 34 gövde 25 saniye
+boyunca üstünde. Mutlak sayılar bu yüzden **stres testi**, tahmin değil.
+Karşılaştırmalar dürüst olan kısım.
+
+**Kaçmak durmaktan 71–87% daha güvenli** (sektör 1 → 9). Bu, defterin
+"kaçan oyuncu neredeyse hiç hasar almıyor" şüphesinin sayısı.
+
+**Uzmanlaşmış tipler kiting'i cezalandırmıyor.** Kaçan oyuncuya karşı
+melee-only kadro ile tam kadro arasında fark: +17% / +86% / −20% / +15% /
+−3% / −13%. Ortalama sıfır. **Sebep 34'lük tavan:** Çığlıkçı 15 metrede
+duruyor, Kapan ara sıra tutuyor, ikisi de yerini bir melee gövdeden alıyor.
+
+**Ve asıl bulgu:** altı ekstra şerit (kalıcı bir çığlık) kaçan oyuncuda hasarı
+sektör 9'da **%25 düşürüyor.** Şeritler kimin *hücum edeceğine* karar veriyor,
+ve hücum etmek hareketli hedefe karşı başarısız olan şey. Devreye giren gövde
+halkadan çıkıp arkanda diziliyor; halkadaki gövde ise sen dönerken **önüne**
+geliyor. Yani ön safı açmak, seni gerçekten yaralayan şeyi dağıtıyor.
+
+Bunun üç sonucu var ve üçü de yukarıdaki maddeleri kapatıyor:
+- Clinger/Screamer'ın kiting'i cezalandırmaması bir ayar hatası değil, **şerit
+  sisteminin yapısı.**
+- Gürültünün şerit bütçesini açması fikri **reddedildi** (aşağıdaki tabloda).
+- Kaçmaya karşı doğru kol **erişim**, ve ölçülen tek temizi `STRIKE_LUNGE`.
 
 ### Faz 2'nin dengesi *(oynayıp bakılacak)*
 İki ayar noktası: `Enemy.ts` içindeki halka çarpanı (`standoff * 0.42`,
@@ -204,9 +238,28 @@ Bilinen pürüz:
   Screamer yoktu — gerçek sokakta cezayı onlar veriyor. Yine de fazla
   yumuşaksa halka çarpanı düşürülür.
 
-### Faz 1'in dengesi *(oynayıp bakılacak)*
+### Faz 1'in dengesi *(ölçüldü, 22 numara)*
 Sayılar `Enemy.ts` tepesinde: `SWING_REACH` (1.45), `STRIKE_TIME` (0.18),
-`STRIKE_LUNGE` (6.0), `STRIKE_MULTIPLIER` (1.75). Sürtünme `Engine.ts`
+`STRIKE_LUNGE` (**8.5**, eskiden 6.0), `STRIKE_MULTIPLIER` (1.75).
+
+**`STRIKE_LUNGE` neden değişti.** Defter "saf kiting fazla güvenliyse
+`SWING_REACH` veya `STRIKE_LUNGE` artırılabilir" diyordu. Harness kiting'in
+durmaktan %87 daha güvenli olduğunu ölçtü, ve iki kolu ayrı ayrı denedi:
+
+| | kaçan (s1/s6/s9) | duran (s1/s6/s9) |
+|---|---|---|
+| lunge 6.0 → 8.5 | **+11% / +23% / +6%** | +19% / +1% / +2% |
+| lunge 6.0 → 11.0 | +23% / +43% / +29% | −23% / −15% / −12% |
+| reach 1.45 → 1.8 | +9% / +1% / +11% | **−38% / −32% / −35%** |
+| reach 1.45 → 2.2 | +34% / +49% / +24% | −30% / −18% / −17% |
+
+`SWING_REACH` bir kadran değil, yazı-tura: duran oyuncunun aldığı hasarı
+değere göre her iki yöne de %30 savuruyor. 11'lik lunge ise duran oyuncuyu
+**rahatlatıyor**, çünkü gövde onu aşıp geçiyor. 8.5 tek temiz nokta: kaçanı
+kaldırıyor, duranı yerinde bırakıyor — zaten ezilmekte olanın daha fazlasına
+ihtiyacı yok.
+
+14 tohumluk ortalama. 5 tohumda gürültü belirgindi; kalabalık dinamiği kaotik. Sürtünme `Engine.ts`
 tepesinde: `FRICTION_INTERVAL` (1.1), `FRICTION_SHARE` (0.25),
 `FRICTION_MAX_BODIES` (3).
 
@@ -251,9 +304,32 @@ Cevap madde başına tek satır yeter; ayarı ben yaparım.
   "Silent / Quiet / Loud / Deafening" etiketi var, yani en azından seçim
   bilinçli yapılabiliyor. **Yeni sebep:** artık fişek ve patlama da yazıyor,
   yani sayacı besleyen üç şey daha var ve hiçbirinin etiketi yok.
-- **Rook'un grit'i (60) izlensin.** 5 numaralı değişiklikten sonra daha hızlı
-  yıpranıyor. Her sokakta yere yığılıyorsa ya grit yükselir ya da HARRY rolüne
-  "kondisyon düşünce geri çekil" eklenir. Önce oynayıp bakılacak.
+- ~~**Rook'un grit'i (60) izlensin.**~~ **Ölçüldü ve düzeltildi (23 numara).**
+  Evet, her sokakta yere yığılıyordu. Defterin iki çözümünden **ikincisi**
+  seçildi: grit'i yükseltmek "bu köpek daha çok dayanır" demek olurdu, oysa
+  yanlış olan dayanıklılığı değil — **durmayı bilmiyor olması**ydı.
+
+  `WINDED_IN` (0.2) / `WINDED_OUT` (0.5), `Companion.ts` tepesinde. Tek eşik
+  değil iki: tam eşiğin üstünde oturan bir hayvan saniyede bir dövüşe girip
+  çıkar, ki bu hiç çekilmemekten kötüdür.
+
+  **Geri çekilme oyuncuya değil, kalabalıktan uzağa.** Önce heel denendi ve
+  neredeyse hiçbir şey yapmadı — oyuncu da kalabalığın içinde, yani onun yanı
+  aynı gövdelerin arası. Mouser'ın hep kullandığı numara doğrusuydu: senin
+  **arkana**, tasmanın ucuna.
+
+  | | kondisyon kalan (s2/s6/s9) | yere yığılma (s6/s9) |
+  |---|---|---|
+  | öncesi | 48% / 24% / 12% | 0.4 / 0.2 |
+  | winded ile | 48% / **28%** / **15%** | **0.2 / 0.0** |
+
+  Bristle'a ve Mouser'a hiç dokunmuyor — biri o kadar düşmüyor, diğeri zaten
+  çekiliyor. Doğru şekil: içeri giren hayvan için bir kural.
+
+- **Mouser da yıpranıyor, ve o hiç dövüşmüyor.** Sektör 6–9'da sokağı %16–19
+  kondisyonla bitiriyor — Rook'tan çok da iyi değil. Tasması 3 metre, yani
+  oyuncuyla birlikte kalabalığın içinde duruyor. Bilerek mi, değil mi:
+  oynanacak.
 
 ---
 
@@ -268,6 +344,8 @@ Cevap madde başına tek satır yeter; ayarı ben yaparım.
 | **İşaretlileri yüzdeyle dağıtmak** | %20 × 34 = 7 elit, Hades'in tüm odasından fazla. Oran değil **tavan** |
 | **Nitelik başına ayrı renk** | Ekranda 34 gövde var, dördü aynı anda sahnede olabilir, karışır. Hepsi tek renk — "bunda bir tuhaflık var" der, tuhaflığı davranışından okunur |
 | **Bristle'ın "en uzak hedef" mantığını değiştirmek** | Hücum koşu mesafesi ister. bug.md 14'ün düzeltmesiydi, yerinde duruyor |
+| **Gürültünün sıra bütçesini açması** | Yazıldı, ölçüldü, geri alındı. Dolu sayaçta iki ekstra şerit kaçan oyuncuda hasarı %1–4 oynattı; kalıcı açık tutulan altı şerit ise **hiç** oynatmadı, sektör 9'da %25 *düşürdü*. Şeritler kimin hücum edeceğine karar veriyor ve hücum, hareketli hedefe karşı başarısız olan şey. Premisi çürük, mekanizma değil |
+| **Rook'un grit'ini yükseltmek** | Ölçüm sorunu doğruladı ama sebebi dayanıklılık değildi. Sayı yerine davranış: `winded` (23 numara) |
 
 ---
 
@@ -281,6 +359,10 @@ Cevap madde başına tek satır yeter; ayarı ben yaparım.
 - **`InstancedEnemies` örnek başına tek renk çarpanı yazıyor** — görsel ayrım
   kanalımız bu (`FLASH` / `HOT` / `PLAIN`). Yeni bir işaret buraya eklenen bir
   sabit demek.
+- **Dövüş harness'ı var:** `npm run combat`. Yeni bir denge sayısına dokunmadan
+  önce çalıştır, sonra tekrar çalıştır. Oyuncu ateş etmiyor (opsiyonel
+  `killEvery` dışında), yani mutlak sayılar stres testi — **karşılaştırma**
+  için kullan. Kalabalık dinamiği kaotik: 5 tohum gürültülü, 14 tohum oturuyor.
 - **Grid bir broad phase.** `query()` hücreleri bütün döndürür; "şu yarıçaptaki
   her şey" diyen her yer mesafeyi **kendisi ölçmek zorunda**. bug.md 2, 15, 16
   bu yüzden çıktı.

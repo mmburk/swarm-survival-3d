@@ -148,6 +148,22 @@ const NOISE_DECAY = 2.5;
  * of the three, or a street thick with Bursters would call its own Screamers
  * and the player would be paying for a bill they never ran up.
  */
+/**
+ * Where the street says something before it sends something.
+ *
+ * The meter itself stays hidden, and that is on purpose — 7 Days to Die does
+ * not show its heat either, and a number on screen turns "be careful how loud
+ * you are" into an optimisation problem. What has changed is that the meter is
+ * no longer only fed by the trigger: a blast is worth three seconds of firing
+ * and a flare five, and neither of those has a label on it the way the rack
+ * labels a gun.
+ *
+ * So: one line, once, at three quarters. Not a readout, a warning — and it
+ * re-arms only after the street has genuinely forgotten, or it becomes wallpaper.
+ */
+const NOISE_WARN = 0.75;
+const NOISE_REARM = 0.4;
+
 const NOISE_BLAST = 18;
 const NOISE_BURST = 9;
 const NOISE_FLARE = 30;
@@ -331,6 +347,7 @@ export class Engine {
   private screamLanes: number = 0;
   /** How much gunfire this street has heard lately. See `NOISE_THRESHOLD`. */
   private noise: number = 0;
+  private noiseWarned: boolean = false;
   private pressureTimer: number = 0;
 
   /** Counts down to the next friction tick. See `FRICTION_INTERVAL`. */
@@ -1288,6 +1305,7 @@ export class Engine {
     // sector cleared in a firefight would call a Screamer down on the quiet
     // one after it.
     this.noise = 0;
+    this.noiseWarned = false;
     this.screamLanes = 0;
     this.releaseGrab('spent');
 
@@ -1481,6 +1499,12 @@ export class Engine {
     // The shout widens the crowd and nothing else: a Screamer turns the ring
     // round on you, it does not fetch you a second Butcher.
     const budget = {
+      // Noise deliberately does *not* buy lanes here. It was tried and
+      // measured: two extra lanes at a full meter moved a fleeing player's
+      // damage by 1-4%, and holding six open — a permanent scream — moved it
+      // by nothing at all, or downward. Against somebody who keeps walking the
+      // lane budget is not what is stopping them, so widening it is a cost
+      // with no effect. See docs/fikirler.md, and `npm run combat`.
       MELEE: Math.min(9, 3 + Math.floor(sector * 0.7)) + (this.screamLanes > 0 ? SCREAM_LANES : 0),
       HEAVY: sector <= 4 ? 1 : 2,
       GRAB: sector <= 5 ? 1 : 2
@@ -1647,8 +1671,15 @@ export class Engine {
   private spendNoise(amount: number): void {
     if (this.sectors.state !== 'COMBAT') return;
     this.noise += amount;
+
+    if (!this.noiseWarned && this.noise >= NOISE_THRESHOLD * NOISE_WARN) {
+      this.noiseWarned = true;
+      this.hud.showToast('The street is listening.');
+    }
+
     if (this.noise < NOISE_THRESHOLD) return;
     this.noise = 0;
+    this.noiseWarned = false;
 
     for (const e of this.enemies.getActiveItems()) {
       if (e.active && e.type === EnemyType.SCREAMER) return;
@@ -2203,6 +2234,7 @@ export class Engine {
 
     // The street forgets the shooting, slowly.
     if (this.noise > 0) this.noise = Math.max(0, this.noise - NOISE_DECAY * delta);
+    if (this.noiseWarned && this.noise < NOISE_THRESHOLD * NOISE_REARM) this.noiseWarned = false;
 
     // Whose turn it is to come at you.
     this.updateTurns(active, delta);
